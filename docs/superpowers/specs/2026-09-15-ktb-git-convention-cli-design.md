@@ -28,8 +28,9 @@ KTB4-17th-AI uses a simplified Git-Flow and Conventional Commits, but the rules 
 
 - Same-team developers on macOS/Linux
 - Repo: GitHub `100-hours-a-week/KTB4-17th-AI`
-- Required local tools: `git`, GitHub CLI `gh` (authenticated)
+- Required local tools: `git`, GitHub CLI `gh` (authenticated), `uv`
 - Python 3.11+
+- Lint: Ruff via uv (commands below are the only lint entry points)
 
 ## Product surface
 
@@ -123,6 +124,21 @@ Title: `[분류][담당자] 작업 내용`
 
 - Merge target: `dev`, except `hotfix/*` → `main`.
 
+### Ruff
+
+Two commands only. Do not invent extra ruff flags.
+
+| When | Command | Mutates files? |
+|---|---|---|
+| 고치고 모양 맞춘 뒤 커밋 (`ktb commit`) | `uv run ruff check --fix . && uv run ruff format .` | yes |
+| 이미 깨끗한지 확인만 (`ktb ship`, CI, local verify) | `uv run ruff format --check . && uv run ruff check .` | no |
+
+- `ktb commit` runs the fix command after it knows there are changes and **before** the commit is created. Ruff edits are included in the same commit (restage `.` paths ruff touched).
+- `ktb ship` runs the check command **before** push. Failure blocks ship; tell the user to run `ktb commit` (or the fix command) and retry.
+- `--dry-run` prints the ruff command but does not execute it.
+- `ktb commit --skip-ruff` / `ktb ship --skip-ruff` skip lint (printed as a warning). Default is to run.
+- If `uv` is missing, exit 1 with the uv install URL. Do not silently skip.
+
 ## Configuration
 
 User config path: `~/.config/ktb/config.toml`
@@ -158,6 +174,7 @@ src/ktb_git/
   conventions.py    # pure functions: names, messages, validation
   gitops.py         # git subprocess wrapper
   github.py         # gh subprocess wrapper
+  lint.py           # ruff via uv; fix vs check commands only
   commands/
     init.py
     start.py
@@ -169,6 +186,7 @@ External processes:
 
 - `git` for all local vcs
 - `gh` for `auth status`, `issue create`, `issue list`, `pr create`, `pr view`
+- `uv run ruff ...` for lint (see Ruff section)
 
 No GitHub REST client library. `gh` is the only GitHub integration.
 
@@ -208,12 +226,13 @@ Do not push in `start`. First push happens in `ship` with `-u`.
 ### `ktb commit`
 
 1. If no changes (unstaged/staged/untracked), exit with "커밋할 변경이 없습니다".
-2. Show changed files. Ask: 전부 스테이징 / 파일 선택 / 이미 스테이징된 것만.
-3. Ask type, breaking yes/no, subject, optional body, optional footer.
-4. If branch has `ktbIssue`, offer `Resolves: #N` in footer (default yes).
-5. If breaking, require body and append `BREAKING CHANGE:` footer if user did not write one.
-6. Validate subject. Re-ask on failure.
-7. Preview full message. Confirm. Write the message to a temp file and run `git commit -F <file>` so newlines and body/footer survive.
+2. Unless `--skip-ruff`, run `uv run ruff check --fix . && uv run ruff format .`. Non-zero exit blocks the commit and prints ruff output.
+3. Show changed files (including anything ruff just rewrote). Ask: 전부 스테이징 / 파일 선택 / 이미 스테이징된 것만. If ruff modified files that were already staged, restage those paths so the commit includes the formatted result.
+4. Ask type, breaking yes/no, subject, optional body, optional footer.
+5. If branch has `ktbIssue`, offer `Resolves: #N` in footer (default yes).
+6. If breaking, require body and append `BREAKING CHANGE:` footer if user did not write one.
+7. Validate subject. Re-ask on failure.
+8. Preview full message. Confirm. Write the message to a temp file and run `git commit -F <file>` so newlines and body/footer survive.
 
 Does not push.
 
@@ -222,14 +241,15 @@ Does not push.
 1. Refuse if current branch is `main` or `dev`.
 2. Refuse if no commits vs the intended base.
 3. Determine base: `hotfix/*` → `main`, else `dev`.
-4. Push `-u origin HEAD`. If remote exists, push without force. Non-fast-forward → stop and explain.
-5. If PR already exists for this branch, print URL and skip create.
-6. Ask PR summary (default: last commit subject with a leading `type:` / `type!:` prefix stripped).
-7. Ask bullet list for 변경 내용 (one or more).
-8. Ask checklist flags (build/test, docs, breaking).
-9. If any commit on the branch is breaking (`type!` or `BREAKING CHANGE`), pre-check the breaking box and require the breaking section text.
-10. Preview title + body. Confirm. `gh pr create --base <base> --title ... --body ...`
-11. Print PR URL.
+4. Unless `--skip-ruff`, run `uv run ruff format --check . && uv run ruff check .`. Non-zero exit blocks ship (no push, no PR). Print the failing output and the fix command `uv run ruff check --fix . && uv run ruff format .`.
+5. Push `-u origin HEAD`. If remote exists, push without force. Non-fast-forward → stop and explain.
+6. If PR already exists for this branch, print URL and skip create.
+7. Ask PR summary (default: last commit subject with a leading `type:` / `type!:` prefix stripped).
+8. Ask bullet list for 변경 내용 (one or more).
+9. Ask checklist flags (build/test, docs, breaking). Pre-check "로컬에서 빌드/테스트 통과" when the ruff check command just succeeded.
+10. If any commit on the branch is breaking (`type!` or `BREAKING CHANGE`), pre-check the breaking box and require the breaking section text.
+11. Preview title + body. Confirm. `gh pr create --base <base> --title ... --body ...`
+12. Print PR URL.
 
 ### `ktb status` / hub header
 
@@ -248,12 +268,15 @@ Print:
 |---|---|
 | Not a git repo | Exit 1, say to run inside the project |
 | `gh` missing / not logged in | Exit 1 with exact next command |
+| `uv` missing | Exit 1 with uv install URL, unless `--skip-ruff` |
+| Ruff fix command fails in `commit` | Do not commit; print ruff output |
+| Ruff check command fails in `ship` | Do not push or open PR; print fix command |
 | `main` commit or push | Refuse. Suggest `ktb start` or hotfix |
 | PR base would be feat/fix | Refuse |
 | Invalid subject / branch slug | Re-prompt, do not execute |
 | `gh issue create` succeeds then git checkout fails | Leave issue; status shows "이슈 #N 있음, 브랜치 없음". Start can resume by selecting that issue |
 | Push rejected | Do not open PR |
-| `--dry-run` | Print commands and rendered issue/commit/PR text only |
+| `--dry-run` | Print git/gh/ruff commands and rendered issue/commit/PR text; execute none |
 
 No automatic deletion of issues or branches on failure.
 
@@ -266,20 +289,24 @@ Framework: pytest.
 3. `tests/test_commit.py` — message assembly including `!` and `Resolves`.
 4. `tests/test_ship.py` — base selection feat→dev, hotfix→main; skip create if PR exists; refuse feat-to-feat.
 5. `tests/test_status.py` — next-action mapping for: no branch, dirty, unpushed, no PR, PR open.
+6. `tests/test_lint.py` — `commit` invokes exactly `uv run ruff check --fix .` then `uv run ruff format .`; `ship` invokes exactly `uv run ruff format --check .` then `uv run ruff check .`; `--skip-ruff` invokes neither; check failure prevents push.
 
-No live GitHub network in tests. `gh`/`git` are fakes.
+No live GitHub network in tests. `gh`/`git`/`uv` are fakes.
 
 ## Packaging and docs
 
-- `pyproject.toml` with project name `ktb-git`, script `ktb = ktb_git.cli:app`
-- README: install (`pip install -e .`), `gh auth login`, `ktb init`, hub screenshot-as-text, convention mapping table
-- Python 3.11+, dependencies: `typer`, `rich`, `questionary`, `tomli` only if 3.10 must be supported (not required)
+- Managed with `uv`. `pyproject.toml` project name `ktb-git`, script `ktb = ktb_git.cli:app`
+- Dev tools: `ruff`, `pytest` (uv dev dependencies)
+- README: install (`uv sync`), `gh auth login`, `ktb init`, hub screenshot-as-text, convention mapping table, the two ruff commands
+- Python 3.11+, runtime dependencies: `typer`, `rich`, `questionary`
+- This repo itself is kept clean with `uv run ruff format --check . && uv run ruff check .`
 
 ## Success criteria
 
 - From a clean clone with `gh` authenticated, a new teammate can: init → start (create issue + branch) → dummy commit → ship, and the GitHub issue title, branch name, commit message, and PR title/body all match the convention examples.
 - `ktb` with no args is usable without reading `--help`.
-- `pytest` passes without network.
+- `uv run pytest` passes without network.
+- `uv run ruff format --check . && uv run ruff check .` is clean.
 
 ## Open decisions (resolved)
 
@@ -287,5 +314,6 @@ No live GitHub network in tests. `gh`/`git` are fakes.
 - Commands: split start/commit/ship plus hub menu for discoverability
 - Issues: create new or pick existing
 - Nickname: saved once in user config
-- Implementation: Python + `gh`
+- Implementation: Python + `gh` + `uv`/`ruff`
 - Validation: wizard enforces rules; no git hooks in v1
+- Ruff: fix+format on commit, check-only on ship
