@@ -29,7 +29,7 @@
 
 ```bash
 git clone https://github.com/100-hours-a-week/KTB4-17th-AI.git
-cd KTB4-17th-AI/23_17th_Lena/ai-server
+cd KTB4-17th-AI/ai-server
 ```
 
 ### 2. 가상환경 세팅 및 라이브러리 설치
