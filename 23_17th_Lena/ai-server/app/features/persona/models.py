@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -18,7 +18,7 @@ def _uuid() -> str:
 
 
 def _now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):
@@ -45,11 +45,9 @@ class OnboardingSession(Base):
     # active | completed | abandoned
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_now, onupdate=_now
-    )
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
-    turns: Mapped[list["ConversationTurn"]] = relationship(
+    turns: Mapped[list[ConversationTurn]] = relationship(
         back_populates="session",
         order_by="ConversationTurn.turn_index",
         cascade="all, delete-orphan",
@@ -60,9 +58,7 @@ class ConversationTurn(Base):
     __tablename__ = "conversation_turns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    session_id: Mapped[str] = mapped_column(
-        ForeignKey("onboarding_sessions.id", ondelete="CASCADE"), index=True
-    )
+    session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id", ondelete="CASCADE"), index=True)
     turn_index: Mapped[int] = mapped_column(Integer)
 
     topic_id: Mapped[str] = mapped_column(String(32))
@@ -82,13 +78,11 @@ class PersonaRecord(Base):
     __tablename__ = "personas"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    session_id: Mapped[str] = mapped_column(
-        ForeignKey("onboarding_sessions.id"), index=True
-    )
+    session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id"), index=True)
     user_id: Mapped[str | None] = mapped_column(String(64), index=True)
 
     scores: Mapped[dict] = mapped_column(JSON)
-    texts: Mapped[dict] = mapped_column(JSON)       # interests/routine/date_*
+    texts: Mapped[dict] = mapped_column(JSON)  # interests/routine/date_*
     confidence: Mapped[dict] = mapped_column(JSON)  # {차원: "LOW"}
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

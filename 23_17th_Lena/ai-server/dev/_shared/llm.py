@@ -34,10 +34,14 @@ api_key: ContextVar[str | None] = ContextVar("dev_api_key", default=None)
 provider: ContextVar[str | None] = ContextVar("dev_provider", default=None)
 
 ANTHROPIC_MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-sonnet-4-6")
-GEMINI_MODELS = [m.strip() for m in os.environ.get(
-    "GEMINI_MODEL",
-    "gemini-2.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash,gemini-3.5-flash",
-).split(",") if m.strip()]
+GEMINI_MODELS = [
+    m.strip()
+    for m in os.environ.get(
+        "GEMINI_MODEL",
+        "gemini-2.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash,gemini-3.5-flash",
+    ).split(",")
+    if m.strip()
+]
 TIMEOUT_SCALE = {"anthropic": 1.0, "gemini": float(os.environ.get("LLM_TIMEOUT_SCALE", "4.0"))}
 
 _GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
@@ -57,8 +61,12 @@ async def headers(
 
 def resolve() -> tuple[str, str]:
     key = api_key.get()
-    p = provider.get() or ("gemini" if (key or "").startswith("AIza") else None) \
-        or os.environ.get("LLM_PROVIDER") or "gemini"
+    p = (
+        provider.get()
+        or ("gemini" if (key or "").startswith("AIza") else None)
+        or os.environ.get("LLM_PROVIDER")
+        or "gemini"
+    )
     if not key:
         key = os.environ.get("GEMINI_API_KEY" if p == "gemini" else "ANTHROPIC_API_KEY")
     if not key:
@@ -85,17 +93,23 @@ def models() -> dict:
 
 # ── Anthropic ────────────────────────────────────────────
 
+
 async def _anthropic(key: str, system: str, messages: list[dict], max_tokens: int) -> str:
     from anthropic import AsyncAnthropic
+
     if key not in _anthropic_clients:
         _anthropic_clients[key] = AsyncAnthropic(api_key=key)
     resp = await _anthropic_clients[key].messages.create(
-        model=ANTHROPIC_MODEL, max_tokens=max_tokens, system=system, messages=messages,
+        model=ANTHROPIC_MODEL,
+        max_tokens=max_tokens,
+        system=system,
+        messages=messages,
     )
     return "".join(b.text for b in resp.content if b.type == "text")
 
 
 # ── Gemini ───────────────────────────────────────────────
+
 
 class _SkipModel(LLMError):
     """일일 한도 · 없는 모델. 다음 모델로."""
@@ -110,8 +124,10 @@ def _gemini_body(model: str, system: str, messages: list[dict], max_tokens: int)
         gen["maxOutputTokens"] = max_tokens + 1024
     return {
         "system_instruction": {"parts": [{"text": system}]},
-        "contents": [{"role": "model" if m["role"] == "assistant" else "user",
-                      "parts": [{"text": m["content"]}]} for m in messages],
+        "contents": [
+            {"role": "model" if m["role"] == "assistant" else "user", "parts": [{"text": m["content"]}]}
+            for m in messages
+        ],
         "generationConfig": gen,
     }
 
@@ -129,8 +145,10 @@ def _http_error(e: urllib.error.HTTPError) -> str:
         for v in d.get("violations", []):
             quotas.append(f"{v.get('quotaId')}={v.get('quotaValue')}")
         retry = d.get("retryDelay") or retry
-    return (f"gemini HTTP 429 quota exceeded — {', '.join(quotas) or 'unknown'}"
-            f"{f', retry after {retry}' if retry else ''} · https://ai.dev/rate-limit")
+    return (
+        f"gemini HTTP 429 quota exceeded — {', '.join(quotas) or 'unknown'}"
+        f"{f', retry after {retry}' if retry else ''} · https://ai.dev/rate-limit"
+    )
 
 
 def _gemini_once(model: str, key: str, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
@@ -175,6 +193,7 @@ def _gemini_sync(key: str, system: str, messages: list[dict], max_tokens: int, t
 
 # ── 공개 ─────────────────────────────────────────────────
 
+
 async def call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
     p, key = resolve()
     timeout = timeout * TIMEOUT_SCALE[p]
@@ -185,7 +204,7 @@ async def call(*, system: str, messages: list[dict], max_tokens: int, timeout: f
         else:
             coro = _anthropic(key, system, messages, max_tokens)
         text = (await asyncio.wait_for(coro, timeout=timeout)).strip()
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         raise LLMError(f"timeout after {timeout:.1f}s ({p})") from e
     except LLMError:
         raise
@@ -199,11 +218,13 @@ async def call(*, system: str, messages: list[dict], max_tokens: int, timeout: f
 
 def bind(error_cls: type[Exception]):
     """기능 코드의 예외 타입으로 감싼 call. `agents._call = bind(agents.LLMError)` 식으로 끼운다."""
+
     async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
         try:
             return await call(system=system, messages=messages, max_tokens=max_tokens, timeout=timeout)
         except LLMError as e:
             raise error_cls(str(e)) from e
+
     return _call
 
 
@@ -211,8 +232,9 @@ async def check() -> dict:
     """키·프로바이더가 통하는지 아주 작은 호출 1번. 각 플레이그라운드의 POST /check."""
     try:
         p, _ = resolve()
-        await call(system="Reply with exactly: ok", messages=[{"role": "user", "content": "ok?"}],
-                   max_tokens=5, timeout=10.0)
+        await call(
+            system="Reply with exactly: ok", messages=[{"role": "user", "content": "ok?"}], max_tokens=5, timeout=10.0
+        )
     except LLMError as e:
         return {"ok": False, "error": str(e)}
     return {"ok": True, "provider": p, "model": current_model()}

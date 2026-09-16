@@ -40,7 +40,7 @@ _original_tag = agents.TaggingAgent.tag
 
 async def _tag_switchable(self, question: str, answer: str):
     if not tagging_on.get():
-        return None            # service 가 topic.covers 로 폴백
+        return None  # service 가 topic.covers 로 폴백
     return await _original_tag(self, question, answer)
 
 

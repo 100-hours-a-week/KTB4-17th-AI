@@ -15,9 +15,7 @@ class PersonaRepository:
 
     # ── 세션 ──────────────────────────────────────────────
 
-    async def create_session(
-        self, nickname: str, total_turns: int, user_id: str | None = None
-    ) -> OnboardingSession:
+    async def create_session(self, nickname: str, total_turns: int, user_id: str | None = None) -> OnboardingSession:
         session = OnboardingSession(
             nickname=nickname,
             total_turns=total_turns,
@@ -72,12 +70,9 @@ class PersonaRepository:
         tags: dict | None,
         coverage: dict,
     ) -> None:
-        stmt = (
-            select(ConversationTurn)
-            .where(
-                ConversationTurn.session_id == session.id,
-                ConversationTurn.turn_index == session.turn_index,
-            )
+        stmt = select(ConversationTurn).where(
+            ConversationTurn.session_id == session.id,
+            ConversationTurn.turn_index == session.turn_index,
         )
         turn = (await self.db.execute(stmt)).scalar_one()
         turn.answer = answer

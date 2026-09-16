@@ -16,7 +16,6 @@ dev/
 ```
 
 ```bash
-cd ai-server
 python3 -m pip install -r dev/requirements.txt
 python3 -m uvicorn dev.persona.playground:app --reload --port 8000
 # → http://localhost:8000

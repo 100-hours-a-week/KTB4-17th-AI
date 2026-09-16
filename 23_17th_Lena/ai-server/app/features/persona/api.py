@@ -10,7 +10,7 @@ from .repository import PersonaRepository
 from .schemas import AnswerRequest, PersonaResponse, StartRequest, TurnResponse
 from .service import OnboardingService
 
-router = APIRouter(prefix="/personas", tags=["persona"])
+router = APIRouter(prefix="/v1/persona", tags=["persona"])
 
 
 async def get_db() -> AsyncSession:  # 프로젝트 공통 의존성으로 교체

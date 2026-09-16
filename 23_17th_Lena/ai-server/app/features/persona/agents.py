@@ -41,17 +41,13 @@ class LLMError(Exception):
     """호출 실패. 호출부가 잡아서 폴백한다."""
 
 
-async def _call(
-    *, system: str, messages: list[dict], max_tokens: int, timeout: float
-) -> str:
+async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
     try:
         resp = await asyncio.wait_for(
-            _client.messages.create(
-                model=MODEL, max_tokens=max_tokens, system=system, messages=messages
-            ),
+            _client.messages.create(model=MODEL, max_tokens=max_tokens, system=system, messages=messages),
             timeout=timeout,
         )
-    except asyncio.TimeoutError as e:
+    except TimeoutError as e:
         raise LLMError(f"timeout after {timeout}s") from e
     except Exception as e:
         raise LLMError(str(e)) from e
@@ -113,9 +109,7 @@ class Utterance:
 
 class ConversationAgent:
     @staticmethod
-    def _instruction(
-        topic: Topic, turn_index: int, total_turns: int, nickname: str
-    ) -> str:
+    def _instruction(topic: Topic, turn_index: int, total_turns: int, nickname: str) -> str:
         lines = [
             "[상황]",
             f"- {turn_index + 1}번째 대화 / 총 {total_turns}번",
@@ -133,9 +127,7 @@ class ConversationAgent:
         lines.append("")
 
         if topic.choices:
-            lines.append(
-                f"이번엔 선택지를 자연스럽게 말에 녹여서 제시하세요: {' / '.join(topic.choices)}"
-            )
+            lines.append(f"이번엔 선택지를 자연스럽게 말에 녹여서 제시하세요: {' / '.join(topic.choices)}")
         else:
             lines.append(
                 "설문 문항처럼 읽지 말고, 방금 답변에 반응한 뒤 당신 얘기 한 줄로 문을 열고 "
@@ -158,7 +150,7 @@ class ConversationAgent:
             text = await _call(
                 system=SYSTEM_PROMPT,
                 messages=[*history, {"role": "user", "content": instruction}],
-                max_tokens=220,   # 리액션 + 내 얘기 + 넘어가기, 3문장
+                max_tokens=220,  # 리액션 + 내 얘기 + 넘어가기, 3문장
                 timeout=2.5,
             )
             return Utterance(text=text, source="llm")
@@ -196,9 +188,7 @@ class TaggingAgent:
         try:
             raw = await _call_json(
                 system=TAG_PROMPT,
-                messages=[
-                    {"role": "user", "content": f"질문: {question}\n답변: {answer}"}
-                ],
+                messages=[{"role": "user", "content": f"질문: {question}\n답변: {answer}"}],
                 max_tokens=120,
                 timeout=1.5,
             )
@@ -217,6 +207,7 @@ class TaggingAgent:
 
 # ══ 3. 추출 ════════════════════════════════════════════════
 
+
 def _scored_section() -> str:
     lines = []
     for key, d in SCORED.items():
@@ -228,9 +219,7 @@ def _scored_section() -> str:
 
 
 def _textual_section() -> str:
-    return "\n".join(
-        f"- {key} ({label}) — 문자열 배열로 추출" for key, label in TEXTUAL.items()
-    )
+    return "\n".join(f"- {key} ({label}) — 문자열 배열로 추출" for key, label in TEXTUAL.items())
 
 
 RUBRIC = f"""\
@@ -297,10 +286,7 @@ class BuildFailed(Exception):
 class ExtractionAgent:
     @staticmethod
     def _transcript(history: list[dict]) -> str:
-        return "\n".join(
-            f"{'사용자' if m['role'] == 'user' else '하루'}: {m['content']}"
-            for m in history
-        )
+        return "\n".join(f"{'사용자' if m['role'] == 'user' else '하루'}: {m['content']}" for m in history)
 
     async def extract(self, history: list[dict]) -> RawExtraction:
         try:

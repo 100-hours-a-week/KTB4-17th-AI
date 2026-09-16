@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 
 from .agents import (
-    BuildFailed,
     ConversationAgent,
     ExtractionAgent,
     TaggingAgent,
@@ -34,17 +33,14 @@ logger = logging.getLogger(__name__)
 
 # ══ 커버리지 ═══════════════════════════════════════════════
 
+
 class Coverage:
     """각 차원에 근거가 몇 건 쌓였는지. DB의 JSON과 오간다."""
 
     def __init__(self, data: dict | None = None) -> None:
         data = data or {}
-        self.primary: dict[str, int] = {
-            d: data.get("primary", {}).get(d, 0) for d in ALL_DIMENSIONS
-        }
-        self.secondary: dict[str, int] = {
-            d: data.get("secondary", {}).get(d, 0) for d in ALL_DIMENSIONS
-        }
+        self.primary: dict[str, int] = {d: data.get("primary", {}).get(d, 0) for d in ALL_DIMENSIONS}
+        self.secondary: dict[str, int] = {d: data.get("secondary", {}).get(d, 0) for d in ALL_DIMENSIONS}
 
     def apply(self, primary: list[str], secondary: list[str] | None = None) -> None:
         for d in primary:
@@ -65,6 +61,7 @@ class Coverage:
 
 
 # ══ 주제 선택 (흐름 = 코드) ════════════════════════════════
+
 
 def next_topic(
     coverage: Coverage,
@@ -87,13 +84,13 @@ def next_topic(
         if t.id in used_topic_ids:
             return False
         if t.is_closing:
-            return False                                   # 위에서만 선택
+            return False  # 위에서만 선택
         if turn_index == 0 and t.weight != Weight.LIGHT:
-            return False                                   # 첫 턴은 아이스브레이킹
+            return False  # 첫 턴은 아이스브레이킹
         if t.weight == Weight.HEAVY and turn_index < 5:
-            return False                                   # 무거운 건 중반 이후
+            return False  # 무거운 건 중반 이후
         if t.weight == Weight.HEAVY and remaining <= 2:
-            return False                                   # 무겁게 끝내지 않기
+            return False  # 무겁게 끝내지 않기
         return True
 
     candidates = [t for t in TOPICS if allowed(t)]
@@ -113,6 +110,7 @@ def next_topic(
 
 
 # ══ 서비스 ═════════════════════════════════════════════════
+
 
 class OnboardingService:
     def __init__(self, repo: PersonaRepository) -> None:
@@ -135,9 +133,7 @@ class OnboardingService:
 
     async def _ask_next(self, session: OnboardingSession) -> TurnResponse:
         coverage = Coverage(session.coverage)
-        topic = next_topic(
-            coverage, session.turn_index, session.total_turns, session.used_topic_ids
-        )
+        topic = next_topic(coverage, session.turn_index, session.total_turns, session.used_topic_ids)
 
         if topic is None or session.turn_index >= session.total_turns:
             return TurnResponse(
@@ -154,9 +150,7 @@ class OnboardingService:
             total_turns=session.total_turns,
             nickname=session.nickname,
         )
-        await self.repo.add_question(
-            session, topic.id, utterance.text, utterance.source
-        )
+        await self.repo.add_question(session, topic.id, utterance.text, utterance.source)
 
         return TurnResponse(
             session_id=session.id,
@@ -167,15 +161,11 @@ class OnboardingService:
 
     # ── 공개 API ──────────────────────────────────────────
 
-    async def start(
-        self, nickname: str, total_turns: int, user_id: str | None = None
-    ) -> TurnResponse:
+    async def start(self, nickname: str, total_turns: int, user_id: str | None = None) -> TurnResponse:
         session = await self.repo.create_session(nickname, total_turns, user_id)
         return await self._ask_next(session)
 
-    async def submit_answer(
-        self, session: OnboardingSession, answer: str
-    ) -> TurnResponse:
+    async def submit_answer(self, session: OnboardingSession, answer: str) -> TurnResponse:
         topic = TOPICS_BY_ID[session.pending_topic_id]
         question = session.turns[-1].question
 
@@ -196,9 +186,7 @@ class OnboardingService:
         )
         return await self._ask_next(session)
 
-    async def build_persona(
-        self, session: OnboardingSession
-    ) -> PersonaResponse:
+    async def build_persona(self, session: OnboardingSession) -> PersonaResponse:
         raw = await self.extraction.extract(self._history(session))
         coverage = Coverage(session.coverage)
 
