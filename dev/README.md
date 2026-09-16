@@ -15,9 +15,11 @@ dev/
     static/       테스트 프론트
 ```
 
+저장소 루트에서:
+
 ```bash
-python3 -m pip install -r dev/requirements.txt
-python3 -m uvicorn dev.persona.playground:app --reload --port 8000
+uv sync
+uv run uvicorn dev.persona.playground:app --reload --port 8000
 # → http://localhost:8000
 ```
 
@@ -25,5 +27,5 @@ python3 -m uvicorn dev.persona.playground:app --reload --port 8000
 
 1. `dev/<feature>/playground.py` — `make_app()` 으로 뼈대 받고, 그 기능 라우터를 `include_router(..., dependencies=app.state.deps)`
 2. 그 기능이 LLM 을 부르는 자리에 `llm.bind(<feature>.LLMError)` 를 끼움
-3. `get_db` 는 `SQLite(...).get_db` 로 override, startup 에서 `create_tables(Base)`
+3. `get_db` 는 `SQLite(...).get_db` 로 override, lifespan 에서 `create_tables(Base)`
 4. `static/index.html` — persona 것을 복사해서 엔드포인트만 바꿈

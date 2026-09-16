@@ -6,8 +6,9 @@
 
 - Python 3.12
 - FastAPI, Uvicorn
-- SQLAlchemy(asyncio), Alembic, asyncpg
-- LangChain(OpenAI), LangGraph
+- SQLAlchemy(asyncio)
+- Anthropic SDK (페르소나 LLM)
+- aiosqlite (로컬 플레이그라운드)
 - 패키지 매니저: [uv](https://docs.astral.sh/uv/)
 
 ## 사전 준비물
@@ -54,9 +55,9 @@ uv sync
 cp .env.example .env
 ```
 
-`.env` 파일을 열어 필요한 값을 채워주세요. (현재 `.env.example`에는 정의된 값이 없으며, 추가되는 대로 갱신 예정입니다.)
+`.env` 파일을 열어 키를 채워주세요. 앱 시작 시 `.env`를 읽습니다.
 
-페르소나 온보딩의 프로덕션 LLM은 Anthropic을 사용합니다. 플레이그라운드에서 돌릴 때는 요청 헤더 또는 환경 변수로 키를 넘깁니다.
+페르소나 온보딩의 프로덕션 LLM은 Anthropic을 사용합니다. 플레이그라운드에서는 요청 헤더 또는 환경 변수로 키를 넘깁니다.
 
 | 변수 | 용도 |
 | --- | --- |
@@ -94,7 +95,6 @@ uvicorn app.main:app --reload --port 8000
 `dev/`는 `app/`을 import만 하고 한 줄도 고치지 않습니다. DB는 SQLite로, LLM은 요청별 키로 바깥에서 갈아끼웁니다. Docker 이미지에는 넣지 않는 전제입니다.
 
 ```bash
-uv pip install -r dev/requirements.txt
 uv run uvicorn dev.persona.playground:app --reload --port 8000
 ```
 

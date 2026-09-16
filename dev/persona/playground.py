@@ -1,7 +1,6 @@
 """persona 플레이그라운드.
 
-    cd ai-server
-    python3 -m uvicorn dev.persona.playground:app --reload --port 8000
+    uv run uvicorn dev.persona.playground:app --reload --port 8000
     → http://localhost:8000
 
 features/persona 를 그대로 쓰되, 바깥에서 갈아끼운다:
@@ -12,10 +11,11 @@ features/persona 를 그대로 쓰되, 바깥에서 갈아끼운다:
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-from fastapi import Depends, Header
+from fastapi import Depends, FastAPI, Header
 
 from app.features.persona import agents, api
 from app.features.persona.models import Base
@@ -52,15 +52,23 @@ async def _persona_headers(x_tagging: str | None = Header(default=None)) -> None
 
 
 # ── 3. 앱 ────────────────────────────────────────────────
-app = make_app("persona playground (dev)", _HERE / "static", [Depends(_persona_headers)])
 sqlite = SQLite(_HERE / "playground.db")
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await sqlite.create_tables(Base)
+    yield
+
+
+app = make_app(
+    "persona playground (dev)",
+    _HERE / "static",
+    [Depends(_persona_headers)],
+    lifespan=lifespan,
+)
 app.dependency_overrides[api.get_db] = sqlite.get_db
 app.include_router(api.router, dependencies=app.state.deps)
-
-
-@app.on_event("startup")
-async def _tables() -> None:
-    await sqlite.create_tables(Base)
 
 
 @app.get("/meta")

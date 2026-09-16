@@ -1,11 +1,13 @@
 [project]
 name = "ai-server"
 version = "0.1.0"
-description = "Add your description here"
+description = "별이삼샵 AI API 서버"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "aiosqlite>=0.22.1",
     "alembic==1.20.0",
+    "anthropic>=1.6.0",
     "asyncpg==0.31.0",
     "fastapi==0.141.1",
     "httpx==0.28.1",
