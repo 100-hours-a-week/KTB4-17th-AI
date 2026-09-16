@@ -33,6 +33,10 @@ exclude = [".venv", "__pycache__"]
 select = ["E", "W", "F", "I", "UP", "B", "ASYNC"]
 ignore = ["E501", "B008", "ASYNC109"]
 
+[tool.ruff.lint.per-file-ignores]
+"app/main.py" = ["E402"]
+"dev/persona/playground.py" = ["E402"]
+
 [tool.ruff.lint.flake8-bugbear]
 extend-immutable-calls = [
     "fastapi.Depends",

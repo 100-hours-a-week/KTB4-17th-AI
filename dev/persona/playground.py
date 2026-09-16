@@ -15,7 +15,10 @@ from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
+from dotenv import load_dotenv
 from fastapi import Depends, FastAPI, Header
+
+load_dotenv()
 
 from app.features.persona import agents, api
 from app.features.persona.models import Base

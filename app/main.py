@@ -1,3 +1,7 @@
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import APIRouter, FastAPI
 
 from app.features.persona.api import router as persona_router
