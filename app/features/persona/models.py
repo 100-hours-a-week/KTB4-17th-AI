@@ -2,6 +2,9 @@
 
 대화 원문을 보관하는 이유: 추출이 실패하면 재시도해야 하고,
 루브릭을 고친 뒤 과거 대화로 재추출해서 품질을 비교해야 한다.
+
+Base 는 app.core.db 의 것을 쓴다 (simulation·practice 가 personas 에 FK 를 건다).
+`from app.features.persona.models import Base` 는 그대로 동작한다 — 플레이그라운드 호환.
 """
 
 from __future__ import annotations
@@ -10,7 +13,9 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.db import Base
 
 
 def _uuid() -> str:
@@ -19,10 +24,6 @@ def _uuid() -> str:
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 class OnboardingSession(Base):

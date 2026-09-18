@@ -19,7 +19,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.features.persona.schemas import SCORED, PersonaResponse
+from app.features.persona.schemas import SCORED, PersonaBrief, PersonaRef, PersonaResponse
 
 # ══ 차원별 궁합 규칙 ═══════════════════════════════════════
 # "비슷해야 좋은 것"과 "둘 다 높아야 좋은 것"은 다르다.
@@ -150,16 +150,24 @@ def grade_of(score: int) -> Grade:
     return Grade.CAUTION
 
 
-# ══ 입력 ═══════════════════════════════════════════════════
-# 시뮬레이션 모듈이 아직 없어 대화록 타입을 여기 둔다. run_simulation 이 생기면 같은 타입을 쓴다.
+# ══ 대화록 ═════════════════════════════════════════════════
+# 시뮬레이션(service.run)이 만들고, 리포트(report.py)가 읽는다.
+# "턴" 은 왕복 하나 — a 가 말하고 b 가 받는다. 10턴이면 발화 20줄. round = index // 2.
 
 Speaker = Literal["a", "b"]
+
+DEFAULT_TURNS = 10
+MIN_TURNS, MAX_TURNS = 3, 15
 
 
 class Turn(BaseModel):
     index: int = Field(ge=0)
     speaker: Speaker
     text: str = Field(min_length=1, max_length=1000)
+
+    @property
+    def round(self) -> int:
+        return self.index // 2
 
 
 class Transcript(BaseModel):
@@ -188,7 +196,9 @@ class Highlight(BaseModel):
 
 
 class ReportNarrative(BaseModel):
-    """LLM이 쓰는 서술 층. 점수와 같은 호출에서 나오지 않는다 — 점수는 규칙, 서술은 LLM."""
+    """LLM이 쓰는 서술 층. 점수는 규칙으로 먼저 나오고, LLM 은 그걸 설명만 한다.
+
+    시뮬레이션에서는 대본과 같은 호출(1회)에서 나온다 — ScriptOutput.report."""
 
     model_config = {"extra": "ignore"}
 
@@ -201,6 +211,24 @@ class ReportNarrative(BaseModel):
     date_comment: str = Field(default="", max_length=300)
     # ideal 영역만 LLM이 점수를 준다. {차원: 0~100}. 대화에서 근거를 못 찾으면 키 없음.
     ideal_fit: dict[str, int] = Field(default_factory=dict)
+
+
+class ScriptLine(BaseModel):
+    """LLM 대본 한 줄. index 는 service 가 순서대로 붙인다."""
+
+    speaker: Speaker
+    text: str = Field(min_length=1, max_length=1000)
+
+
+class ScriptOutput(BaseModel):
+    """시뮬레이션 LLM 1회 호출의 원본 출력 — 대본 + 리포트 서술을 한 번에.
+
+    대본만 따로 뽑고 리포트를 또 부르면 호출이 2회가 된다. 요구사항은 1회."""
+
+    model_config = {"extra": "ignore"}
+
+    transcript: list[ScriptLine] = Field(min_length=2)
+    report: ReportNarrative
 
 
 # ══ API 출력 ═══════════════════════════════════════════════
@@ -265,3 +293,38 @@ class MatchingReport(BaseModel):
 
     narrative_source: Literal["llm", "template"] = "template"
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+# ══ 시뮬레이션 실행 API ═════════════════════════════════════
+
+
+class SimulationRequest(BaseModel):
+    """me = 현재 사용자, partner = 상대. 둘 다 DB 에 저장된 페르소나여야 한다."""
+
+    me: PersonaRef
+    partner: PersonaRef
+    turns: int = Field(default=DEFAULT_TURNS, ge=MIN_TURNS, le=MAX_TURNS)  # 왕복 수
+
+
+class SimulationResponse(BaseModel):
+    simulation_id: str
+    me: PersonaBrief
+    partner: PersonaBrief
+    turns: int
+    transcript: list[Turn]  # 사용자에게 그대로 보여주는 대화. speaker a = me, b = partner
+    report: MatchingReport
+    created_at: datetime
+
+
+class SimulationSummary(BaseModel):
+    """목록용 한 줄."""
+
+    simulation_id: str
+    me: PersonaBrief
+    partner: PersonaBrief
+    turns: int
+    overall_score: int
+    grade: Grade
+    grade_label: str
+    headline: str
+    created_at: datetime

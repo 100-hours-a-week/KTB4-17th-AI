@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연습대화 플레이그라운드</title>
+<style>
+  :root { --bg:#f6f4f0; --card:#fff; --line:#e4e0d8; --ink:#1f1d1a; --muted:#7a746b; --me:#2f6f5e; --me-ink:#fff; --them:#efeae2; --accent:#d85a30; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  .wrap { max-width:720px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:12px; min-height:100vh; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  h1 { font-size:17px; margin:0 0 8px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  label { font-size:13px; color:var(--muted); }
+  input, select, textarea { width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font:inherit; background:#fff; }
+  .field { flex:1 1 200px; }
+  button { padding:9px 14px; border:0; border-radius:8px; background:var(--me); color:var(--me-ink); font:inherit; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.secondary { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border-radius:0; background:#fff; color:var(--ink); }
+  .seg button.on { background:var(--ink); color:#fff; }
+  .hint { font-size:12px; color:var(--muted); }
+  #chat { flex:1; display:flex; flex-direction:column; gap:8px; padding:12px 4px; overflow-y:auto; min-height:320px; }
+  .msg { max-width:82%; padding:9px 13px; border-radius:14px; white-space:pre-wrap; word-break:keep-all; }
+  .them { align-self:flex-start; background:var(--them); border-bottom-left-radius:4px; }
+  .me { align-self:flex-end; background:var(--me); color:var(--me-ink); border-bottom-right-radius:4px; }
+  .sys { align-self:center; font-size:12px; color:var(--muted); }
+  .notice { align-self:flex-start; font-size:13px; color:var(--accent); background:#fbeee8; }
+  .typing::after { content:'▍'; animation:blink 1s steps(1) infinite; color:var(--muted); }
+  @keyframes blink { 50% { opacity:0; } }
+  #composer { display:flex; gap:8px; align-items:flex-end; }
+  #composer textarea { resize:none; height:44px; }
+  .count { font-size:11px; color:var(--muted); min-width:52px; text-align:right; }
+  details summary { cursor:pointer; font-size:13px; color:var(--muted); }
+  pre { font-size:12px; overflow:auto; background:#faf8f4; padding:10px; border-radius:8px; max-height:240px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>연습대화 플레이그라운드 <span class="hint">features/practice 그대로 · SSE · 상대 페르소나가 말함</span></h1>
+    <div class="row">
+      <div class="field">
+        <label>API 키 — Gemini (<code>AIza…</code>) 또는 Anthropic (<code>sk-ant-…</code>)</label>
+        <input type="password" id="apikey" placeholder="AIza… / sk-ant-…" autocomplete="off">
+      </div>
+      <div class="field" style="flex:0 1 220px">
+        <label>프로바이더</label><br>
+        <div class="seg" id="provider"><button data-provider="gemini" class="on">Gemini</button><button data-provider="anthropic">Anthropic</button></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field"><label>상대 페르소나 (말하는 쪽)</label><select id="partner"></select></div>
+      <div class="field"><label>내 페르소나 (선택 — 상대가 나를 조금 앎)</label><select id="me"><option value="">없음</option></select></div>
+      <div class="field" style="flex:0 1 140px"><label>내 닉네임</label><input type="text" id="nickname" value="은서" maxlength="20"></div>
+    </div>
+    <div class="row">
+      <button class="secondary" id="reload">페르소나 다시 불러오기</button>
+      <span class="hint" id="pcount"></span>
+      <span style="flex:1"></span>
+      <button class="secondary" id="end" hidden>대화 끝내기</button>
+      <button id="start">시작</button>
+    </div>
+    <div class="hint">페르소나는 <a href="http://localhost:8000" target="_blank">persona 플레이그라운드</a>(같은 SQLite)에서 만들어 두세요. 상대가 먼저 인사하고, 답하면 SSE 로 답이 흘러 들어옵니다.</div>
+  </div>
+
+  <div id="chat"></div>
+
+  <div class="card" id="composer" hidden>
+    <textarea id="input" maxlength="500" placeholder="메시지 (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
+    <span class="count" id="count">0/500</span>
+    <button id="send">보내기</button>
+  </div>
+  <div class="card" id="raw" hidden><details><summary>마지막 SSE 원문 (개발용)</summary><pre id="rawpre"></pre></details></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const chat = $('#chat');
+let provider = 'gemini', personas = [], session = null, busy = false;
+try { $('#apikey').value = sessionStorage.getItem('apikey') || ''; provider = sessionStorage.getItem('provider') || 'gemini'; } catch (_) {}
+function setProvider(p) { provider = p; [...$('#provider').children].forEach(x => x.classList.toggle('on', x.dataset.provider === p)); try { sessionStorage.setItem('provider', p); } catch (_) {} }
+$('#provider').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setProvider(b.dataset.provider); });
+$('#apikey').addEventListener('input', () => { const k = $('#apikey').value.trim(); if (k.startsWith('AIza')) setProvider('gemini'); else if (k.startsWith('sk-ant-')) setProvider('anthropic'); });
+setProvider(provider);
+
+function headers() {
+  const key = $('#apikey').value.trim(); try { sessionStorage.setItem('apikey', key); } catch (_) {}
+  const h = { 'Content-Type': 'application/json', 'X-Provider': provider }; if (key) h['X-Api-Key'] = key; return h;
+}
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+  const text = await r.text(); let data; try { data = JSON.parse(text); } catch (_) { data = { detail: text }; }
+  if (!r.ok) throw new Error(`${r.status} ${typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)}`);
+  return data;
+}
+const esc = (t) => String(t ?? '');
+
+async function loadPersonas() {
+  personas = await api('GET', '/personas');
+  const opt = (p) => `<option value="${p.persona_id}">${esc(p.nickname)} · v${p.version} · ${p.accuracy}%${p.headline ? ' · ' + esc(p.headline) : ''}</option>`;
+  $('#partner').innerHTML = personas.map(opt).join('');
+  $('#me').innerHTML = '<option value="">없음</option>' + personas.map(opt).join('');
+  $('#pcount').textContent = `저장된 페르소나 ${personas.length}개`;
+}
+$('#reload').onclick = () => loadPersonas().catch(e => alert(e.message));
+loadPersonas().catch(() => { $('#pcount').textContent = '페르소나 목록을 못 불러왔어요'; });
+
+function bubble(cls, text) { const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text; chat.appendChild(d); chat.scrollTop = chat.scrollHeight; return d; }
+
+// ── SSE (POST 라 EventSource 대신 fetch + ReadableStream) ──
+// 이벤트: start → delta… → done | error. 한 블록은 빈 줄로 끝난다.
+async function sse(path, body, onEvent) {
+  const r = await fetch(path, { method: 'POST', headers: headers(), body: body ? JSON.stringify(body) : undefined });
+  if (!r.ok) { const t = await r.text(); throw new Error(`${r.status} ${t}`); }
+  const reader = r.body.getReader(), dec = new TextDecoder(); let buf = '', raw = '';
+  while (true) {
+    const { value, done } = await reader.read(); if (done) break;
+    const chunk = dec.decode(value, { stream: true }); buf += chunk; raw += chunk;
+    let i; while ((i = buf.indexOf('\n\n')) >= 0) {
+      const block = buf.slice(0, i); buf = buf.slice(i + 2);
+      let ev = 'message', data = '';
+      for (const line of block.split('\n')) { if (line.startsWith('event:')) ev = line.slice(6).trim(); else if (line.startsWith('data:')) data += line.slice(5).trim(); }
+      onEvent(ev, data ? JSON.parse(data) : {});
+    }
+  }
+  $('#rawpre').textContent = raw; $('#raw').hidden = false;
+}
+
+async function personaTurn(path, body) {
+  busy = true; $('#send').disabled = true;
+  const d = bubble('them typing', '');
+  try {
+    await sse(path, body, (ev, data) => {
+      if (ev === 'delta') { d.textContent += data.text; chat.scrollTop = chat.scrollHeight; }
+      else if (ev === 'done') { d.textContent = data.content; d.classList.remove('typing'); if (data.source === 'fallback') bubble('sys', '(LLM 실패 — 폴백 문장)'); }
+      else if (ev === 'error') { d.remove(); bubble('notice', '오류: ' + data.detail); }
+    });
+  } catch (e) { d.remove(); bubble('notice', '오류: ' + e.message); }
+  finally { d.classList.remove('typing'); busy = false; $('#send').disabled = false; $('#input').focus(); }
+}
+
+$('#start').onclick = async () => {
+  if (!$('#apikey').value.trim()) { alert('API 키를 입력하세요.'); return; }
+  const partner = $('#partner').value; if (!partner) { alert('상대 페르소나가 필요해요.'); return; }
+  $('#start').disabled = true; chat.innerHTML = ''; $('#raw').hidden = true;
+  try {
+    const body = { partner: { persona_id: partner }, nickname: $('#nickname').value.trim() || null };
+    if ($('#me').value) body.me = { persona_id: $('#me').value };
+    session = await api('POST', '/v1/practice/start', body);
+    bubble('sys', `${session.partner.nickname}님과 연습 대화 · ${session.partner.headline || ''} · ${session.session_id}`);
+    $('#composer').hidden = false; $('#end').hidden = false;
+    await personaTurn(`/v1/practice/${session.session_id}/opening`);
+  } catch (e) { bubble('notice', '오류: ' + e.message); }
+  finally { $('#start').disabled = false; }
+};
+
+async function send() {
+  const text = $('#input').value.trim(); if (!text || busy || !session) return;
+  $('#input').value = ''; $('#count').textContent = '0/500';
+  bubble('me', text);
+  await personaTurn(`/v1/practice/${session.session_id}/messages`, { message: text });
+}
+$('#send').onclick = send;
+$('#input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } });
+$('#input').addEventListener('input', (e) => { $('#count').textContent = `${e.target.value.length}/500`; });
+$('#end').onclick = async () => {
+  if (!session) return;
+  try { const s = await api('POST', `/v1/practice/${session.session_id}/end`); bubble('sys', `대화를 끝냈어요 · 메시지 ${s.messages.length}개`); $('#composer').hidden = true; $('#end').hidden = true; session = null; }
+  catch (e) { bubble('notice', '오류: ' + e.message); }
+};
+</script>
+</body>
+</html>

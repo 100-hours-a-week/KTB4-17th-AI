@@ -138,6 +138,23 @@ class PersonaRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def get_persona(self, persona_id: str) -> PersonaRecord | None:
+        return await self.db.get(PersonaRecord, persona_id)
+
+    async def latest_persona_for_user(self, user_id: str) -> PersonaRecord | None:
+        """그 사용자의 가장 최근 페르소나. 세션이 여럿이면 가장 늦게 만든 행."""
+        stmt = (
+            select(PersonaRecord)
+            .where(PersonaRecord.user_id == user_id)
+            .order_by(PersonaRecord.created_at.desc(), PersonaRecord.version.desc())
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def get_session_brief(self, session_id: str) -> OnboardingSession | None:
+        """turns 를 안 싣는 가벼운 조회. 닉네임만 필요할 때 (simulation·practice)."""
+        return await self.db.get(OnboardingSession, session_id)
+
     async def latest_before(self, record: PersonaRecord) -> PersonaRecord | None:
         if record.previous_id is None:
             return None

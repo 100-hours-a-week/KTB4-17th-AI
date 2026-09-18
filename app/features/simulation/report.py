@@ -1,15 +1,19 @@
 """매칭 리포트 생성.
 
-  build_report(ReportInput) → MatchingReport
+  score_layer(pa, pb)                       → (dims, area_scores, risks)   규칙 점수. LLM 없음
+  assemble_report(ReportInput, narrative)   → MatchingReport               점수 + 서술을 한 장으로
+  build_report(ReportInput, agent)          → MatchingReport               서술을 ReportAgent 로 받아서 위 둘
 
 점수 층은 여기서 규칙으로 계산한다 (LLM 없음, 같은 입력이면 같은 결과).
-서술 층은 ReportAgent 에 맡기고, 실패하면 점수만으로 템플릿 문장을 만든다.
+서술 층은 밖에서 들어온다 — 시뮬레이션은 대본과 같은 LLM 호출에서 받아 assemble_report 로 바로 오고,
+/report/preview 는 build_report 가 ReportAgent 를 불러 받는다. 실패하면 점수만으로 템플릿 문장을 만든다.
 그래서 LLM 키가 없어도 리포트는 항상 나온다 — 프론트가 형식을 먼저 붙일 수 있게.
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Literal
 
 from app.features.persona.schemas import CONFIDENCE_LOW, SCORED, PersonaResponse
 
@@ -166,40 +170,29 @@ def _confidence(pa: PersonaResponse, pb: PersonaResponse, dims: list[DimensionFi
     return ReportConfidence(accuracy=accuracy, low_dimensions=low, note=note)
 
 
-async def build_report(inp: ReportInput, agent: ReportAgent | None = None) -> MatchingReport:
+def score_layer(
+    pa: PersonaResponse, pb: PersonaResponse, ideal_fit: dict[str, int] | None = None
+) -> tuple[list[DimensionFit], dict[str, int | None], list[Risk]]:
+    """규칙 점수 한 묶음. ideal_fit 이 없으면 ideal 차원은 None (LLM 판정 전)."""
+    dims = score_dimensions(pa, pb, ideal_fit)
+    return dims, score_areas(dims), triggered_risks(pa, pb)
+
+
+def template_narrative(pa: PersonaResponse, pb: PersonaResponse) -> ReportNarrative:
+    """LLM 없이 점수만으로. 시뮬레이션은 쓰지 않는다 (대본이 없으면 시뮬레이션 자체가 실패)."""
+    dims, area_scores, risks = score_layer(pa, pb)
+    return _template_narrative(area_scores, dims, risks)
+
+
+def assemble_report(
+    inp: ReportInput, narrative: ReportNarrative, source: Literal["llm", "template"] = "llm"
+) -> MatchingReport:
+    """점수 층(규칙) + 서술 층(들어온 것) → 리포트 한 장. LLM 호출 없음."""
     pa, pb = inp.persona_a, inp.persona_b
 
-    # 1) 규칙 점수 (ideal 은 아직 None)
-    dims = score_dimensions(pa, pb)
-    area_scores = score_areas(dims)
-    risks = triggered_risks(pa, pb)
+    # 규칙 점수. LLM 이 ideal 을 판정했으면 그걸 넣어 ideal 차원까지 채운다
+    dims, area_scores, risks = score_layer(pa, pb, narrative.ideal_fit or None)
 
-    # 2) 서술 — LLM, 실패 시 템플릿
-    narrative: ReportNarrative
-    source = "template"
-    if agent is not None:
-        try:
-            narrative = await agent.write(
-                persona_a=pa,
-                persona_b=pb,
-                transcript=inp.transcript,
-                name_a=inp.nickname_a,
-                name_b=inp.nickname_b,
-                area_scores=area_scores,
-                dim_scores={d.dimension: d.score for d in dims},
-            )
-            source = "llm"
-            # ideal 판정이 들어왔으면 점수 층 다시
-            if narrative.ideal_fit:
-                dims = score_dimensions(pa, pb, narrative.ideal_fit)
-                area_scores = score_areas(dims)
-        except LLMError as e:
-            logger.warning("report narrative fallback: %s", e)
-            narrative = _template_narrative(area_scores, dims, risks)
-    else:
-        narrative = _template_narrative(area_scores, dims, risks)
-
-    # 3) 조립
     total = overall_score(area_scores, risks)
     by_area = {d.dimension: d for d in dims}
     areas = []
@@ -244,3 +237,26 @@ async def build_report(inp: ReportInput, agent: ReportAgent | None = None) -> Ma
         confidence=_confidence(pa, pb, dims),
         narrative_source=source,
     )
+
+
+async def build_report(inp: ReportInput, agent: ReportAgent | None = None) -> MatchingReport:
+    """서술을 ReportAgent 로 받아서 조립. 대화록을 밖에서 줄 때(/report/preview) 쓴다."""
+    pa, pb = inp.persona_a, inp.persona_b
+    if agent is None:
+        return assemble_report(inp, template_narrative(pa, pb), "template")
+
+    dims, area_scores, _ = score_layer(pa, pb)
+    try:
+        narrative = await agent.write(
+            persona_a=pa,
+            persona_b=pb,
+            transcript=inp.transcript,
+            name_a=inp.nickname_a,
+            name_b=inp.nickname_b,
+            area_scores=area_scores,
+            dim_scores={d.dimension: d.score for d in dims},
+        )
+    except LLMError as e:
+        logger.warning("report narrative fallback: %s", e)
+        return assemble_report(inp, template_narrative(pa, pb), "template")
+    return assemble_report(inp, narrative, "llm")

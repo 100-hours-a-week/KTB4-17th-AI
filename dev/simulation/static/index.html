@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>시뮬레이션 플레이그라운드</title>
+<style>
+  :root { --bg:#f6f4f0; --card:#fff; --line:#e4e0d8; --ink:#1f1d1a; --muted:#7a746b; --me:#2f6f5e; --me-ink:#fff; --them:#efeae2; --accent:#d85a30; --good:#2f6f5e; --ok:#b8860b; --caution:#c0392b; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  .wrap { max-width:760px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  h1 { font-size:17px; margin:0 0 8px; }
+  h2 { font-size:15px; margin:16px 0 6px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  label { font-size:13px; color:var(--muted); }
+  input, select { width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font:inherit; background:#fff; }
+  .field { flex:1 1 200px; }
+  button { padding:9px 14px; border:0; border-radius:8px; background:var(--me); color:var(--me-ink); font:inherit; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; }
+  button.secondary { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border-radius:0; background:#fff; color:var(--ink); }
+  .seg button.on { background:var(--ink); color:#fff; }
+  .hint { font-size:12px; color:var(--muted); }
+  #chat { display:flex; flex-direction:column; gap:8px; padding:12px 4px; }
+  .msg { max-width:82%; padding:9px 13px; border-radius:14px; white-space:pre-wrap; word-break:keep-all; }
+  .msg .who { display:block; font-size:11px; color:var(--muted); margin-bottom:2px; }
+  .them { align-self:flex-start; background:var(--them); border-bottom-left-radius:4px; }
+  .me { align-self:flex-end; background:var(--me); color:var(--me-ink); border-bottom-right-radius:4px; }
+  .me .who { color:#d6e8e2; }
+  .sys { align-self:center; font-size:12px; color:var(--muted); }
+  .notice { align-self:flex-start; font-size:13px; color:var(--accent); background:#fbeee8; }
+  .overall { display:flex; gap:16px; align-items:center; }
+  .score { font-size:44px; font-weight:700; line-height:1; }
+  .grade { font-size:13px; padding:3px 10px; border-radius:999px; color:#fff; display:inline-block; }
+  .GOOD { background:var(--good); } .OK { background:var(--ok); } .CAUTION { background:var(--caution); }
+  .headline { font-size:19px; margin:0 0 4px; }
+  .summary { margin:0; line-height:1.7; }
+  .area { border-top:1px solid var(--line); padding:10px 0; }
+  .area-head { display:flex; align-items:center; gap:10px; }
+  .area-head b { min-width:72px; }
+  .track { flex:1; height:8px; background:var(--line); border-radius:4px; overflow:hidden; }
+  .fill { height:100%; background:var(--me); }
+  .area-comment { font-size:13px; color:var(--muted); margin:4px 0 6px; }
+  .dims { margin:0; padding:0; list-style:none; font-size:12px; display:grid; grid-template-columns:1fr 1fr; gap:2px 12px; }
+  .dims li { display:flex; gap:6px; align-items:center; }
+  .dims .lbl { flex:1; }
+  .dims .low { color:var(--muted); }
+  .dims .sc { min-width:28px; text-align:right; font-variant-numeric:tabular-nums; }
+  .list { margin:0; padding-left:18px; }
+  .list li { margin:3px 0; }
+  .hl { padding:8px 12px; border-radius:10px; background:var(--them); margin:6px 0; font-size:13px; }
+  .hl.friction { background:#fbeee8; }
+  .hl q { display:block; font-style:normal; margin-bottom:2px; }
+  .hl q::before, .hl q::after { content:''; }
+  .tag { font-size:11px; padding:1px 7px; border-radius:999px; background:#fff; border:1px solid var(--line); margin-right:6px; }
+  details summary { cursor:pointer; font-size:13px; color:var(--muted); }
+  pre { font-size:12px; overflow:auto; background:#faf8f4; padding:10px; border-radius:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>시뮬레이션 플레이그라운드 <span class="hint">features/simulation 그대로 · LLM 1회로 10턴 대본 + 리포트</span></h1>
+    <div class="row">
+      <div class="field">
+        <label>API 키 — Gemini (<code>AIza…</code>) 또는 Anthropic (<code>sk-ant-…</code>)</label>
+        <input type="password" id="apikey" placeholder="AIza… / sk-ant-…" autocomplete="off">
+      </div>
+      <div class="field" style="flex:0 1 220px">
+        <label>프로바이더</label><br>
+        <div class="seg" id="provider"><button data-provider="gemini" class="on">Gemini</button><button data-provider="anthropic">Anthropic</button></div>
+      </div>
+    </div>
+    <div class="row">
+      <div class="field"><label>나 (persona a)</label><select id="me"></select></div>
+      <div class="field"><label>상대 (persona b)</label><select id="partner"></select></div>
+      <div class="field" style="flex:0 1 110px"><label>턴(왕복)</label><input type="number" id="turns" value="10" min="3" max="15"></div>
+    </div>
+    <div class="row">
+      <button class="secondary" id="reload">페르소나 다시 불러오기</button>
+      <span class="hint" id="pcount"></span>
+      <span style="flex:1"></span>
+      <button id="run">시뮬레이션 실행</button>
+    </div>
+    <div class="hint">페르소나는 <a href="http://localhost:8000" target="_blank">persona 플레이그라운드</a>(같은 SQLite)에서 둘 이상 만들어 두세요. 키는 브라우저 세션에만 두고 <code>X-Api-Key</code> 헤더로 보냅니다.</div>
+  </div>
+
+  <div class="card" id="chatcard" hidden><h2 style="margin-top:0">가상 소개팅 대화</h2><div id="chat"></div></div>
+  <div class="card" id="report" hidden></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+let provider = 'gemini', personas = [];
+try { $('#apikey').value = sessionStorage.getItem('apikey') || ''; provider = sessionStorage.getItem('provider') || 'gemini'; } catch (_) {}
+function setProvider(p) { provider = p; [...$('#provider').children].forEach(x => x.classList.toggle('on', x.dataset.provider === p)); try { sessionStorage.setItem('provider', p); } catch (_) {} }
+$('#provider').addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) setProvider(b.dataset.provider); });
+$('#apikey').addEventListener('input', () => { const k = $('#apikey').value.trim(); if (k.startsWith('AIza')) setProvider('gemini'); else if (k.startsWith('sk-ant-')) setProvider('anthropic'); });
+setProvider(provider);
+
+function headers() {
+  const key = $('#apikey').value.trim(); try { sessionStorage.setItem('apikey', key); } catch (_) {}
+  const h = { 'Content-Type': 'application/json', 'X-Provider': provider }; if (key) h['X-Api-Key'] = key; return h;
+}
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+  const text = await r.text(); let data; try { data = JSON.parse(text); } catch (_) { data = { detail: text }; }
+  if (!r.ok) throw new Error(`${r.status} ${typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)}`);
+  return data;
+}
+const esc = (t) => String(t ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+
+async function loadPersonas() {
+  personas = await api('GET', '/personas');
+  const opt = (p) => `<option value="${p.persona_id}">${esc(p.nickname)} · v${p.version} · ${p.accuracy}% ${p.headline ? '· ' + esc(p.headline) : ''}</option>`;
+  $('#me').innerHTML = personas.map(opt).join('');
+  $('#partner').innerHTML = personas.map(opt).join('');
+  if (personas.length > 1) $('#partner').selectedIndex = 1;
+  $('#pcount').textContent = `저장된 페르소나 ${personas.length}개`;
+}
+$('#reload').onclick = () => loadPersonas().catch(e => alert(e.message));
+loadPersonas().catch(() => { $('#pcount').textContent = '페르소나 목록을 못 불러왔어요'; });
+
+const chat = $('#chat');
+function bubble(cls, text, who) { const d = document.createElement('div'); d.className = 'msg ' + cls; if (who) { const w = document.createElement('span'); w.className = 'who'; w.textContent = who; d.appendChild(w); } d.appendChild(document.createTextNode(text)); chat.appendChild(d); return d; }
+
+$('#run').onclick = async () => {
+  if (!$('#apikey').value.trim()) { alert('API 키를 입력하세요.'); return; }
+  const me = $('#me').value, partner = $('#partner').value;
+  if (!me || !partner) { alert('페르소나가 둘 이상 필요해요.'); return; }
+  if (me === partner) { alert('나와 상대는 다른 페르소나여야 해요.'); return; }
+  $('#run').disabled = true; chat.innerHTML = ''; $('#chatcard').hidden = false; $('#report').hidden = true;
+  bubble('sys', '두 페르소나가 대화 중이에요 (LLM 1회 · 최대 2분)…');
+  try {
+    const r = await api('POST', '/v1/simulation', { me: { persona_id: me }, partner: { persona_id: partner }, turns: Number($('#turns').value) || 10 });
+    chat.innerHTML = '';
+    bubble('sys', `${r.me.nickname} ↔ ${r.partner.nickname} · ${r.turns}턴 · ${r.simulation_id}`);
+    r.transcript.forEach(t => bubble(t.speaker === 'a' ? 'me' : 'them', t.text, `[${t.index}] ${t.speaker === 'a' ? r.me.nickname : r.partner.nickname}`));
+    renderReport(r);
+  } catch (e) { bubble('notice', '오류: ' + e.message); }
+  finally { $('#run').disabled = false; }
+};
+
+function renderReport(r) {
+  const R = r.report, o = R.overall;
+  let html = `<div class="hint" style="margin-bottom:8px">매칭 리포트 · ${esc(r.me.nickname)} × ${esc(r.partner.nickname)} · 서술 ${R.narrative_source}</div>`;
+  html += `<div class="overall"><div class="score">${o.score}</div><div><span class="grade ${o.grade}">${esc(o.grade_label)}</span><h1 class="headline" style="margin-top:6px">${esc(o.headline)}</h1><p class="summary">${esc(o.summary)}</p></div></div>`;
+
+  html += '<h2>영역별</h2>';
+  for (const a of R.areas) {
+    const s = a.score ?? 0;
+    html += `<div class="area"><div class="area-head"><b>${esc(a.label)}</b><div class="track"><div class="fill" style="width:${s}%"></div></div><span class="sc">${a.score ?? '–'}</span>${a.grade ? `<span class="grade ${a.grade}">${esc(a.grade_label)}</span>` : ''}</div>`;
+    if (a.comment) html += `<div class="area-comment">${esc(a.comment)}</div>`;
+    html += '<ul class="dims">' + a.dimensions.map(d => `<li class="${d.confidence === 'LOW' ? 'low' : ''}"><span class="lbl">${esc(d.label)} <span class="hint">${d.a}·${d.b}</span></span><span class="sc">${d.score ?? '–'}</span></li>`).join('') + '</ul></div>';
+  }
+
+  if (R.highlights?.length) {
+    html += '<h2>대화 속 순간</h2>' + R.highlights.map(h => `<div class="hl ${h.kind}"><span class="tag">${h.kind === 'click' ? '통했어요' : '어긋났어요'} · #${h.turn_index}</span><q>"${esc(h.quote)}"</q><span class="hint">${esc(h.why)}</span></div>`).join('');
+  }
+  if (R.strengths?.length) html += '<h2>잘 맞는 점</h2><ul class="list">' + R.strengths.map(s => `<li>${esc(s)}</li>`).join('') + '</ul>';
+  if (R.cautions?.length) html += '<h2>살펴볼 점</h2><ul class="list">' + R.cautions.map(s => `<li>${esc(s)}</li>`).join('') + '</ul>';
+  if (R.risks?.length) html += `<div class="hint">위험 조합: ${R.risks.join(', ')}</div>`;
+
+  const ds = R.date_suggestion;
+  if (ds && (ds.suggested?.length || ds.avoid?.length || ds.comment)) {
+    html += '<h2>추천 데이트</h2>';
+    if (ds.suggested?.length) html += `<div>둘 다 좋아해요: ${esc(ds.suggested.join(', '))}</div>`;
+    if (ds.avoid?.length) html += `<div>피하는 게 좋아요: ${esc(ds.avoid.join(', '))}</div>`;
+    if (ds.comment) html += `<div class="hint">${esc(ds.comment)}</div>`;
+  }
+  html += `<h2>이 리포트의 신뢰도</h2><div>페르소나 정확도 ${R.confidence.accuracy}% ${R.confidence.note ? '· ' + esc(R.confidence.note) : ''}</div>`;
+  if (R.confidence.low_dimensions?.length) html += `<div class="hint">근거 부족: ${R.confidence.low_dimensions.join(', ')}</div>`;
+  html += `<details style="margin-top:10px"><summary>원본 데이터 (개발용)</summary><pre>${esc(JSON.stringify(r, null, 2))}</pre></details>`;
+  $('#report').innerHTML = html; $('#report').hidden = false; $('#report').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>

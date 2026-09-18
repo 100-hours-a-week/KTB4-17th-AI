@@ -227,6 +227,29 @@ def changes_between(previous: PersonaRecord | None, current: PersonaRecord) -> l
     return out
 
 
+def persona_response(
+    record: PersonaRecord,
+    gaps: list[Gap] | None = None,
+    changes: list[Change] | None = None,
+) -> PersonaResponse:
+    """DB 행 → API 모델. 온보딩 밖(simulation·practice)에서도 쓰므로 세션 없이 만들 수 있다.
+
+    gaps·changes 는 온보딩 화면에서만 의미가 있어 호출부가 넣어준다."""
+    return PersonaResponse(
+        persona_id=record.id,
+        version=record.version,
+        scores=record.scores,
+        confidence=record.confidence,
+        narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
+        accuracy=accuracy_of(record.confidence),
+        gaps=gaps or [],
+        changes=changes or [],
+        confirmed=record.confirmed_at is not None,
+        generated_at=record.created_at,
+        **{k: record.texts.get(k, []) for k in TEXTUAL},
+    )
+
+
 # ══ 서비스 ═════════════════════════════════════════════════
 
 
@@ -360,18 +383,10 @@ class OnboardingService:
     def _to_response(
         self, session: OnboardingSession, record: PersonaRecord, previous: PersonaRecord | None
     ) -> PersonaResponse:
-        return PersonaResponse(
-            persona_id=record.id,
-            version=record.version,
-            scores=record.scores,
-            confidence=record.confidence,
-            narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
-            accuracy=accuracy_of(record.confidence),
+        return persona_response(
+            record,
             gaps=gaps_of(session, record.confidence),
             changes=changes_between(previous, record),
-            confirmed=record.confirmed_at is not None,
-            generated_at=record.created_at,
-            **{k: record.texts.get(k, []) for k in TEXTUAL},
         )
 
     async def get_latest(self, session: OnboardingSession) -> PersonaResponse:

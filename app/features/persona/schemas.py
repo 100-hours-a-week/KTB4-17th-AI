@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import IntEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # ══ 차원 정의 ══════════════════════════════════════════════
 
@@ -380,6 +380,9 @@ class Tags(BaseModel):
 class StartRequest(BaseModel):
     nickname: str = Field(min_length=1, max_length=20)
     total_turns: int = Field(default=10, ge=5, le=15)
+    # 앱 사용자 식별자. 시뮬레이션·연습대화가 "이 사용자의 페르소나"를 찾을 때 쓴다.
+    # 없으면 session_id / persona_id 로만 찾을 수 있다.
+    user_id: str | None = Field(default=None, max_length=64)
 
 
 class AnswerRequest(BaseModel):
@@ -468,3 +471,36 @@ class HistoryItem(BaseModel):
     headline: str | None
     confirmed: bool
     created_at: datetime
+
+
+# ══ 다른 기능이 페르소나를 가리킬 때 ═══════════════════════
+# simulation·practice 는 "저장된 페르소나"만 쓴다. 셋 중 하나로 가리키면 최신 버전을 꺼낸다.
+
+
+class PersonaRef(BaseModel):
+    """persona_id(특정 버전) · user_id(그 사용자의 최신) · session_id(그 온보딩의 최신) 중 정확히 하나."""
+
+    persona_id: str | None = Field(default=None, max_length=32)
+    user_id: str | None = Field(default=None, max_length=64)
+    session_id: str | None = Field(default=None, max_length=32)
+
+    @model_validator(mode="after")
+    def _exactly_one(self) -> PersonaRef:
+        given = [k for k in ("persona_id", "user_id", "session_id") if getattr(self, k)]
+        if len(given) != 1:
+            raise ValueError("persona_id, user_id, session_id 중 하나만 지정하세요")
+        return self
+
+    def describe(self) -> str:
+        return self.persona_id or self.user_id or self.session_id or "?"
+
+
+class PersonaBrief(BaseModel):
+    """시뮬레이션·연습대화 응답에 실리는 참가자 요약. 점수는 안 보여준다 — 리포트가 따로 있다."""
+
+    persona_id: str
+    user_id: str | None = None
+    nickname: str
+    version: int = 1
+    headline: str | None = None
+    accuracy: int = 0
