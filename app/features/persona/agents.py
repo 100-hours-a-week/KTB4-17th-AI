@@ -1,6 +1,6 @@
 """LLM과 말하는 유일한 곳.
 
-프롬프트도 여기 있다. 세 가지 역할:
+프롬프트 - 세 가지 역할:
   - ConversationAgent : 다음 발화 생성 (하루)
   - TaggingAgent      : 턴별 경량 판정 (어떤 차원이 채워졌나)
   - ExtractionAgent   : 대화 전체 → 점수
@@ -120,8 +120,8 @@ class ConversationAgent:
         if turn_index == total_turns - 1:
             lines.append("- 마지막 턴입니다. 소개팅 끝날 때처럼 아쉬운 듯 가볍게, 마지막이라는 걸 한마디로.")
 
-        # "알아낼 것"이 아니라 "닿아야 할 곳" — 설문 문항을 읽어주는 게 아니라 대화가 거기로 흘러가게
-        lines += ["", "[이번 턴에 대화가 닿아야 할 곳]", topic.intent]
+        # "이번 턴에 대화의 흐름, 분위기"를 안내한다. 알아내는 건 태깅이 한다.
+        lines += ["", "[이번 턴에 대화의 흐름, 분위기]", topic.intent]
         if topic.opener:
             lines.append(f"문 여는 한 줄 (그대로 말하지 말고 참고만): {topic.opener}")
         lines.append("")
@@ -155,12 +155,12 @@ class ConversationAgent:
             )
             return Utterance(text=text, source="llm")
         except LLMError as e:
-            # 폴백 — 시드 질문 그대로. API가 죽어도 온보딩은 끝까지 간다.
+            # 폴백 — 시드 질문 사용. API 호출 실패 시 사용
             logger.warning("turn generation failed (%s), using seed", e)
             return Utterance(text=topic.seed, source="seed")
 
 
-# ══ 2. 태깅 ════════════════════════════════════════════════
+# 2. 태깅 ════════════════════════════════════════════════
 
 TAG_PROMPT = f"""\
 사용자 답변이 아래 차원 중 무엇에 대한 근거를 제공하는지 판정하세요.
@@ -272,10 +272,21 @@ RUBRIC = f"""\
 멈추긴 하지만 그날 안에 복귀하므로 withdrawal은 중간값(43).
 감정을 올리지 않으므로 engagement는 낮음(18).
 
+## 서술 (narrative) — 사용자가 직접 읽는 글
+점수와 함께, 이 사람이 결과 화면에서 읽을 서술을 씁니다. 차트가 아니라 이 글이 결과입니다.
+- headline: 한 줄. "○○하지만 ○○한 관계를 원하는 타입" 꼴. 40자 이내
+- body: 3~5문장. 답변에서 실제로 한 말을 근거로, "~하는 편이에요" 톤의 존댓말.
+  사용자를 "당신"이 아니라 닉네임 없이 주어 생략으로 부릅니다. 점수를 숫자로 언급하지 않습니다.
+- traits: 한 줄짜리 특징 3~5개. 각 30자 이내. 예: "중요한 일은 혼자 정리한 뒤에 꺼내는 편"
+- 근거가 없는 차원은 서술하지 않습니다. 점수와 모순되게 쓰지 않습니다.
+- "회피형", "불안형" 같은 유형명 금지. 평가·조언 금지 ("좋은 분", "고치면 좋겠다" ✕).
+
 ## 출력 형식
 JSON 객체 하나만 출력하세요. 설명·마크다운·코드펜스 금지.
 점수형은 정수, 텍스트형은 문자열 배열.
 근거를 찾지 못한 차원은 키를 아예 생략하세요. (50으로 채우지 마세요)
+{{"avoidance": 78, ..., "interests": ["러닝"], "routine": [], "date_prefer": [], "date_avoid": [],
+  "narrative": {{"headline": "...", "body": "...", "traits": ["...", "..."]}}}}
 """
 
 
@@ -293,7 +304,7 @@ class ExtractionAgent:
             data = await _call_json(
                 system=RUBRIC,
                 messages=[{"role": "user", "content": self._transcript(history)}],
-                max_tokens=900,
+                max_tokens=1500,  # 점수 + 서술
                 timeout=15.0,
             )
         except LLMError as e:

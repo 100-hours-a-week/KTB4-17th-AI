@@ -6,7 +6,7 @@
 
 - Python 3.12
 - FastAPI, Uvicorn
-- SQLAlchemy(asyncio)
+- SQLAlchemy(asyncio) + asyncpg, Alembic (PostgreSQL)
 - Anthropic SDK (페르소나 LLM)
 - aiosqlite (로컬 플레이그라운드)
 - 패키지 매니저: [uv](https://docs.astral.sh/uv/)
@@ -64,6 +64,22 @@ cp .env.example .env
 | `ANTHROPIC_API_KEY` | Claude 호출 (프로덕션 `agents.py`, 플레이그라운드 Anthropic 경로) |
 | `GEMINI_API_KEY` | 플레이그라운드 Gemini 경로 |
 | `LLM_PROVIDER` | 플레이그라운드 기본 프로바이더 (`gemini` 또는 `anthropic`) |
+| `DATABASE_URL` | Postgres 접속 (`postgresql+asyncpg://user:pw@host:5432/db`). 비우면 로컬 docker 기본값 |
+| `DB_ECHO` | `1`이면 SQL 로그 출력 |
+
+### 3-1. Postgres 준비
+
+프로덕션 앱(`app.main`)은 Postgres를 씁니다. 로컬에서는 docker로 하나 띄우고 마이그레이션을 적용합니다.
+
+```bash
+docker run -d --name ktb-pg \
+  -e POSTGRES_USER=ktb -e POSTGRES_PASSWORD=ktb -e POSTGRES_DB=ktb \
+  -p 5432:5432 postgres:16
+
+uv run alembic upgrade head
+```
+
+자세한 구조와 마이그레이션 절차는 [docs/postgres.md](docs/postgres.md)를 보세요.
 
 ### 4. 서버 실행
 
@@ -88,7 +104,7 @@ uvicorn app.main:app --reload --port 8000
 
 프로덕션 엔트리포인트의 API prefix는 `/ai/api`입니다.
 
-> `app.main`의 `get_db()`는 아직 프로젝트 공통 세션으로 교체되지 않았습니다. 페르소나 온보딩을 로컬에서 돌려보려면 아래 플레이그라운드를 사용하세요.
+DB 세션은 `app/core/db.py`의 `get_db`가 제공합니다. Postgres 없이 페르소나 온보딩만 빠르게 돌려보려면 아래 플레이그라운드(SQLite)를 사용하세요.
 
 ### 5. 로컬 플레이그라운드 (페르소나)
 
@@ -152,6 +168,9 @@ uv add --dev <package>    # 개발 의존성 추가
 ```
 app/
 ├── main.py                 # FastAPI 앱 엔트리포인트 (`/ai/api`)
+├── core/
+│   ├── config.py           # 환경 변수 (pydantic-settings)
+│   └── db.py               # Postgres 엔진·세션, 공통 get_db
 └── features/
     ├── persona/            # AI 페르소나 온보딩·생성
     │   ├── api.py          # 라우터. 검증·상태코드만
@@ -162,6 +181,8 @@ app/
     │   └── agents.py       # LLM 호출 (대화/태깅/추출)
     ├── practice/           # 페르소나와의 연습 대화
     └── simulation/         # 페르소나 간 대화 시뮬레이션
+alembic/                    # DB 마이그레이션 (env.py 가 .env 의 DATABASE_URL 사용)
+└── versions/
 dev/                        # 로컬 플레이그라운드 (`app/`을 수정하지 않음)
 ├── _shared/                # SQLite·LLM 교체, 앱 뼈대
 └── persona/

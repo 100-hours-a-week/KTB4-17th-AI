@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import ConversationTurn, OnboardingSession, PersonaRecord
+from .models import ConversationTurn, OnboardingSession, PersonaRecord, _now
 
 
 class PersonaRepository:
@@ -84,7 +84,70 @@ class PersonaRepository:
 
         await self.db.flush()
 
+    async def skip_question(self, session: OnboardingSession) -> None:
+        """대기 중인 질문을 답 없이 넘긴다. 턴은 소비되고 커버리지는 그대로."""
+        stmt = select(ConversationTurn).where(
+            ConversationTurn.session_id == session.id,
+            ConversationTurn.turn_index == session.turn_index,
+        )
+        turn = (await self.db.execute(stmt)).scalar_one()
+        turn.skipped = True
+
+        session.turn_index += 1
+        session.pending_topic_id = None
+        await self.db.flush()
+
+    async def finish_early(self, session: OnboardingSession) -> None:
+        """남은 질문을 포기하고 대화를 닫는다. 대기 중인 질문이 있으면 건너뛴 것으로."""
+        if session.pending_topic_id is not None:
+            await self.skip_question(session)
+        # total_turns 를 지금까지로 줄이면 is_done 판정과 진행 표시가 자연히 맞는다
+        session.total_turns = session.turn_index
+        await self.db.flush()
+
+    async def add_supplement(
+        self,
+        session: OnboardingSession,
+        dimension: str,
+        question: str,
+        answer: str,
+        coverage: dict,
+    ) -> ConversationTurn:
+        """보강 문답 한 건. 온보딩 턴 뒤에 이어 붙고, 진행 카운터는 건드리지 않는다."""
+        turn = ConversationTurn(
+            session_id=session.id,
+            turn_index=len(session.turns),
+            topic_id=f"supplement:{dimension}",
+            question=question,
+            answer=answer,
+            question_source="bank",
+        )
+        session.turns.append(turn)
+        session.coverage = coverage
+        await self.db.flush()
+        return turn
+
     # ── 페르소나 ──────────────────────────────────────────
+
+    async def latest_persona(self, session_id: str) -> PersonaRecord | None:
+        stmt = (
+            select(PersonaRecord)
+            .where(PersonaRecord.session_id == session_id)
+            .order_by(PersonaRecord.version.desc())
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def latest_before(self, record: PersonaRecord) -> PersonaRecord | None:
+        if record.previous_id is None:
+            return None
+        return await self.db.get(PersonaRecord, record.previous_id)
+
+    async def persona_history(self, session_id: str) -> list[PersonaRecord]:
+        stmt = (
+            select(PersonaRecord).where(PersonaRecord.session_id == session_id).order_by(PersonaRecord.version.desc())
+        )
+        return list((await self.db.execute(stmt)).scalars())
 
     async def save_persona(
         self,
@@ -92,15 +155,26 @@ class PersonaRepository:
         scores: dict,
         texts: dict,
         confidence: dict,
-    ) -> PersonaRecord:
+        narrative: dict | None = None,
+    ) -> tuple[PersonaRecord, PersonaRecord | None]:
+        """새 버전을 추가한다. (새 행, 직전 행) — 직전 행은 변화 계산용."""
+        previous = await self.latest_persona(session.id)
         record = PersonaRecord(
             session_id=session.id,
             user_id=session.user_id,
             scores=scores,
             texts=texts,
             confidence=confidence,
+            narrative=narrative,
+            version=(previous.version + 1) if previous else 1,
+            previous_id=previous.id if previous else None,
         )
         self.db.add(record)
         session.status = "completed"
         await self.db.flush()
-        return record
+        return record, previous
+
+    async def set_feedback(self, record: PersonaRecord, agree: bool, area: str | None) -> None:
+        record.feedback = {"agree": agree, "area": area}
+        record.confirmed_at = _now() if agree else None
+        await self.db.flush()

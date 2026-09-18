@@ -249,9 +249,92 @@ TOPICS: list[Topic] = [
 TOPICS_BY_ID = {t.id: t for t in TOPICS}
 
 
+# ══ 보강 질문 은행 ═════════════════════════════════════════
+# 근거가 부족한 차원(confidence LOW/MEDIUM)을 채우는 질문. 차원당 2개, 위에서부터 순서대로 쓴다.
+# 하루 말투. 온보딩 주제와 겹치지 않게, 그 차원만 정확히 겨눈다.
+
+SUPPLEMENTS: dict[str, tuple[str, ...]] = {
+    "avoidance": (
+        "연애 중에도 혼자만의 시간이 꼭 필요한 편이에요, 아니면 같이 있는 게 더 편해요?",
+        "연인이 갑자기 '오늘 저녁에 볼까?' 하면 보통 어떤 마음이 먼저 들어요?",
+    ),
+    "anxiety": (
+        "상대가 평소보다 말이 짧아지면 무슨 생각이 먼저 들어요?",
+        "'우리 괜찮은 거지?' 같은 확인을 하고 싶어질 때가 있어요?",
+    ),
+    "disclosure": (
+        "기분이 안 좋은 날, 연인한테 그걸 티 내는 편이에요 아니면 숨기는 편이에요?",
+        "좋아하는 마음은 말로 표현하는 편이에요, 행동으로 보여주는 편이에요?",
+    ),
+    "openness": (
+        "'우리 요즘 어때?' 같은 얘기, 먼저 꺼내는 편이에요?",
+        "관계에서 불편한 게 생기면 바로 얘기해요, 아니면 좀 지켜봐요?",
+    ),
+    "positivity": (
+        "연인이랑 있을 때 장난이나 농담을 많이 치는 편이에요?",
+        "평소 메시지 톤이 어때요 — 느낌표랑 ㅋㅋ 많이 쓰는 편이에요?",
+    ),
+    "assurances": (
+        "마음에 드는 사람한테 '다음에 또 봐요' 같은 말, 먼저 하는 편이에요?",
+        "'오래 보고 싶다' 같은 얘기를 연애 초반에 하는 편이에요?",
+    ),
+    "contact_rhythm": (
+        "일하는 중에 연인 연락이 오면 바로 답해요, 아니면 모아서 답해요?",
+        "하루에 연락 몇 번 정도가 딱 편해요?",
+    ),
+    "problem_solving": (
+        "다툰 뒤에 '그래서 다음엔 어떻게 할까'까지 얘기하는 편이에요?",
+        "의견이 갈릴 때 중간 지점을 찾으려고 해요, 아니면 한쪽으로 정리해요?",
+    ),
+    "withdrawal": (
+        "감정이 올라올 때 자리를 잠깐 뜨는 편이에요?",
+        "말다툼 중에 입을 닫아버린 적 있어요? 그때 어땠어요?",
+    ),
+    "engagement": (
+        "화가 나면 목소리가 커지는 편이에요?",
+        "다툴 때 하고 싶은 말을 다 쏟아내는 편이에요, 참는 편이에요?",
+    ),
+    "compliance": (
+        "다툼을 빨리 끝내려고 그냥 맞춰준 적 있어요?",
+        "아닌 건 아니라고 말하는 편이에요, 상대 기분 봐서 넘기는 편이에요?",
+    ),
+    "ideal_warmth": (
+        "약속 시간에 자주 늦는 사람, 얼마나 신경 쓰여요?",
+        "직원한테 무례한 사람을 보면 어떤 생각이 들어요?",
+    ),
+    "ideal_vitality": (
+        "조용한 사람이랑 활발한 사람 중에 더 끌리는 쪽이 있어요?",
+        "첫인상에서 외적인 분위기를 얼마나 봐요?",
+    ),
+    "ideal_status": (
+        "상대의 직업이나 경제력, 솔직히 얼마나 봐요?",
+        "'안정적인 사람'이란 말 들으면 뭐가 떠올라요?",
+    ),
+    "seriousness": (
+        "지금 만나면 결혼까지 생각하면서 만나는 편이에요?",
+        "가볍게 시작해서 진지해지는 것도 괜찮아요, 처음부터 진지한 게 좋아요?",
+    ),
+}
+assert set(SUPPLEMENTS) == set(SCORED), "보강 질문은 점수 차원 전부에 있어야 한다"
+
+
 # ══ LLM 출력 검증 ══════════════════════════════════════════
 # 모델이 "높음"이나 120을 뱉는 일이 실제로 생긴다.
 # 매칭 알고리즘에 들어가기 전 경계에서 막는다.
+
+
+class Narrative(BaseModel):
+    """사용자에게 보여주는 서술. 점수와 같은 호출에서 LLM이 쓴다.
+
+    화면에는 이것이 먼저 보이고 점수는 뒤로 간다 — 사용자는 차트가 아니라
+    "○○님은 이런 편이에요"를 읽는다.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    headline: str = Field(max_length=60)  # "독립적이지만 대화가 잘 통하는 관계를 원하는 타입"
+    body: str = Field(max_length=800)  # 3~5문장, "~하는 편이에요" 톤
+    traits: list[str] = Field(default_factory=list, max_length=6)  # 한 줄짜리 특징 3~5개
 
 
 class RawExtraction(BaseModel):
@@ -280,6 +363,8 @@ class RawExtraction(BaseModel):
     date_prefer: list[str] = Field(default_factory=list)
     date_avoid: list[str] = Field(default_factory=list)
 
+    narrative: Narrative | None = None
+
 
 class Tags(BaseModel):
     """턴별 태깅 결과."""
@@ -302,19 +387,84 @@ class AnswerRequest(BaseModel):
     answer: str = Field(min_length=2, max_length=200)
 
 
+# 이 수 이상 답하면 건너뛰기·끝내기가 열린다. 그 밑이면 페르소나가 너무 비어서 의미가 없다.
+MIN_ANSWERS_TO_FINISH = 3
+
+
 class TurnResponse(BaseModel):
     session_id: str
     utterance: str
     choices: list[str] | None = None
     progress: str
     done: bool = False
+    answered: int = 0  # 실제로 답한 턴 수 (건너뛴 건 제외)
+    can_skip: bool = False  # 이 질문 건너뛰기 가능
+    can_finish: bool = False  # 여기서 대화 끝내고 바로 페르소나 만들기 가능
+
+
+# 신뢰도 — 주 근거 건수로. 사용자에게는 등급명이 아니라 CONFIDENCE_LABEL 로 보여준다.
+CONFIDENCE_LOW, CONFIDENCE_MEDIUM, CONFIDENCE_HIGH = "LOW", "MEDIUM", "HIGH"
+CONFIDENCE_LABEL = {
+    CONFIDENCE_LOW: "아직 잘 몰라요",
+    CONFIDENCE_MEDIUM: "어느 정도 알아요",
+    CONFIDENCE_HIGH: "잘 알아요",
+}
+# 정확도 게이지 가중치. "대화할수록 올라가는 숫자" 하나를 만들기 위한 것이지 측정치가 아니다.
+CONFIDENCE_WEIGHT = {CONFIDENCE_LOW: 0.0, CONFIDENCE_MEDIUM: 0.6, CONFIDENCE_HIGH: 1.0}
+
+
+class Gap(BaseModel):
+    """아직 근거가 부족한 차원 + 그걸 채울 다음 보강 질문."""
+
+    dimension: str
+    label: str
+    area: str
+    confidence: str
+    confidence_label: str
+    question: str | None  # 보강 질문을 다 썼으면 None
+
+
+class Change(BaseModel):
+    """이전 버전 대비 달라진 것. kind: score(±10 이상) | confidence(등급 변화)"""
+
+    dimension: str
+    label: str
+    kind: str
+    before: str
+    after: str
 
 
 class PersonaResponse(BaseModel):
+    persona_id: str
+    version: int = 1
     scores: dict[str, int]
     interests: list[str] = Field(default_factory=list)
     routine: list[str] = Field(default_factory=list)
     date_prefer: list[str] = Field(default_factory=list)
     date_avoid: list[str] = Field(default_factory=list)
-    confidence: dict[str, str] = Field(default_factory=dict)  # {차원: "LOW"}
+    confidence: dict[str, str] = Field(default_factory=dict)  # {차원: LOW|MEDIUM|HIGH}
+    narrative: Narrative | None = None  # 점수와 모순되면 service 가 None 으로 떨어뜨림
+    accuracy: int = 0  # 0~100. confidence 가중 평균
+    gaps: list[Gap] = Field(default_factory=list)  # LOW 먼저, 그다음 MEDIUM
+    changes: list[Change] = Field(default_factory=list)  # 이전 버전 대비
+    confirmed: bool = False  # 사용자가 "이대로 좋아요" 했는지
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SupplementRequest(BaseModel):
+    dimension: str
+    answer: str = Field(min_length=2, max_length=200)
+
+
+class FeedbackRequest(BaseModel):
+    agree: bool
+    area: str | None = None  # agree=False 일 때, 어느 영역이 다른지 (intimacy · communication · …)
+
+
+class HistoryItem(BaseModel):
+    persona_id: str
+    version: int
+    accuracy: int
+    headline: str | None
+    confirmed: bool
+    created_at: datetime
