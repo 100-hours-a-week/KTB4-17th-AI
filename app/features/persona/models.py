@@ -2,6 +2,9 @@
 
 대화 원문을 보관하는 이유: 추출이 실패하면 재시도해야 하고,
 루브릭을 고친 뒤 과거 대화로 재추출해서 품질을 비교해야 한다.
+
+Base 는 app.core.db 의 것을 쓴다 (simulation·practice 가 personas 에 FK 를 건다).
+`from app.features.persona.models import Base` 는 그대로 동작한다 — 플레이그라운드 호환.
 """
 
 from __future__ import annotations
@@ -9,8 +12,10 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, relationship
+
+from app.core.db import Base
 
 
 def _uuid() -> str:
@@ -19,10 +24,6 @@ def _uuid() -> str:
 
 def _now() -> datetime:
     return datetime.now(UTC)
-
-
-class Base(DeclarativeBase):
-    pass
 
 
 class OnboardingSession(Base):
@@ -64,6 +65,7 @@ class ConversationTurn(Base):
     topic_id: Mapped[str] = mapped_column(String(32))
     question: Mapped[str] = mapped_column(Text)
     answer: Mapped[str | None] = mapped_column(Text)
+    skipped: Mapped[bool] = mapped_column(Boolean, default=False)  # 사용자가 건너뛴 질문
 
     # "llm" | "seed" — 폴백 빈도를 나중에 세기 위해 남긴다
     question_source: Mapped[str] = mapped_column(String(8), default="llm")
@@ -84,5 +86,14 @@ class PersonaRecord(Base):
     scores: Mapped[dict] = mapped_column(JSON)
     texts: Mapped[dict] = mapped_column(JSON)  # interests/routine/date_*
     confidence: Mapped[dict] = mapped_column(JSON)  # {차원: "LOW"}
+    narrative: Mapped[dict | None] = mapped_column(JSON)  # headline/body/traits
+
+    # 같은 세션에서 재빌드할 때마다 새 행. 이전 행을 가리켜 "뭐가 바뀌었나"를 계산한다.
+    version: Mapped[int] = mapped_column(Integer, default=1)
+    previous_id: Mapped[str | None] = mapped_column(String(32))
+
+    # 확인 루프 — "이대로 좋아요" 시각 / "다른 것 같아요" 면 어느 영역이 달랐는지
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    feedback: Mapped[dict | None] = mapped_column(JSON)  # {"agree": bool, "area": str | None}
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

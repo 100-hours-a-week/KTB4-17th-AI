@@ -38,7 +38,7 @@ GEMINI_MODELS = [
     m.strip()
     for m in os.environ.get(
         "GEMINI_MODEL",
-        "gemini-2.5-flash-lite,gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-2.5-flash,gemini-3.5-flash",
+        "gemini-3.1-flash-lite,gemini-3.5-flash-lite,gemini-3.5-flash,gemini-2.5-flash",
     ).split(",")
     if m.strip()
 ]
@@ -226,6 +226,24 @@ def bind(error_cls: type[Exception]):
             raise error_cls(str(e)) from e
 
     return _call
+
+
+def bind_stream(error_cls: type[Exception], chunk: int = 12):
+    """스트리밍 자리(practice.agents._stream)에 끼우는 비스트리밍 대체. 전문을 한 번에 받아 조각내 낸다.
+
+    Gemini REST 경로는 스트리밍이 없고, Anthropic 도 여기서는 요청별 키라 같은 call 을 태운다.
+    SSE 흐름(start → delta… → done)은 그대로 보이므로 프론트 테스트에는 충분하다."""
+
+    async def _stream(*, system: str, messages: list[dict], max_tokens: int, timeout: float):
+        try:
+            text = await call(system=system, messages=messages, max_tokens=max_tokens, timeout=timeout)
+        except LLMError as e:
+            raise error_cls(str(e)) from e
+        for i in range(0, len(text), chunk):
+            yield text[i : i + chunk]
+            await asyncio.sleep(0.02)  # 타자 치는 느낌만
+
+    return _stream
 
 
 async def check() -> dict:

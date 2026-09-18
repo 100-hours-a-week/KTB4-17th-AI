@@ -33,16 +33,28 @@
   .choices { display:flex; gap:6px; flex-wrap:wrap; }
   .choices button { background:#fff; color:var(--ink); border:1px solid var(--me); }
   .typing { align-self:flex-start; color:var(--muted); font-size:13px; padding:4px 13px; }
+  .controls { align-self:flex-end; display:flex; gap:6px; }
+  .controls button { background:transparent; color:var(--muted); border:1px solid var(--line); font-size:12px; padding:5px 10px; }
+  .controls button:hover { color:var(--ink); border-color:var(--ink); }
+  .headline { font-size:19px; margin:0 0 6px; }
+  .body { line-height:1.75; margin:0 0 12px; }
+  .traits { margin:0; padding-left:0; list-style:none; display:flex; flex-direction:column; gap:6px; }
+  .traits li { padding:8px 12px; background:var(--haru); border-radius:10px; }
+  .gauge { display:flex; align-items:center; gap:10px; margin:14px 0 4px; font-size:13px; }
+  .gauge .track { flex:1; height:8px; background:var(--line); border-radius:4px; overflow:hidden; }
+  .gauge .fill { height:100%; background:var(--me); transition:width .6s; }
+  .gaps { margin:8px 0 0; padding:0; list-style:none; display:flex; flex-direction:column; gap:6px; }
+  .gaps li { display:flex; align-items:center; gap:8px; font-size:13px; }
+  .gaps .lv { color:var(--muted); font-size:12px; min-width:88px; }
+  .gaps button { padding:4px 10px; font-size:12px; background:#fff; color:var(--me); border:1px solid var(--me); }
+  .changes { margin:10px 0 0; padding:10px 12px; background:#eef5f1; border-radius:10px; font-size:13px; }
+  .changes div + div { margin-top:3px; }
+  .confirm { display:flex; gap:8px; margin-top:14px; flex-wrap:wrap; }
+  .confirm button.secondary { background:#fff; color:var(--ink); border:1px solid var(--line); }
+  .ok { color:var(--me); font-size:13px; margin-top:10px; }
   #composer { display:flex; gap:8px; align-items:flex-end; }
   #composer textarea { resize:none; height:44px; }
   .count { font-size:11px; color:var(--muted); min-width:48px; text-align:right; }
-  table { border-collapse:collapse; width:100%; font-size:13px; }
-  td { padding:5px 6px; border-top:1px solid var(--line); vertical-align:middle; }
-  td.k { color:var(--muted); white-space:nowrap; width:34%; }
-  .bar { height:8px; background:var(--line); border-radius:4px; position:relative; }
-  .bar i { position:absolute; top:-3px; width:14px; height:14px; border-radius:50%; background:var(--me); margin-left:-7px; }
-  .bar.low i { background:#bbb; }
-  .pole { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }
   details summary { cursor:pointer; font-size:13px; color:var(--muted); }
   pre { font-size:12px; overflow:auto; background:#faf8f4; padding:10px; border-radius:8px; }
 </style>
@@ -92,7 +104,7 @@
 <script>
 const $ = (s) => document.querySelector(s);
 const chat = $('#chat');
-let meta = null, provider = 'gemini', pendingResolve = null;
+let meta = null, provider = 'gemini', pendingResolve = null, currentSession = null;
 
 // ── 설정 ──
 try { $('#apikey').value = sessionStorage.getItem('apikey') || ''; provider = sessionStorage.getItem('provider') || 'gemini'; } catch (_) {}
@@ -141,21 +153,36 @@ function choices(list, onPick) {
   list.forEach(c => { const b = document.createElement('button'); b.textContent = c; b.onclick = () => { d.remove(); onPick(c); }; d.appendChild(b); });
   chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
 }
-function waitForAnswer(choiceList) {
-  return new Promise((resolve) => { pendingResolve = resolve; $('#composer').hidden = false; $('#input').focus(); if (choiceList) choices(choiceList, (c) => submit(c)); });
+// 답변 대기. 결과는 문자열(답변) 또는 { control: 'skip' | 'finish' }
+function waitForAnswer(turn) {
+  return new Promise((resolve) => {
+    pendingResolve = resolve; $('#composer').hidden = false; $('#input').focus();
+    if (turn.choices) choices(turn.choices, (c) => submit(c));
+    if (turn.can_skip || turn.can_finish) {
+      const d = document.createElement('div'); d.className = 'msg controls';
+      const mk = (label, control) => { const b = document.createElement('button'); b.textContent = label; b.onclick = () => resolveWith({ control }); d.appendChild(b); };
+      if (turn.can_skip) mk('이 질문은 건너뛸게요', 'skip');
+      if (turn.can_finish) mk('여기까지만 할게요', 'finish');
+      chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+    }
+  });
+}
+function resolveWith(value) {
+  if (!pendingResolve) return;
+  document.querySelectorAll('.choices, .controls').forEach(x => x.remove());
+  $('#input').value = ''; $('#count').textContent = '0/200';
+  const r = pendingResolve; pendingResolve = null; r(value);
 }
 function submit(text) {
   text = (text ?? $('#input').value).trim();
   if (!text || !pendingResolve) return;
-  document.querySelectorAll('.choices').forEach(x => x.remove());
-  $('#input').value = ''; $('#count').textContent = '0/200';
-  const r = pendingResolve; pendingResolve = null; me(text); r(text);
+  me(text); resolveWith(text);
 }
 $('#send').onclick = () => submit();
 $('#input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
 $('#input').addEventListener('input', (e) => { $('#count').textContent = `${e.target.value.length}/200`; });
 
-// ── 흐름: features/persona/api.py 의 3개 엔드포인트 그대로 ──
+// ── 흐름: features/persona/api.py 의 엔드포인트 그대로 (start · answer · skip · finish · build) ──
 $('#start').onclick = async () => {
   if (!$('#apikey').value.trim()) { alert('API 키를 입력하세요.'); return; }
   $('#start').disabled = true; chat.innerHTML = ''; $('#result').hidden = true;
@@ -167,21 +194,29 @@ $('#start').onclick = async () => {
     haru(`안녕하세요, 저는 하루예요. AI지만 오늘은 소개팅 상대 역할을 해볼게요.`);
     haru(`편하게 답해주시면 그 대화로 ${nick()}님의 AI 페르소나가 만들어져요. 10번 정도 주고받으면 끝나요.`);
 
-    let turn = await api('POST', '/personas/onboarding/start', { nickname: nick(), total_turns: 10 });
+    let turn = await api('POST', '/v1/persona/onboarding/start', { nickname: nick(), total_turns: 10 });
     while (!turn.done) {
       bubble('progress', turn.progress);
       haru(turn.utterance);
       let ans;
-      while (true) { ans = await waitForAnswer(turn.choices); if (norm(ans).length >= 2) break; notice('두 글자 이상 적어주세요.'); }
+      while (true) {
+        ans = await waitForAnswer(turn);
+        if (typeof ans !== 'string' || norm(ans).length >= 2) break;
+        notice('두 글자 이상 적어주세요.');
+      }
       const t = bubble('typing', '···');
-      try { turn = await api('POST', `/personas/onboarding/${turn.session_id}/answer`, { answer: ans }); }
-      finally { t.remove(); }
+      try {
+        if (ans.control === 'skip') { sys('이 질문은 건너뛰었어요'); turn = await api('POST', `/v1/persona/onboarding/${turn.session_id}/skip`); }
+        else if (ans.control === 'finish') { sys(`여기까지 · ${turn.answered}개 답변으로 만들어요`); turn = await api('POST', `/v1/persona/onboarding/${turn.session_id}/finish`); }
+        else turn = await api('POST', `/v1/persona/onboarding/${turn.session_id}/answer`, { answer: ans });
+      } finally { t.remove(); }
     }
     haru(turn.utterance);
     const slow = setTimeout(() => haru('조금만 더요. 꼼꼼히 보고 있어요.'), 6000);
     try {
-      const persona = await api('POST', `/personas/${turn.session_id}/build`);
-      haru(`다 됐어요. ${nick()}님이 연애에서 어떤 사람인지 보여드릴게요.`);
+      const persona = await api('POST', `/v1/persona/${turn.session_id}/build`);
+      haru(`다 됐어요. ${nick()}님이 연애에서 어떤 사람인지, 제가 이해한 대로 보여드릴게요.`);
+      currentSession = turn.session_id;
       renderPersona(persona);
     } catch (e) {
       notice('잠깐 문제가 있었어요. 답변은 그대로 있으니 다시 만들어볼게요.  (' + e.message + ')');
@@ -191,26 +226,85 @@ $('#start').onclick = async () => {
   } finally { $('#composer').hidden = true; $('#start').disabled = false; }
 };
 
-// ── 결과 화면 ──
-function renderPersona(p) {
-  const esc = (t) => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
-  const areas = {};
-  for (const [k, d] of Object.entries(meta.scored)) (areas[d.area] ||= []).push([k, d]);
-  const areaLabel = { intimacy: '친밀감 · 거리감', communication: '소통 · 표현', conflict: '갈등 대응', ideal: '상대 선호', orientation: '관계 지향' };
-  let html = '<h1>페르소나 결과</h1><div class="hint" style="margin-bottom:8px">답변을 바탕으로 AI가 정리한 내용이에요. 심리검사 결과가 아니에요. 회색 점은 근거 부족(LOW).</div>';
-  for (const [area, dims] of Object.entries(areas)) {
-    html += `<h1 style="font-size:14px;margin-top:12px">${areaLabel[area] || area}</h1><table>`;
-    for (const [k, d] of dims) {
-      const v = p.scores[k] ?? 50; const low = p.confidence?.[k] === 'LOW';
-      html += `<tr><td class="k">${esc(d.label)}</td><td><div class="bar ${low ? 'low' : ''}"><i style="left:${v}%"></i></div><div class="pole"><span>${esc(d.low)}</span><span>${esc(d.high)}</span></div></td></tr>`;
-    }
-    html += '</table>';
+// ── 결과 화면 — 설명형. "○○님은 이런 특징이 있어요" + 정확도 + 보강 + 확인 ──
+const eunNeun = (w) => { const c = w.charCodeAt(w.length - 1); return c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 ? '은' : '는'; };
+const esc = (t) => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const AREA = { intimacy: '친밀감 · 거리감', communication: '소통 · 표현', conflict: '갈등 대응', ideal: '상대 선호', orientation: '관계 지향' };
+
+function renderPersona(p, opts = {}) {
+  const n = p.narrative;
+  let html = `<div class="hint" style="margin-bottom:6px">${esc(nick())}님은 이런 특징이 있어요 <span style="float:right">v${p.version}</span></div>`;
+  if (n) {
+    html += `<h1 class="headline">${esc(n.headline)}</h1><p class="body">${esc(n.body)}</p>`;
+    if (n.traits?.length) html += '<ul class="traits">' + n.traits.map(t => `<li>${esc(t)}</li>`).join('') + '</ul>';
+  } else html += '<p class="body">이번엔 설명을 만들지 못했어요. 다시 만들어볼게요.</p>';
+
+  const talk = [];
+  if (p.interests?.length) talk.push(`요즘 관심사는 ${p.interests.join(', ')}`);
+  if (p.routine?.length) talk.push(`주말엔 ${p.routine.join(', ')}`);
+  if (p.date_prefer?.length) talk.push(`${p.date_prefer.join(', ')} 같은 데이트를 좋아하고`);
+  if (p.date_avoid?.length) { const w = p.date_avoid.join(', '); talk.push(`${w}${eunNeun(w)} 피하는 편`); }
+  if (talk.length) html += `<p class="body" style="margin-top:12px">${esc(talk.join(' · '))}</p>`;
+
+  // 변화 — 재빌드 뒤에만
+  if (p.changes?.length) {
+    html += '<div class="changes"><b>방금 알려주신 걸로 이렇게 바뀌었어요</b>' +
+      p.changes.map(c => `<div>${esc(c.label)} · ${c.kind === 'score' ? '' : ''}${esc(c.before)} → <b>${esc(c.after)}</b></div>`).join('') + '</div>';
   }
-  html += '<table style="margin-top:12px">';
-  for (const [k, label] of Object.entries(meta.textual)) { const v = p[k]; if (v && v.length) html += `<tr><td class="k">${esc(label)}</td><td>${esc(v.join(' · '))}</td></tr>`; }
-  html += '</table>';
-  html += `<details style="margin-top:10px"><summary>원본 JSON</summary><pre>${esc(JSON.stringify(p, null, 2))}</pre></details>`;
-  $('#result').innerHTML = html; $('#result').hidden = false; $('#result').scrollIntoView({ behavior: 'smooth' });
+
+  // 정확도 게이지
+  html += `<div class="gauge"><span>페르소나 정확도 <b>${p.accuracy}%</b></span><div class="track"><div class="fill" style="width:${p.accuracy}%"></div></div><span class="hint">알려줄수록 올라가요</span></div>`;
+
+  // 아직 잘 모르는 부분 — LOW 먼저, 3개만. 영역 필터가 있으면 그 영역만
+  let gaps = (p.gaps || []).filter(g => g.question);
+  if (opts.area) gaps = gaps.filter(g => g.area === opts.area);
+  if (gaps.length) {
+    html += `<div class="hint" style="margin-top:10px">${opts.area ? AREA[opts.area] + ' 쪽에서 ' : ''}아직 잘 모르는 부분이에요. 하나만 더 알려주시면 정확해져요.</div><ul class="gaps">` +
+      gaps.slice(0, 3).map(g => `<li><span class="lv">${esc(g.confidence_label)}</span><span style="flex:1">${esc(g.label)}</span><button data-dim="${g.dimension}" data-q="${esc(g.question)}">알려주기</button></li>`).join('') + '</ul>';
+  }
+
+  // 확인 루프
+  if (p.confirmed) html += '<div class="ok">✓ 이대로 좋다고 확인하셨어요. 대화할수록 계속 다듬어질게요.</div>';
+  else html += `<div class="confirm"><button id="agree">이대로 좋아요</button><button class="secondary" id="disagree">조금 다른 것 같아요</button></div><div id="areas" hidden style="margin-top:8px"></div>`;
+
+  html += '<div class="hint" style="margin-top:10px">답변을 바탕으로 AI가 정리한 내용이에요. 심리검사 결과가 아니에요.</div>';
+  html += `<details style="margin-top:8px"><summary>원본 데이터 (개발용)</summary><pre>${esc(JSON.stringify(p, null, 2))}</pre></details>`;
+  $('#result').innerHTML = html; $('#result').hidden = false;
+  if (!opts.keepScroll) $('#result').scrollIntoView({ behavior: 'smooth' });
+
+  $('#result').querySelectorAll('.gaps button').forEach(b => b.onclick = () => supplementFlow(b.dataset.dim, b.dataset.q));
+  $('#agree')?.addEventListener('click', () => feedback(true, null));
+  $('#disagree')?.addEventListener('click', () => {
+    const box = $('#areas'); box.hidden = false;
+    box.innerHTML = '<span class="hint">어느 쪽이 다른 것 같아요?</span> ' + Object.entries(AREA).map(([k, v]) => `<button class="secondary" data-area="${k}" style="margin:4px 4px 0 0;font-size:12px;padding:5px 10px">${v}</button>`).join('');
+    box.querySelectorAll('button').forEach(b => b.onclick = () => feedback(false, b.dataset.area));
+  });
+}
+
+// 보강 문답: 하루가 그 차원의 질문을 채팅으로 묻고 → 답 → 재빌드 → 변화 표시
+async function supplementFlow(dimension, question) {
+  $('#start').disabled = true;
+  try {
+    haru(question);
+    let ans;
+    while (true) { ans = await waitForAnswer({}); if (typeof ans === 'string' && norm(ans).length >= 2) break; notice('두 글자 이상 적어주세요.'); }
+    const t = bubble('typing', '···');
+    try {
+      const p = await api('POST', `/v1/persona/${currentSession}/supplement`, { dimension, answer: ans });
+      haru('고마워요. 방금 얘기 반영해서 다시 정리했어요.');
+      renderPersona(p);
+    } finally { t.remove(); }
+  } catch (e) { notice('반영 실패: ' + e.message); }
+  finally { $('#composer').hidden = true; $('#start').disabled = false; }
+}
+
+async function feedback(agree, area) {
+  try {
+    const p = await api('POST', `/v1/persona/${currentSession}/feedback`, { agree, area });
+    if (agree) haru('좋아요, 기억해 둘게요.');
+    else haru(`${AREA[area]} 쪽이 좀 다르군요. 그럼 그쪽을 조금 더 물어볼게요.`);
+    renderPersona(p, { area: agree ? null : area, keepScroll: true });
+  } catch (e) { notice('오류: ' + e.message); }
 }
 </script>
 </body>
