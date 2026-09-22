@@ -1,10 +1,9 @@
 name: CI AI
 
 on:
-  push:
+  pull_request:
     branches:
-      - "feature/**"
-      - "chore/**"
+      - "dev"
 
 jobs:
   feature_ci:
@@ -18,26 +17,23 @@ jobs:
       - name: Check source
         uses: actions/checkout@v7
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
         with:
           python-version: "3.12"
-          cache: pip
+          enable-cache: true
 
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install ruff pip-audit
+        run: uv sync --all-groups --locked
 
       - name: Lint
-        run: ruff check .
+        run: uv run ruff check .
 
       - name: Formatter Check
-        run: ruff format --check .
+        run: uv run ruff format --check .
 
       - name: Dependency Vulnerability Check
-        run: pip-audit -r requirements.txt
+        run: uvx pip-audit .
 
       - name: Build
-        run: python -m compileall -q .
+        run: uv run python -m compileall -q .
