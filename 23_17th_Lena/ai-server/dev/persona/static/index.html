@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>하루 온보딩 플레이그라운드</title>
+<style>
+  :root { --bg:#f6f4f0; --card:#fff; --line:#e4e0d8; --ink:#1f1d1a; --muted:#7a746b; --me:#2f6f5e; --me-ink:#fff; --haru:#efeae2; --accent:#d85a30; }
+  * { box-sizing:border-box; }
+  [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  .wrap { max-width:720px; margin:0 auto; padding:16px; display:flex; flex-direction:column; gap:12px; min-height:100vh; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:14px 16px; }
+  h1 { font-size:17px; margin:0 0 8px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin-bottom:8px; }
+  label { font-size:13px; color:var(--muted); }
+  input[type=text], input[type=password], textarea { width:100%; padding:9px 11px; border:1px solid var(--line); border-radius:8px; font:inherit; background:#fff; }
+  .field { flex:1 1 200px; }
+  button { padding:9px 14px; border:0; border-radius:8px; background:var(--me); color:var(--me-ink); font:inherit; cursor:pointer; }
+  button:disabled { opacity:.45; cursor:default; }
+  .seg { display:inline-flex; border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border-radius:0; background:#fff; color:var(--ink); }
+  .seg button.on { background:var(--ink); color:#fff; }
+  .hint { font-size:12px; color:var(--muted); }
+  .chk { display:inline-flex; gap:6px; align-items:center; font-size:13px; }
+  #chat { flex:1; display:flex; flex-direction:column; gap:8px; padding:12px 4px; overflow-y:auto; min-height:320px; }
+  .msg { max-width:82%; padding:9px 13px; border-radius:14px; white-space:pre-wrap; word-break:keep-all; }
+  .haru { align-self:flex-start; background:var(--haru); border-bottom-left-radius:4px; }
+  .me { align-self:flex-end; background:var(--me); color:var(--me-ink); border-bottom-right-radius:4px; }
+  .sys { align-self:center; font-size:12px; color:var(--muted); background:transparent; }
+  .notice { align-self:flex-start; font-size:13px; color:var(--accent); background:#fbeee8; }
+  .progress { position:sticky; top:0; align-self:flex-end; font-size:12px; color:var(--muted); background:var(--bg); padding:2px 6px; }
+  .choices { display:flex; gap:6px; flex-wrap:wrap; }
+  .choices button { background:#fff; color:var(--ink); border:1px solid var(--me); }
+  .typing { align-self:flex-start; color:var(--muted); font-size:13px; padding:4px 13px; }
+  #composer { display:flex; gap:8px; align-items:flex-end; }
+  #composer textarea { resize:none; height:44px; }
+  .count { font-size:11px; color:var(--muted); min-width:48px; text-align:right; }
+  table { border-collapse:collapse; width:100%; font-size:13px; }
+  td { padding:5px 6px; border-top:1px solid var(--line); vertical-align:middle; }
+  td.k { color:var(--muted); white-space:nowrap; width:34%; }
+  .bar { height:8px; background:var(--line); border-radius:4px; position:relative; }
+  .bar i { position:absolute; top:-3px; width:14px; height:14px; border-radius:50%; background:var(--me); margin-left:-7px; }
+  .bar.low i { background:#bbb; }
+  .pole { display:flex; justify-content:space-between; font-size:11px; color:var(--muted); }
+  details summary { cursor:pointer; font-size:13px; color:var(--muted); }
+  pre { font-size:12px; overflow:auto; background:#faf8f4; padding:10px; border-radius:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>하루 온보딩 플레이그라운드 <span class="hint">features/persona 그대로 · dev/persona 에서 DB·LLM만 갈아끼움</span></h1>
+    <div class="row">
+      <div class="field">
+        <label>API 키 — Gemini (<code>AIza…</code>) 또는 Anthropic (<code>sk-ant-…</code>)</label>
+        <input type="password" id="apikey" placeholder="AIza… / sk-ant-…" autocomplete="off">
+        <div class="hint" id="keyhint"></div>
+      </div>
+      <div class="field" style="flex:0 1 160px">
+        <label>닉네임</label>
+        <input type="text" id="nickname" value="은서" maxlength="20">
+      </div>
+    </div>
+    <div class="row">
+      <label>프로바이더</label>
+      <div class="seg" id="provider">
+        <button data-provider="gemini" class="on">Gemini</button>
+        <button data-provider="anthropic">Anthropic</button>
+      </div>
+      <span class="hint" id="providerhint"></span>
+    </div>
+    <div class="row">
+      <label class="chk"><input type="checkbox" id="tagging"> 턴별 태깅 호출 (켜면 턴당 LLM 2회)</label>
+      <span style="flex:1"></span>
+      <button id="start">시작</button>
+    </div>
+    <div class="hint">키는 브라우저 세션에만 두고 요청마다 <code>X-Api-Key</code> 헤더로 보냅니다. 서버는 저장하지 않습니다.</div>
+  </div>
+
+  <div id="chat"></div>
+
+  <div class="card" id="composer" hidden>
+    <textarea id="input" maxlength="200" placeholder="답변을 입력하세요 (Enter 전송, Shift+Enter 줄바꿈)"></textarea>
+    <span class="count" id="count">0/200</span>
+    <button id="send">보내기</button>
+  </div>
+
+  <div class="card" id="result" hidden></div>
+</div>
+
+<script>
+const $ = (s) => document.querySelector(s);
+const chat = $('#chat');
+let meta = null, provider = 'gemini', pendingResolve = null;
+
+// ── 설정 ──
+try { $('#apikey').value = sessionStorage.getItem('apikey') || ''; provider = sessionStorage.getItem('provider') || 'gemini'; } catch (_) {}
+function seg(id, key, cb) {
+  $(id).addEventListener('click', (e) => { const b = e.target.closest('button'); if (b) cb(b.dataset[key]); });
+}
+function setProvider(p) {
+  provider = p;
+  [...$('#provider').children].forEach(x => x.classList.toggle('on', x.dataset.provider === p));
+  $('#providerhint').textContent = meta ? `모델 ${meta.models[p]}` : '';
+  try { sessionStorage.setItem('provider', p); } catch (_) {}
+}
+seg('#provider', 'provider', setProvider);
+const providerOf = (k) => k.startsWith('AIza') ? 'gemini' : k.startsWith('sk-ant-') ? 'anthropic' : null;
+function keyHint() {
+  const k = $('#apikey').value.trim(); const p = providerOf(k);
+  if (p) setProvider(p);
+  $('#keyhint').textContent = !k ? '' : p ? `${p === 'gemini' ? 'Gemini' : 'Anthropic'} 키로 인식` : '접두어로 판별 못 함 — 프로바이더 토글대로 보냅니다';
+}
+$('#apikey').addEventListener('input', keyHint);
+
+// ── API ──
+function headers() {
+  const key = $('#apikey').value.trim();
+  try { sessionStorage.setItem('apikey', key); } catch (_) {}
+  const h = { 'Content-Type': 'application/json', 'X-Provider': provider, 'X-Tagging': $('#tagging').checked ? '1' : '0' };
+  if (key) h['X-Api-Key'] = key;
+  return h;
+}
+async function api(method, path, body) {
+  const r = await fetch(path, { method, headers: headers(), body: body ? JSON.stringify(body) : undefined });
+  const text = await r.text();
+  let data; try { data = JSON.parse(text); } catch (_) { data = { detail: text }; }
+  if (!r.ok) throw new Error(`${r.status} ${typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail)}`);
+  return data;
+}
+api('GET', '/meta').then(m => { meta = m; setProvider(provider); keyHint(); }).catch(() => {});
+
+// ── 채팅 UI ──
+const nick = () => $('#nickname').value.trim() || '사용자';
+const norm = (s) => s.replace(/\s/g, '');
+function bubble(cls, text) { const d = document.createElement('div'); d.className = 'msg ' + cls; d.textContent = text; chat.appendChild(d); chat.scrollTop = chat.scrollHeight; return d; }
+const haru = (t) => bubble('haru', t), me = (t) => bubble('me', t), sys = (t) => bubble('sys', t), notice = (t) => bubble('notice', t);
+function choices(list, onPick) {
+  const d = document.createElement('div'); d.className = 'msg choices';
+  list.forEach(c => { const b = document.createElement('button'); b.textContent = c; b.onclick = () => { d.remove(); onPick(c); }; d.appendChild(b); });
+  chat.appendChild(d); chat.scrollTop = chat.scrollHeight;
+}
+function waitForAnswer(choiceList) {
+  return new Promise((resolve) => { pendingResolve = resolve; $('#composer').hidden = false; $('#input').focus(); if (choiceList) choices(choiceList, (c) => submit(c)); });
+}
+function submit(text) {
+  text = (text ?? $('#input').value).trim();
+  if (!text || !pendingResolve) return;
+  document.querySelectorAll('.choices').forEach(x => x.remove());
+  $('#input').value = ''; $('#count').textContent = '0/200';
+  const r = pendingResolve; pendingResolve = null; me(text); r(text);
+}
+$('#send').onclick = () => submit();
+$('#input').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } });
+$('#input').addEventListener('input', (e) => { $('#count').textContent = `${e.target.value.length}/200`; });
+
+// ── 흐름: features/persona/api.py 의 3개 엔드포인트 그대로 ──
+$('#start').onclick = async () => {
+  if (!$('#apikey').value.trim()) { alert('API 키를 입력하세요.'); return; }
+  $('#start').disabled = true; chat.innerHTML = ''; $('#result').hidden = true;
+  try {
+    meta = meta || await api('GET', '/meta');
+    const chk = await api('POST', '/check');
+    if (!chk.ok) { notice(`키 확인 실패 (${provider}): ${chk.error}`); return; }
+    sys(`${chk.provider} · ${chk.model} 연결 확인 · 태깅 ${$('#tagging').checked ? 'on' : 'off'}`);
+    haru(`안녕하세요, 저는 하루예요. AI지만 오늘은 소개팅 상대 역할을 해볼게요.`);
+    haru(`편하게 답해주시면 그 대화로 ${nick()}님의 AI 페르소나가 만들어져요. 10번 정도 주고받으면 끝나요.`);
+
+    let turn = await api('POST', '/personas/onboarding/start', { nickname: nick(), total_turns: 10 });
+    while (!turn.done) {
+      bubble('progress', turn.progress);
+      haru(turn.utterance);
+      let ans;
+      while (true) { ans = await waitForAnswer(turn.choices); if (norm(ans).length >= 2) break; notice('두 글자 이상 적어주세요.'); }
+      const t = bubble('typing', '···');
+      try { turn = await api('POST', `/personas/onboarding/${turn.session_id}/answer`, { answer: ans }); }
+      finally { t.remove(); }
+    }
+    haru(turn.utterance);
+    const slow = setTimeout(() => haru('조금만 더요. 꼼꼼히 보고 있어요.'), 6000);
+    try {
+      const persona = await api('POST', `/personas/${turn.session_id}/build`);
+      haru(`다 됐어요. ${nick()}님이 연애에서 어떤 사람인지 보여드릴게요.`);
+      renderPersona(persona);
+    } catch (e) {
+      notice('잠깐 문제가 있었어요. 답변은 그대로 있으니 다시 만들어볼게요.  (' + e.message + ')');
+    } finally { clearTimeout(slow); }
+  } catch (e) {
+    notice('오류: ' + e.message);
+  } finally { $('#composer').hidden = true; $('#start').disabled = false; }
+};
+
+// ── 결과 화면 ──
+function renderPersona(p) {
+  const esc = (t) => String(t).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+  const areas = {};
+  for (const [k, d] of Object.entries(meta.scored)) (areas[d.area] ||= []).push([k, d]);
+  const areaLabel = { intimacy: '친밀감 · 거리감', communication: '소통 · 표현', conflict: '갈등 대응', ideal: '상대 선호', orientation: '관계 지향' };
+  let html = '<h1>페르소나 결과</h1><div class="hint" style="margin-bottom:8px">답변을 바탕으로 AI가 정리한 내용이에요. 심리검사 결과가 아니에요. 회색 점은 근거 부족(LOW).</div>';
+  for (const [area, dims] of Object.entries(areas)) {
+    html += `<h1 style="font-size:14px;margin-top:12px">${areaLabel[area] || area}</h1><table>`;
+    for (const [k, d] of dims) {
+      const v = p.scores[k] ?? 50; const low = p.confidence?.[k] === 'LOW';
+      html += `<tr><td class="k">${esc(d.label)}</td><td><div class="bar ${low ? 'low' : ''}"><i style="left:${v}%"></i></div><div class="pole"><span>${esc(d.low)}</span><span>${esc(d.high)}</span></div></td></tr>`;
+    }
+    html += '</table>';
+  }
+  html += '<table style="margin-top:12px">';
+  for (const [k, label] of Object.entries(meta.textual)) { const v = p[k]; if (v && v.length) html += `<tr><td class="k">${esc(label)}</td><td>${esc(v.join(' · '))}</td></tr>`; }
+  html += '</table>';
+  html += `<details style="margin-top:10px"><summary>원본 JSON</summary><pre>${esc(JSON.stringify(p, null, 2))}</pre></details>`;
+  $('#result').innerHTML = html; $('#result').hidden = false; $('#result').scrollIntoView({ behavior: 'smooth' });
+}
+</script>
+</body>
+</html>
