@@ -15,14 +15,17 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.core.db import Base
 
 
+# PK 로 쓸 32자리 hex uuid 생성
 def _uuid() -> str:
     return uuid.uuid4().hex
 
 
+# 타임존 포함 현재 시각 (created_at/updated_at 기본값)
 def _now() -> datetime:
     return datetime.now(UTC)
 
 
+# 연습대화 세션 한 건 — 상대(말하는 쪽)와 나(선택) 페르소나, 진행 상태를 담는다
 class PracticeSession(Base):
     __tablename__ = "practice_sessions"
 
@@ -51,6 +54,7 @@ class PracticeSession(Base):
     )
 
 
+# 세션에 속한 메시지 한 건 (유저 발화 또는 페르소나 답변)
 class PracticeMessage(Base):
     __tablename__ = "practice_messages"
 

@@ -10,9 +10,11 @@ from .models import PracticeMessage, PracticeSession
 
 
 class PracticeRepository:
+    # 이 요청의 DB 세션을 보관
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
 
+    # 연습대화 세션 row 를 만들어 flush(id 확정)까지 하고 돌려준다
     async def create_session(
         self,
         *,
@@ -36,6 +38,7 @@ class PracticeRepository:
         await self.db.flush()
         return session
 
+    # id 로 세션을 조회하되 메시지 목록까지 한 번에 eager load 한다
     async def get_session(self, session_id: str) -> PracticeSession | None:
         stmt = (
             select(PracticeSession)
@@ -44,6 +47,7 @@ class PracticeRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    # 메시지 한 건을 세션에 추가하고 message_count 를 1 올린다 (index 는 이 카운트를 그대로 씀)
     async def add_message(
         self, session: PracticeSession, role: str, content: str, source: str | None = None
     ) -> PracticeMessage:
@@ -59,6 +63,7 @@ class PracticeRepository:
         await self.db.flush()
         return msg
 
+    # 세션 상태를 ended 로 바꾼다
     async def end_session(self, session: PracticeSession) -> None:
         session.status = "ended"
         await self.db.flush()

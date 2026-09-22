@@ -40,6 +40,7 @@ Event = tuple[str, BaseModel]
 
 
 class PersonaNotFound(Exception):
+    # who(partner|me) 와 어떤 참조로 찾았는지를 들고 다니는 예외 — 호출부가 404 메시지를 만들 때 씀
     def __init__(self, who: str, ref: PersonaRef) -> None:
         self.who = who
         self.ref = ref
@@ -51,11 +52,13 @@ class SessionEnded(Exception):
 
 
 class PracticeService:
+    # 이 요청의 DB 세션에 묶인 repository/agent 를 만든다
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
         self.repo = PracticeRepository(db)
         self.agent = PartnerAgent()
 
+    # PersonaRef 로 저장된 페르소나를 불러온다. 없으면 PersonaNotFound
     async def _load(self, who: str, ref: PersonaRef) -> LoadedPersona:
         loaded = await load_persona(self.db, ref)
         if loaded is None:
@@ -64,6 +67,7 @@ class PracticeService:
 
     # ── 세션 ──────────────────────────────────────────────
 
+    # 상대(+선택적으로 나) 페르소나를 로드해 세션 row 를 만든다. LLM 호출 없음
     async def start(self, req: PracticeStartRequest) -> PracticeStartResponse:
         partner = await self._load("partner", req.partner)
         me = await self._load("me", req.me) if req.me else None
@@ -85,6 +89,7 @@ class PracticeService:
             created_at=session.created_at,
         )
 
+    # 세션 + 메시지 목록을 응답 스키마로 조립. 상대 페르소나가 지워졌으면 최소 정보로 대체
     async def get(self, session: PracticeSession) -> PracticeSessionResponse:
         partner = await load_persona(self.db, PersonaRef(persona_id=session.partner_persona_id))
         return PracticeSessionResponse(
@@ -99,12 +104,14 @@ class PracticeService:
             created_at=session.created_at,
         )
 
+    # 세션을 ended 로 닫고 최신 상태를 응답으로 돌려준다
     async def end(self, session: PracticeSession) -> PracticeSessionResponse:
         await self.repo.end_session(session)
         return await self.get(session)
 
     # ── 스트리밍 ──────────────────────────────────────────
 
+    # 상대(+나) 페르소나 프로필을 불러와 이번 대화의 시스템 프롬프트를 만든다
     async def _system(self, session: PracticeSession) -> str:
         partner = await self._load("partner", PersonaRef(persona_id=session.partner_persona_id))
         me = None
@@ -117,6 +124,7 @@ class PracticeService:
             me=me.response if me else None,
         )
 
+    # 세션의 최근 메시지들을 LLM 에 넘길 messages 형식으로 변환
     @staticmethod
     def _history(session: PracticeSession) -> list[dict]:
         """DB 메시지 → LLM 메시지. 최근 HISTORY_WINDOW 개만.
@@ -131,6 +139,7 @@ class PracticeService:
             msgs.insert(0, {"role": "user", "content": OPENING_INSTRUCTION})
         return msgs
 
+    # 상대가 먼저 말을 거는 첫 답변을 스트리밍한다
     async def stream_opening(self, session: PracticeSession) -> AsyncIterator[Event]:
         """상대가 먼저 말을 건다. 이미 메시지가 있으면 그냥 다음 답변으로 취급."""
         if session.status != "active":
@@ -138,6 +147,7 @@ class PracticeService:
         async for ev in self._respond(session, opening=not session.messages):
             yield ev
 
+    # 내 메시지를 먼저 저장한 뒤 상대 답변을 스트리밍한다
     async def stream_reply(self, session: PracticeSession, message: str) -> AsyncIterator[Event]:
         if session.status != "active":
             raise SessionEnded(session.id)
@@ -145,6 +155,8 @@ class PracticeService:
         async for ev in self._respond(session, opening=False):
             yield ev
 
+    # LLM 스트리밍 응답을 만들어 delta 로 흘리고, 끝나면 저장·커밋 후 done 을 낸다.
+    # 스트림이 끊기면 롤백 후 error, 첫 조각도 못 받으면 폴백 문장으로 대화를 이어간다
     async def _respond(self, session: PracticeSession, *, opening: bool) -> AsyncIterator[Event]:
         system = await self._system(session)
         history = self._history(session)
@@ -176,6 +188,7 @@ class PracticeService:
         yield "done", DoneEvent(session_id=session.id, message_index=index, content=content, source=source)
 
 
+# 상대 페르소나 레코드가 지워졌을 때, 세션에 남은 값만으로 최소한의 브리핑을 만든다
 def _brief_fallback(session: PracticeSession):
     from app.features.persona.schemas import PersonaBrief
 

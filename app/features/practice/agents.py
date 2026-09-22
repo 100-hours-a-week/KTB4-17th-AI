@@ -31,6 +31,7 @@ class LLMError(Exception):
     """호출 실패. 호출부가 잡아서 폴백 문장으로 대신한다."""
 
 
+# Anthropic 스트리밍 호출 한 번. 타임아웃과 그 외 실패를 전부 LLMError 로 통일해 던진다
 async def _stream(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> AsyncIterator[str]:
     """텍스트 조각을 낸다. timeout 은 첫 조각이 아니라 전체 스트림 기준."""
     try:
@@ -99,6 +100,7 @@ FALLBACK_REPLY = "아, 잠깐 딴생각했어요 ㅎㅎ 방금 얘기 한 번만
 
 
 class PartnerAgent:
+    # 상대(+선택적으로 나) 프로필을 템플릿에 채워 이번 대화의 시스템 프롬프트 문자열을 만든다
     @staticmethod
     def system_prompt(
         *,
@@ -117,6 +119,7 @@ class PartnerAgent:
             me_section=me_section,
         )
 
+    # system+history 로 LLM 을 호출해 답변 텍스트를 스트리밍한다
     async def reply(
         self,
         *,
