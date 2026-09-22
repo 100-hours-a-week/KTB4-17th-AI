@@ -38,18 +38,22 @@ SSE_HEADERS = {
 }
 
 
+# 일반(JSON) 요청용 PracticeService 의존성 — DB 세션은 function scope
 def get_service(db: AsyncSession = Depends(get_db)) -> PracticeService:
     return PracticeService(db)
 
 
+# SSE 스트리밍 요청용 PracticeService 의존성 — 응답 스트림이 끝날 때까지 DB 세션을 유지해야 해서 request scope
 def get_stream_service(db: AsyncSession = Depends(get_db, scope="request")) -> PracticeService:
     return PracticeService(db)
 
 
+# SSE 한 프레임(event/data)을 스펙 형식 문자열로 포맷
 def _sse(event: str, data: str) -> str:
     return f"event: {event}\ndata: {data}\n\n"
 
 
+# service 가 낸 (이벤트, 모델) 스트림을 SSE 텍스트 스트림으로 직렬화하고, 도메인 예외를 error 이벤트로 변환
 async def _to_sse(events: AsyncIterator[Event]) -> AsyncIterator[str]:
     try:
         async for name, data in events:
@@ -60,10 +64,12 @@ async def _to_sse(events: AsyncIterator[Event]) -> AsyncIterator[str]:
         yield _sse("error", json.dumps({"detail": f"{e.who}: 페르소나가 없어요"}, ensure_ascii=False))
 
 
+# SSE 텍스트 스트림에 미디어 타입·헤더를 씌워 StreamingResponse 로 감싼다
 def _stream_response(events: AsyncIterator[Event]) -> StreamingResponse:
     return StreamingResponse(_to_sse(events), media_type="text/event-stream", headers=SSE_HEADERS)
 
 
+# session_id 로 세션을 조회하고, 없으면 404 — opening/messages/get/end 라우트 공통 전처리
 async def _session_or_404(service: PracticeService, session_id: str):
     session = await service.repo.get_session(session_id)
     if session is None:
@@ -71,6 +77,7 @@ async def _session_or_404(service: PracticeService, session_id: str):
     return session
 
 
+# 새 연습대화 세션을 연다 — 상대(+선택적으로 내) 페르소나를 골라 세션 row 를 만든다
 @router.post("/start", response_model=PracticeStartResponse, status_code=201)
 async def start(
     req: PracticeStartRequest,
@@ -85,6 +92,7 @@ async def start(
     return result
 
 
+# 상대 페르소나가 먼저 말을 거는 첫 메시지를 스트리밍으로 받는다
 @router.post("/{session_id}/opening")
 async def opening(session_id: str, service: PracticeService = Depends(get_stream_service)) -> StreamingResponse:
     """상대 페르소나가 먼저 말을 건다. SSE: start → delta… → done."""
@@ -94,6 +102,7 @@ async def opening(session_id: str, service: PracticeService = Depends(get_stream
     return _stream_response(service.stream_opening(session))
 
 
+# 내가 보낸 메시지를 저장하고 상대 답변을 스트리밍으로 받는다
 @router.post("/{session_id}/messages")
 async def send_message(
     session_id: str,
@@ -107,12 +116,14 @@ async def send_message(
     return _stream_response(service.stream_reply(session, req.message.strip()))
 
 
+# 세션과 지금까지의 전체 메시지를 조회
 @router.get("/{session_id}", response_model=PracticeSessionResponse)
 async def get_session(session_id: str, service: PracticeService = Depends(get_service)) -> PracticeSessionResponse:
     session = await _session_or_404(service, session_id)
     return await service.get(session)
 
 
+# 세션을 종료 상태로 닫는다
 @router.post("/{session_id}/end", response_model=PracticeSessionResponse)
 async def end_session(
     session_id: str,
