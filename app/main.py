@@ -38,4 +38,13 @@ api_router.include_router(persona_router)
 api_router.include_router(practice_router)
 api_router.include_router(simulation_router)
 
+
+@app.get("/health", status_code=200, summary="헬스 체크", tags=["health"])
+@api_router.get("/health", status_code=200, summary="헬스 체크", include_in_schema=False)
+async def health_check() -> dict[str, str]:
+    """서버 정상 가동 여부를 확인하는 헬스 체크 엔드포인트."""
+    return {"status": "ok"}
+
+
 app.include_router(api_router)
+
