@@ -5,8 +5,6 @@ load_dotenv()
 from fastapi import APIRouter, FastAPI
 
 from app.features.persona.api import router as persona_router
-from app.features.practice.api import router as practice_router
-from app.features.simulation.api import router as simulation_router
 
 description = """
 별이삼샵 어플리케이션의 AI API입니다.
@@ -35,7 +33,5 @@ app = FastAPI(
 )
 api_router = APIRouter(prefix="/ai/api")
 api_router.include_router(persona_router)
-api_router.include_router(practice_router)
-api_router.include_router(simulation_router)
 
 app.include_router(api_router)

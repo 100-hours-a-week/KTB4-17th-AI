@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import ConversationTurn, OnboardingSession, PersonaRecord, _now
+from .models import ConversationTurn, OnboardingSession, PersonaRecord
 
 
 class PersonaRepository:
@@ -160,12 +160,6 @@ class PersonaRepository:
             return None
         return await self.db.get(PersonaRecord, record.previous_id)
 
-    async def persona_history(self, session_id: str) -> list[PersonaRecord]:
-        stmt = (
-            select(PersonaRecord).where(PersonaRecord.session_id == session_id).order_by(PersonaRecord.version.desc())
-        )
-        return list((await self.db.execute(stmt)).scalars())
-
     async def save_persona(
         self,
         session: OnboardingSession,
@@ -190,8 +184,3 @@ class PersonaRepository:
         session.status = "completed"
         await self.db.flush()
         return record, previous
-
-    async def set_feedback(self, record: PersonaRecord, agree: bool, area: str | None) -> None:
-        record.feedback = {"agree": agree, "area": area}
-        record.confirmed_at = _now() if agree else None
-        await self.db.flush()

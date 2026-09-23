@@ -450,27 +450,12 @@ class PersonaResponse(BaseModel):
     accuracy: int = 0  # 0~100. confidence 가중 평균
     gaps: list[Gap] = Field(default_factory=list)  # LOW 먼저, 그다음 MEDIUM
     changes: list[Change] = Field(default_factory=list)  # 이전 버전 대비
-    confirmed: bool = False  # 사용자가 "이대로 좋아요" 했는지
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class SupplementRequest(BaseModel):
     dimension: str
     answer: str = Field(min_length=2, max_length=200)
-
-
-class FeedbackRequest(BaseModel):
-    agree: bool
-    area: str | None = None  # agree=False 일 때, 어느 영역이 다른지 (intimacy · communication · …)
-
-
-class HistoryItem(BaseModel):
-    persona_id: str
-    version: int
-    accuracy: int
-    headline: str | None
-    confirmed: bool
-    created_at: datetime
 
 
 # ══ 다른 기능이 페르소나를 가리킬 때 ═══════════════════════

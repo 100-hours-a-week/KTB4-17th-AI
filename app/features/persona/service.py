@@ -31,7 +31,6 @@ from .schemas import (
     TOPICS_BY_ID,
     Change,
     Gap,
-    HistoryItem,
     Narrative,
     PersonaResponse,
     Topic,
@@ -244,7 +243,6 @@ def persona_response(
         accuracy=accuracy_of(record.confidence),
         gaps=gaps or [],
         changes=changes or [],
-        confirmed=record.confirmed_at is not None,
         generated_at=record.created_at,
         **{k: record.texts.get(k, []) for k in TEXTUAL},
     )
@@ -396,19 +394,6 @@ class OnboardingService:
         previous = await self.repo.latest_before(record) if record.previous_id else None
         return self._to_response(session, record, previous)
 
-    async def history(self, session: OnboardingSession) -> list[HistoryItem]:
-        return [
-            HistoryItem(
-                persona_id=r.id,
-                version=r.version,
-                accuracy=accuracy_of(r.confidence),
-                headline=(r.narrative or {}).get("headline"),
-                confirmed=r.confirmed_at is not None,
-                created_at=r.created_at,
-            )
-            for r in await self.repo.persona_history(session.id)
-        ]
-
     async def supplement(self, session: OnboardingSession, dimension: str, answer: str) -> PersonaResponse:
         """보강 문답 한 건 받고 즉시 재빌드. 사용자는 '알려줬더니 정확해졌다'를 바로 본다."""
         if dimension not in SUPPLEMENTS:
@@ -423,11 +408,3 @@ class OnboardingService:
         coverage.apply([dimension])  # 그 차원을 겨눈 질문이므로 주 근거로 인정. 태깅 호출 없음
         await self.repo.add_supplement(session, dimension, question, answer, coverage.to_dict())
         return await self.build_persona(session)
-
-    async def feedback(self, session: OnboardingSession, agree: bool, area: str | None) -> PersonaResponse:
-        record = await self.repo.latest_persona(session.id)
-        if record is None:
-            raise NoPersonaYet
-        await self.repo.set_feedback(record, agree, area)
-        previous = await self.repo.latest_before(record) if record.previous_id else None
-        return self._to_response(session, record, previous)

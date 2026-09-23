@@ -11,8 +11,6 @@ from .agents import BuildFailed
 from .repository import PersonaRepository
 from .schemas import (
     AnswerRequest,
-    FeedbackRequest,
-    HistoryItem,
     PersonaResponse,
     StartRequest,
     SupplementRequest,
@@ -117,7 +115,7 @@ async def build(
     return result
 
 
-# ── 빌드 이후: 조회 · 보강 · 확인 · 이력 ─────────────────
+# ── 빌드 이후: 조회 · 보강  ─────────────────
 
 
 async def _session_or_404(service: OnboardingService, session_id: str):
@@ -135,13 +133,6 @@ async def get_persona(session_id: str, service: OnboardingService = Depends(get_
         return await service.get_latest(session)
     except NoPersonaYet as e:
         raise HTTPException(404, "persona not built yet") from e
-
-
-@router.get("/{session_id}/history", response_model=list[HistoryItem])
-async def history(session_id: str, service: OnboardingService = Depends(get_service)) -> list[HistoryItem]:
-    """버전 목록. 최신 먼저."""
-    session = await _session_or_404(service, session_id)
-    return await service.history(session)
 
 
 @router.post("/{session_id}/supplement", response_model=PersonaResponse)
@@ -165,19 +156,3 @@ async def supplement(
     await db.commit()
     return result
 
-
-@router.post("/{session_id}/feedback", response_model=PersonaResponse)
-async def feedback(
-    session_id: str,
-    req: FeedbackRequest,
-    service: OnboardingService = Depends(get_service),
-    db: AsyncSession = Depends(get_db),
-) -> PersonaResponse:
-    """'이대로 좋아요'(agree) 또는 '조금 다른 것 같아요'(area 지정). 다르면 앱이 그 영역의 gaps 로 안내."""
-    session = await _session_or_404(service, session_id)
-    try:
-        result = await service.feedback(session, req.agree, req.area)
-    except NoPersonaYet as e:
-        raise HTTPException(409, "build first") from e
-    await db.commit()
-    return result
