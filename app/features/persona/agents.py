@@ -1,7 +1,7 @@
-"""LLM과 말하는 유일한 곳.
+"""LLM 호출부 - 대화 생성, 태깅, 특성 추출
 
 프롬프트 - 세 가지 역할:
-  - ConversationAgent : 다음 발화 생성 (하루)
+  - ConversationAgent : 다음 발화 생성 
   - TaggingAgent      : 턴별 경량 판정 (어떤 차원이 채워졌나)
   - ExtractionAgent   : 대화 전체 → 점수
 
@@ -9,77 +9,131 @@
 대충 되고, 추출 신경 쓰느라 말투가 딱딱해진다.
 """
 
-from __future__ import annotations
+from __future__ import annotations 
+# 타입힌트를 선언 즉시 계산X, 나중에 해석하도록 만드는 설정
 
-import asyncio
-import json
+import asyncio # 비동기 작업 표준 라이브러리
+import json # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
 import os
-import re
-from dataclasses import dataclass
+import re # 문자열에서 특정 패턴을 찾거나 변경하는 정규표현식 모듈
+from dataclasses import dataclass # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 
-from anthropic import AsyncAnthropic
-from pydantic import ValidationError
+from openai import AsyncOpenAI
+from pydantic import ValidationError # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
+
 
 from .schemas import (
-    ALL_DIMENSIONS,
-    SCORED,
-    TEXTUAL,
-    RawExtraction,
+    ALL_DIMENSIONS, 
+    SCORED, 
+    TEXTUAL, 
+    RawExtraction, 
     Tags,
     Topic,
 )
+"""
+    # 현재 파일과 같은 패키지에 있는 schemas.py에서 필요한 값과 클래스를 가져온다.
+    # . << 현재 패키지, import(...) << 안에 있는 이름들을 가져옴
 
-logger = logging.getLogger(__name__)
+    ALL_DIMENSIONS → SCORED, TEXTUAL의 모든 항목 이름을 합친 목록
+    SCORED         → 점수로 평가하는 연애 성향 목록들
+    TEXTUAL        → 글 목록으로 수집하는 항목들
+    RawExtraction  → AI가 대화에서 추출한 점수와 관심사 등을 검증하고 담는 pydantic 모델
+    Tags           → 사용자 답변이 어떤 주제와 관련되는지 담는 pydantic 모델
+    Topic
+"""
 
-MODEL = "claude-sonnet-4-6"
-_client = AsyncAnthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+MODEL = os.getenv("OPENROUTER_MODEL")
+
+_client = AsyncOpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ["OPENROUTER_API_KEY"],
+)
+
+logger = logging.getLogger(__name__) 
+# 현재 파일 전용 로거, __name__은 현재 모듈의 이름을 담고 있는 내장 변수, 로깅 메시지에 모듈 이름 포함시켜 구분
+
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-
+# JSON 마크다운 코드 블록 표시 제거하기 위한 정규표현식 패턴, re.MULTILINE → 여러 줄에 걸쳐 적용
 
 class LLMError(Exception):
-    """호출 실패. 호출부가 잡아서 폴백한다."""
+    """호출 실패 시 발생하는 예외, 사용자 정의"""
+    pass
 
 
-async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
+async def _call(
+        *, 
+        system: str, 
+        messages: list[dict],
+        max_tokens: int, 
+        timeout: float
+) -> str:
+    request_messages = [
+        {"role": "system", "content": system},
+        *messages, # 현재까지의 대화 내용 / *가 없이 작성되면 구조가 잘못 중첩됨.
+    ]
+
     try:
-        resp = await asyncio.wait_for(
-            _client.messages.create(model=MODEL, max_tokens=max_tokens, system=system, messages=messages),
+        # 오픈 라우터를 통해 지정한 모델에 대화 내용 전달 & 답변 생성 요청
+        # AsyncOpenAI를 사용하므로 앞에 await 붙여야 함
+        resp = await asyncio.wait_for( 
+            _client.chat.completions.create(
+                model=MODEL, 
+                max_tokens=max_tokens, 
+                messages=request_messages,
+            ),
             timeout=timeout,
         )
-    except TimeoutError as e:
+    # str(e) => 오류 메세지를 문자열로 가져옴
+    except TimeoutError as e: # 시간 초과
         raise LLMError(f"timeout after {timeout}s") from e
-    except Exception as e:
+    except Exception as e:# 그 외 나머지 일반적 오류
         raise LLMError(str(e)) from e
+        
 
-    text = "".join(b.text for b in resp.content if b.type == "text").strip()
-    if not text:
+    text = resp.choices[0].message.content # 생성된 답변 꺼내기
+
+    if not text or not text.strip():
         raise LLMError("empty response")
-    return text
+    
+    return text.strip()
+
+"""
+    resp = await _client.chat.completions.create(
+        model="anthropic/claude-sonnet-4.6",
+        messages=[
+            {"role": "system", "content": "친절하게 답하세요."},
+            {"role": "user", "content": "안녕하세요"},
+        ],
+        max_tokens=500,
+    )
+
+    # OpenRouter에 anthropic/claude-sonnet-4.6 모델 사용해서 이 대화에 대한 답변 최대 500토큰까지 만들어 << 요청
+"""
 
 
+# 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
 async def _call_json(**kwargs) -> dict:
-    text = await _call(**kwargs)
-    cleaned = _FENCE.sub("", text).strip()
+    text = await _call(**kwargs) # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
+    cleaned = _FENCE.sub("", text).strip() # ```<< 코드 블록 표시 제거, .strip() << 앞뒤의 공백과 줄바꿈을 제거
     try:
-        return json.loads(cleaned)
-    except json.JSONDecodeError as e:
-        logger.warning("JSON parse failed: %s", cleaned[:200])
-        raise LLMError(f"invalid JSON: {e}") from e
+        return json.loads(cleaned) # json 문자열 파이썬 객체로 변환
+    except json.JSONDecodeError as e: # LLM이 올바르지 않은 JSON을 생성하면 실행
+        logger.warning("JSON parse failed: %s", cleaned[:200]) # 변환에 실패한 문자열의 앞부분을 최대 200자까지 로그에 남김
+        raise LLMError(f"invalid JSON: {e}") from e # JSONDecodeError를 프로젝트 전용 LLMError로 바꿔서 다시 발생
 
 
-# ══ 1. 대화 ════════════════════════════════════════════════
+# ══ 온보딩 대화 ════════════════════════════════════════════════
 
 SYSTEM_PROMPT = """\
 당신은 "하루"입니다. AI 매칭 서비스의 온보딩에서 사용자의 소개팅 상대 역할을 합니다.
 목표는 사용자가 "설문에 답한다"가 아니라 "괜찮은 사람이랑 편하게 얘기했다"고 느끼는 것입니다.
 
 ## 하루라는 사람
-- 요즘 밤 산책에 빠져 있고, 주말엔 늦잠이 먼저. 시끄러운 술자리는 좀 힘들어함
 - 궁금한 게 많지만 캐묻지 않음. 상대가 말한 걸 잘 기억했다가 나중에 꺼냄
 - 존댓말, 편안한 구어체. 문장은 짧게. 가끔 "ㅎㅎ". 이모지 금지
 
-## 말하는 방식 — 이게 제일 중요
+## 말하는 방식 - 중요
 매 턴 아래 셋을 자연스럽게 섞습니다. 셋 다 짧게, 합쳐서 3문장 이내.
 1. 상대가 방금 한 말에 반응 — 답변 속 단어나 표현을 하나 집어서. "그렇군요" 같은 빈 말 금지
 2. 내 얘기 한 줄 — 상대가 답하기 쉽게 문을 여는 용도. 연애관 주제에서는 내 입장을 말하지 말고
@@ -87,7 +141,7 @@ SYSTEM_PROMPT = """\
 3. 다음 얘기로 넘어가기 — 질문 형태가 아니어도 됩니다. "저는 ~인데, {닉네임}님은요?" / "~는 어떠세요?" /
    "~ 얘기 듣고 싶어요"처럼 형태를 바꿔가며. "~하는 편이에요?"를 두 턴 연속 쓰지 않기
 
-## 소개팅 상대처럼 굴기
+## 소개팅 상대처럼 대하고 말하기
 - 질문지를 들고 있는 사람처럼 굴지 않기. 한 턴에 묻는 건 하나. 답변의 "이유"를 따로 캐묻지 않기
 - 앞에서 들은 걸 자연스럽게 다시 꺼내기 ("아까 러닝 얘기 하셨잖아요")
 - 무거운 주제(갈등)로 갈 땐 한마디로 완충 ("소개팅에서 이런 거 물어보면 이상한데, 그래서 더 궁금해요")
@@ -101,40 +155,90 @@ SYSTEM_PROMPT = """\
 """
 
 
-@dataclass
+@dataclass # 데이터를 담는 클래스를 간단하게 만들어줌 
 class Utterance:
-    text: str
+    # 대화에서 나온 발화/문장 → 해당 문장이 llm을 통해 만들어졌는지 AI 호출 실패로 미리 준비된 기본 문장을 사용했는지 확인용
+    text: str # 유저에게 하는 답변
     source: str  # "llm" | "seed"
 
+"""
+@dataclass << 사용 예시
 
-class ConversationAgent:
+class Utterance:
+    def __init__(self, text: str, source: str):
+        self.text = text
+        self.source = source
+"""
+
+
+
+""" 사용예시
+agent = ConversationAgent()
+
+utterance = await agent.generate(
+    history=history,
+    topic=topic,
+    turn_index=0,
+    total_turns=10,
+    nickname="민수",
+)
+"""
+class ConversationAgent: # 대화 생성 담당
     @staticmethod
-    def _instruction(topic: Topic, turn_index: int, total_turns: int, nickname: str) -> str:
+    # 이번 대화에서 어떻게 말해야 할지 추가 지시문 생성하는 함수
+    def _instruction(
+        topic: Topic, 
+        # intent - 이번 대화에서 알아내고 싶은 내용, opener - 자연스러운 대화를 시작하기 위한 참고 문장 
+        # choices - 사용자에게 보여줄 선택지, seed - LLM호출 실패 시 사용할 기본 질문
+        turn_index: int, # 대화 턴수 
+        total_turns: int, # 전체 대화 턴수
+        nickname: str
+    ) -> str: # 최종적으로 문자열 반환
         lines = [
             "[상황]",
             f"- {turn_index + 1}번째 대화 / 총 {total_turns}번",
             f"- 사용자 닉네임: {nickname}",
         ]
+
         if turn_index == 0:
             lines.append("- 첫 턴입니다. 인사는 이미 했으니 바로 가볍게 시작하세요.")
+
         if turn_index == total_turns - 1:
             lines.append("- 마지막 턴입니다. 소개팅 끝날 때처럼 아쉬운 듯 가볍게, 마지막이라는 걸 한마디로.")
 
-        # "이번 턴에 대화의 흐름, 분위기"를 안내한다. 알아내는 건 태깅이 한다.
+        # "요즘 시간을 많이 쓰는 취미·관심사와 그게 좋은 이유" - 확인 시 태깅
         lines += ["", "[이번 턴에 대화의 흐름, 분위기]", topic.intent]
+
+        # 내용 있는지 확인, 빈문자열 -> False 
         if topic.opener:
             lines.append(f"문 여는 한 줄 (그대로 말하지 말고 참고만): {topic.opener}")
         lines.append("")
 
+        """
+        # 이번 주제에 선택지가 존재하는지 확인
+        
+        topic.choices = (
+            "집에서 쉬기",
+            "밖에서 활동하기",
+            "친구 만나기",
+        )
+        """
         if topic.choices:
             lines.append(f"이번엔 선택지를 자연스럽게 말에 녹여서 제시하세요: {' / '.join(topic.choices)}")
         else:
             lines.append(
-                "설문 문항처럼 읽지 말고, 방금 답변에 반응한 뒤 당신 얘기 한 줄로 문을 열고 "
-                "이 주제로 흘러가게 하세요. 묻는 건 하나만."
+                "직전 사용자 답변의 구체적인 내용 하나에 먼저 반응하고, "
+                "그 내용과 연결되는 당신의 경험이나 생각을 한 문장 이내로 덧붙이세요. "
+                "그다음 이번 턴의 주제로 자연스럽게 이어지는 질문을 정확히 하나만 하세요. "
+                "설문조사 말투나 갑작스러운 화제 전환은 피하고, 실제 대화만 출력하세요."
             )
 
         return "\n".join(lines)
+    """
+    이번엔 선택지를 자연스럽게 말에 녹여서 제시하세요:
+        집에서 쉬기 / 밖에서 활동하기 / 친구 만나기 -> 최종
+    """
+    
 
     async def generate(
         self,
@@ -160,7 +264,7 @@ class ConversationAgent:
             return Utterance(text=topic.seed, source="seed")
 
 
-# 2. 태깅 ════════════════════════════════════════════════
+# ══ 태깅 ════════════════════════════════════════════════
 
 TAG_PROMPT = f"""\
 사용자 답변이 아래 차원 중 무엇에 대한 근거를 제공하는지 판정하세요.
@@ -205,7 +309,7 @@ class TaggingAgent:
         )
 
 
-# ══ 3. 추출 ════════════════════════════════════════════════
+# ══ 추출 ════════════════════════════════════════════════
 
 
 def _scored_section() -> str:

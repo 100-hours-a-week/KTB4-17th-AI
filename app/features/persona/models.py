@@ -92,8 +92,4 @@ class PersonaRecord(Base):
     version: Mapped[int] = mapped_column(Integer, default=1)
     previous_id: Mapped[str | None] = mapped_column(String(32))
 
-    # 확인 루프 — "이대로 좋아요" 시각 / "다른 것 같아요" 면 어느 영역이 달랐는지
-    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    feedback: Mapped[dict | None] = mapped_column(JSON)  # {"agree": bool, "area": str | None}
-
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
