@@ -380,9 +380,8 @@ class Tags(BaseModel):
 class StartRequest(BaseModel):
     nickname: str = Field(min_length=1, max_length=20)
     total_turns: int = Field(default=10, ge=5, le=15)
-    # 앱 사용자 식별자. 시뮬레이션·연습대화가 "이 사용자의 페르소나"를 찾을 때 쓴다.
-    # 없으면 session_id / persona_id 로만 찾을 수 있다.
-    user_id: str | None = Field(default=None, max_length=64)
+    # 앱 사용자 식별자. 시뮬레이션·연습대화가 "이 사용자의 페르소나"를 찾을 때 쓴다. 로그인 필수라 항상 있어야 한다.
+    user_id: str = Field(min_length=1, max_length=64)
 
 
 class AnswerRequest(BaseModel):

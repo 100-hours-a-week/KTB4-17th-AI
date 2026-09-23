@@ -1,7 +1,7 @@
 """LLM 호출부 - 대화 생성, 태깅, 특성 추출
 
 프롬프트 - 세 가지 역할:
-  - ConversationAgent : 다음 발화 생성 
+  - ConversationAgent : 다음 발화 생성
   - TaggingAgent      : 턴별 경량 판정 (어떤 차원이 채워졌나)
   - ExtractionAgent   : 대화 전체 → 점수
 
@@ -9,28 +9,30 @@
 대충 되고, 추출 신경 쓰느라 말투가 딱딱해진다.
 """
 
-from __future__ import annotations 
-# 타입힌트를 선언 즉시 계산X, 나중에 해석하도록 만드는 설정
+from __future__ import annotations
 
-import asyncio # 비동기 작업 표준 라이브러리
-import json # JSON 문자열 → dict, dict → JSON 문자열 변환
+# 타입힌트를 선언 즉시 계산X, 나중에 해석하도록 만드는 설정
+import asyncio  # 비동기 작업 표준 라이브러리
+import json  # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
-import os
-import re # 문자열에서 특정 패턴을 찾거나 변경하는 정규표현식 모듈
-from dataclasses import dataclass # 데이터 클래스를 간단하게 만들어 주는 데코레이터
+import re  # 문자열에서 특정 패턴을 찾거나 변경하는 정규표현식 모듈
+from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
+from functools import lru_cache
 
 from openai import AsyncOpenAI
-from pydantic import ValidationError # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
+from pydantic import ValidationError  # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
 
+from app.core.config import get_settings
 
 from .schemas import (
-    ALL_DIMENSIONS, 
-    SCORED, 
-    TEXTUAL, 
-    RawExtraction, 
+    ALL_DIMENSIONS,
+    SCORED,
+    TEXTUAL,
+    RawExtraction,
     Tags,
     Topic,
 )
+
 """
     # 현재 파일과 같은 패키지에 있는 schemas.py에서 필요한 값과 클래스를 가져온다.
     # . << 현재 패키지, import(...) << 안에 있는 이름들을 가져옴
@@ -43,60 +45,51 @@ from .schemas import (
     Topic
 """
 
-MODEL = os.getenv("OPENROUTER_MODEL")
 
-_client = AsyncOpenAI(
-    base_url="https://openrouter.ai/api/v1",
-    api_key=os.environ["OPENROUTER_API_KEY"],
-)
+# practice.agents 와 같은 OpenAI 호환 클라이언트. 플레이그라운드는 _call 자체를 갈아끼운다.
+@lru_cache
+def _get_client() -> AsyncOpenAI:
+    settings = get_settings()
+    return AsyncOpenAI(
+        base_url=settings.llm_base_url,
+        api_key=settings.llm_api_key or "EMPTY",
+    )
 
-logger = logging.getLogger(__name__) 
+
+logger = logging.getLogger(__name__)
 # 현재 파일 전용 로거, __name__은 현재 모듈의 이름을 담고 있는 내장 변수, 로깅 메시지에 모듈 이름 포함시켜 구분
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 # JSON 마크다운 코드 블록 표시 제거하기 위한 정규표현식 패턴, re.MULTILINE → 여러 줄에 걸쳐 적용
 
+
 class LLMError(Exception):
-    """호출 실패 시 발생하는 예외, 사용자 정의"""
-    pass
+    """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다."""
 
 
-async def _call(
-        *, 
-        system: str, 
-        messages: list[dict],
-        max_tokens: int, 
-        timeout: float
-) -> str:
-    request_messages = [
-        {"role": "system", "content": system},
-        *messages, # 현재까지의 대화 내용 / *가 없이 작성되면 구조가 잘못 중첩됨.
-    ]
-
+async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
+    settings = get_settings()
+    client = _get_client()
+    payload = [{"role": "system", "content": system}, *messages]
     try:
-        # 오픈 라우터를 통해 지정한 모델에 대화 내용 전달 & 답변 생성 요청
-        # AsyncOpenAI를 사용하므로 앞에 await 붙여야 함
-        resp = await asyncio.wait_for( 
-            _client.chat.completions.create(
-                model=MODEL, 
-                max_tokens=max_tokens, 
-                messages=request_messages,
-            ),
-            timeout=timeout,
-        )
-    # str(e) => 오류 메세지를 문자열로 가져옴
-    except TimeoutError as e: # 시간 초과
+        async with asyncio.timeout(timeout):
+            resp = await client.chat.completions.create(
+                model=settings.llm_model,
+                messages=payload,  # type: ignore[arg-type]
+                max_tokens=max_tokens,
+            )
+    except TimeoutError as e:
         raise LLMError(f"timeout after {timeout}s") from e
-    except Exception as e:# 그 외 나머지 일반적 오류
+    except Exception as e:
         raise LLMError(str(e)) from e
-        
 
-    text = resp.choices[0].message.content # 생성된 답변 꺼내기
-
-    if not text or not text.strip():
+    text = ""
+    if resp.choices:
+        text = (resp.choices[0].message.content or "").strip()
+    if not text:
         raise LLMError("empty response")
-    
-    return text.strip()
+    return text
+
 
 """
     resp = await _client.chat.completions.create(
@@ -114,13 +107,15 @@ async def _call(
 
 # 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
 async def _call_json(**kwargs) -> dict:
-    text = await _call(**kwargs) # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
-    cleaned = _FENCE.sub("", text).strip() # ```<< 코드 블록 표시 제거, .strip() << 앞뒤의 공백과 줄바꿈을 제거
+    text = await _call(**kwargs)  # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
+    cleaned = _FENCE.sub("", text).strip()  # ```<< 코드 블록 표시 제거, .strip() << 앞뒤의 공백과 줄바꿈을 제거
     try:
-        return json.loads(cleaned) # json 문자열 파이썬 객체로 변환
-    except json.JSONDecodeError as e: # LLM이 올바르지 않은 JSON을 생성하면 실행
-        logger.warning("JSON parse failed: %s", cleaned[:200]) # 변환에 실패한 문자열의 앞부분을 최대 200자까지 로그에 남김
-        raise LLMError(f"invalid JSON: {e}") from e # JSONDecodeError를 프로젝트 전용 LLMError로 바꿔서 다시 발생
+        return json.loads(cleaned)  # json 문자열 파이썬 객체로 변환
+    except json.JSONDecodeError as e:  # LLM이 올바르지 않은 JSON을 생성하면 실행
+        logger.warning(
+            "JSON parse failed: %s", cleaned[:200]
+        )  # 변환에 실패한 문자열의 앞부분을 최대 200자까지 로그에 남김
+        raise LLMError(f"invalid JSON: {e}") from e  # JSONDecodeError를 프로젝트 전용 LLMError로 바꿔서 다시 발생
 
 
 # ══ 온보딩 대화 ════════════════════════════════════════════════
@@ -155,11 +150,12 @@ SYSTEM_PROMPT = """\
 """
 
 
-@dataclass # 데이터를 담는 클래스를 간단하게 만들어줌 
+@dataclass  # 데이터를 담는 클래스를 간단하게 만들어줌
 class Utterance:
     # 대화에서 나온 발화/문장 → 해당 문장이 llm을 통해 만들어졌는지 AI 호출 실패로 미리 준비된 기본 문장을 사용했는지 확인용
-    text: str # 유저에게 하는 답변
+    text: str  # 유저에게 하는 답변
     source: str  # "llm" | "seed"
+
 
 """
 @dataclass << 사용 예시
@@ -169,7 +165,6 @@ class Utterance:
         self.text = text
         self.source = source
 """
-
 
 
 """ 사용예시
@@ -183,17 +178,19 @@ utterance = await agent.generate(
     nickname="민수",
 )
 """
-class ConversationAgent: # 대화 생성 담당
+
+
+class ConversationAgent:  # 대화 생성 담당
     @staticmethod
     # 이번 대화에서 어떻게 말해야 할지 추가 지시문 생성하는 함수
     def _instruction(
-        topic: Topic, 
-        # intent - 이번 대화에서 알아내고 싶은 내용, opener - 자연스러운 대화를 시작하기 위한 참고 문장 
+        topic: Topic,
+        # intent - 이번 대화에서 알아내고 싶은 내용, opener - 자연스러운 대화를 시작하기 위한 참고 문장
         # choices - 사용자에게 보여줄 선택지, seed - LLM호출 실패 시 사용할 기본 질문
-        turn_index: int, # 대화 턴수 
-        total_turns: int, # 전체 대화 턴수
-        nickname: str
-    ) -> str: # 최종적으로 문자열 반환
+        turn_index: int,  # 대화 턴수
+        total_turns: int,  # 전체 대화 턴수
+        nickname: str,
+    ) -> str:  # 최종적으로 문자열 반환
         lines = [
             "[상황]",
             f"- {turn_index + 1}번째 대화 / 총 {total_turns}번",
@@ -209,14 +206,14 @@ class ConversationAgent: # 대화 생성 담당
         # "요즘 시간을 많이 쓰는 취미·관심사와 그게 좋은 이유" - 확인 시 태깅
         lines += ["", "[이번 턴에 대화의 흐름, 분위기]", topic.intent]
 
-        # 내용 있는지 확인, 빈문자열 -> False 
+        # 내용 있는지 확인, 빈문자열 -> False
         if topic.opener:
             lines.append(f"문 여는 한 줄 (그대로 말하지 말고 참고만): {topic.opener}")
         lines.append("")
 
         """
         # 이번 주제에 선택지가 존재하는지 확인
-        
+
         topic.choices = (
             "집에서 쉬기",
             "밖에서 활동하기",
@@ -234,11 +231,11 @@ class ConversationAgent: # 대화 생성 담당
             )
 
         return "\n".join(lines)
+
     """
     이번엔 선택지를 자연스럽게 말에 녹여서 제시하세요:
         집에서 쉬기 / 밖에서 활동하기 / 친구 만나기 -> 최종
     """
-    
 
     async def generate(
         self,
@@ -255,7 +252,7 @@ class ConversationAgent: # 대화 생성 담당
                 system=SYSTEM_PROMPT,
                 messages=[*history, {"role": "user", "content": instruction}],
                 max_tokens=220,  # 리액션 + 내 얘기 + 넘어가기, 3문장
-                timeout=2.5,
+                timeout=get_settings().onboarding_phrase_timeout_s,
             )
             return Utterance(text=text, source="llm")
         except LLMError as e:
@@ -294,7 +291,7 @@ class TaggingAgent:
                 system=TAG_PROMPT,
                 messages=[{"role": "user", "content": f"질문: {question}\n답변: {answer}"}],
                 max_tokens=120,
-                timeout=1.5,
+                timeout=get_settings().onboarding_tag_timeout_s,
             )
         except LLMError as e:
             logger.warning("tagging failed: %s", e)
@@ -409,7 +406,7 @@ class ExtractionAgent:
                 system=RUBRIC,
                 messages=[{"role": "user", "content": self._transcript(history)}],
                 max_tokens=1500,  # 점수 + 서술
-                timeout=15.0,
+                timeout=get_settings().persona_extract_timeout_s,
             )
         except LLMError as e:
             raise BuildFailed(f"LLM call failed: {e}") from e

@@ -440,8 +440,7 @@ FastAPI 요청 하나에 사용할 DB 세션을 열고 전달한 뒤 자동으�
 API에서는 다음처럼 사용한다.
 
 ```python
-async def start(db: AsyncSession = Depends(get_db)):
-    ...
+async def start(db: AsyncSession = Depends(get_db)): ...
 ```
 
 ### 커밋은 하지 않는다
@@ -1708,7 +1707,7 @@ OnboardingSession 1개
 """LLM 호출부 - 대화 생성, 태깅, 특성 추출
 
 프롬프트 - 세 가지 역할:
-  - ConversationAgent : 다음 발화 생성 
+  - ConversationAgent : 다음 발화 생성
   - TaggingAgent      : 턴별 경량 판정 (어떤 차원이 채워졌나)
   - ExtractionAgent   : 대화 전체 → 점수
 
@@ -1716,28 +1715,29 @@ OnboardingSession 1개
 대충 되고, 추출 신경 쓰느라 말투가 딱딱해진다.
 """
 
-from __future__ import annotations 
+from __future__ import annotations
 # 타입힌트를 선언 즉시 계산X, 나중에 해석하도록 만드는 설정
 
-import asyncio # 비동기 작업 표준 라이브러리
-import json # JSON 문자열 → dict, dict → JSON 문자열 변환
+import asyncio  # 비동기 작업 표준 라이브러리
+import json  # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
 import os
-import re # 문자열에서 특정 패턴을 찾거나 변경하는 정규표현식 모듈
-from dataclasses import dataclass # 데이터 클래스를 간단하게 만들어 주는 데코레이터
+import re  # 문자열에서 특정 패턴을 찾거나 변경하는 정규표현식 모듈
+from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 
 from openai import AsyncOpenAI
-from pydantic import ValidationError # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
+from pydantic import ValidationError  # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
 
 
 from .schemas import (
-    ALL_DIMENSIONS, 
-    SCORED, 
-    TEXTUAL, 
-    RawExtraction, 
+    ALL_DIMENSIONS,
+    SCORED,
+    TEXTUAL,
+    RawExtraction,
     Tags,
     Topic,
 )
+
 """
     # 현재 파일과 같은 패키지에 있는 schemas.py에서 필요한 값과 클래스를 가져온다.
     # . << 현재 패키지, import(...) << 안에 있는 이름들을 가져옴
@@ -1757,53 +1757,49 @@ _client = AsyncOpenAI(
     api_key=os.environ["OPENROUTER_API_KEY"],
 )
 
-logger = logging.getLogger(__name__) 
+logger = logging.getLogger(__name__)
 # 현재 파일 전용 로거, __name__은 현재 모듈의 이름을 담고 있는 내장 변수, 로깅 메시지에 모듈 이름 포함시켜 구분
 
 _FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 # JSON 마크다운 코드 블록 표시 제거하기 위한 정규표현식 패턴, re.MULTILINE → 여러 줄에 걸쳐 적용
 
+
 class LLMError(Exception):
     """호출 실패 시 발생하는 예외, 사용자 정의"""
+
     pass
 
 
-async def _call(
-        *, 
-        system: str, 
-        messages: list[dict],
-        max_tokens: int, 
-        timeout: float
-) -> str:
+async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
     request_messages = [
         {"role": "system", "content": system},
-        *messages, # 현재까지의 대화 내용 / *가 없이 작성되면 구조가 잘못 중첩됨.
+        *messages,  # 현재까지의 대화 내용 / *가 없이 작성되면 구조가 잘못 중첩됨.
     ]
 
     try:
         # 오픈 라우터를 통해 지정한 모델에 대화 내용 전달 & 답변 생성 요청
         # AsyncOpenAI를 사용하므로 앞에 await 붙여야 함
-        resp = await asyncio.wait_for( 
+        resp = await asyncio.wait_for(
             _client.chat.completions.create(
-                model=MODEL, 
-                max_tokens=max_tokens, 
+                model=MODEL,
+                max_tokens=max_tokens,
                 messages=request_messages,
             ),
             timeout=timeout,
         )
     # str(e) => 오류 메세지를 문자열로 가져옴
-    except TimeoutError as e: # 시간 초과
+    except TimeoutError as e:  # 시간 초과
         raise LLMError(f"timeout after {timeout}s") from e
-    except Exception as e:# 그 외 나머지 일반적 오류
+    except Exception as e:  # 그 외 나머지 일반적 오류
         raise LLMError(str(e)) from e
-        
 
-    text = resp.choices[0].message.content # 생성된 답변 꺼내기
+    text = resp.choices[0].message.content  # 생성된 답변 꺼내기
 
     if not text or not text.strip():
         raise LLMError("empty response")
-    
+
     return text.strip()
+
 
 """
     resp = await _client.chat.completions.create(
@@ -1821,13 +1817,15 @@ async def _call(
 
 # 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
 async def _call_json(**kwargs) -> dict:
-    text = await _call(**kwargs) # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
-    cleaned = _FENCE.sub("", text).strip() # ```<< 코드 블록 표시 제거, .strip() << 앞뒤의 공백과 줄바꿈을 제거
+    text = await _call(**kwargs)  # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
+    cleaned = _FENCE.sub("", text).strip()  # ```<< 코드 블록 표시 제거, .strip() << 앞뒤의 공백과 줄바꿈을 제거
     try:
-        return json.loads(cleaned) # json 문자열 파이썬 객체로 변환
-    except json.JSONDecodeError as e: # LLM이 올바르지 않은 JSON을 생성하면 실행
-        logger.warning("JSON parse failed: %s", cleaned[:200]) # 변환에 실패한 문자열의 앞부분을 최대 200자까지 로그에 남김
-        raise LLMError(f"invalid JSON: {e}") from e # JSONDecodeError를 프로젝트 전용 LLMError로 바꿔서 다시 발생
+        return json.loads(cleaned)  # json 문자열 파이썬 객체로 변환
+    except json.JSONDecodeError as e:  # LLM이 올바르지 않은 JSON을 생성하면 실행
+        logger.warning(
+            "JSON parse failed: %s", cleaned[:200]
+        )  # 변환에 실패한 문자열의 앞부분을 최대 200자까지 로그에 남김
+        raise LLMError(f"invalid JSON: {e}") from e  # JSONDecodeError를 프로젝트 전용 LLMError로 바꿔서 다시 발생
 
 
 # ══ 온보딩 대화 ════════════════════════════════════════════════
@@ -1862,11 +1860,12 @@ SYSTEM_PROMPT = """\
 """
 
 
-@dataclass # 데이터를 담는 클래스를 간단하게 만들어줌 
+@dataclass  # 데이터를 담는 클래스를 간단하게 만들어줌
 class Utterance:
     # 대화에서 나온 발화/문장 → 해당 문장이 llm을 통해 만들어졌는지 AI 호출 실패로 미리 준비된 기본 문장을 사용했는지 확인용
     text: str
     source: str  # "llm" | "seed"
+
 
 """
 @dataclass << 사용 예시
@@ -1876,7 +1875,6 @@ class Utterance:
         self.text = text
         self.source = source
 """
-
 
 
 """ 사용예시
@@ -1890,17 +1888,19 @@ utterance = await agent.generate(
     nickname="민수",
 )
 """
-class ConversationAgent: # 대화 생성 담당
+
+
+class ConversationAgent:  # 대화 생성 담당
     @staticmethod
     # 이번 대화에서 어떻게 말해야 할지 추가 지시문 생성하는 함수
     def _instruction(
-        topic: Topic, 
-        # intent - 이번 대화에서 알아내고 싶은 내용, opener - 자연스러운 대화를 시작하기 위한 참고 문장 
+        topic: Topic,
+        # intent - 이번 대화에서 알아내고 싶은 내용, opener - 자연스러운 대화를 시작하기 위한 참고 문장
         # choices - 사용자에게 보여줄 선택지, seed - LLM호출 실패 시 사용할 기본 질문
-        turn_index: int, # 대화 턴수 
-        total_turns: int, # 전체 대화 턴수
-        nickname: str
-    ) -> str: # 최종적으로 문자열 반환
+        turn_index: int,  # 대화 턴수
+        total_turns: int,  # 전체 대화 턴수
+        nickname: str,
+    ) -> str:  # 최종적으로 문자열 반환
         lines = [
             "[상황]",
             f"- {turn_index + 1}번째 대화 / 총 {total_turns}번",
@@ -1916,14 +1916,14 @@ class ConversationAgent: # 대화 생성 담당
         # "요즘 시간을 많이 쓰는 취미·관심사와 그게 좋은 이유" - 확인 시 태깅
         lines += ["", "[이번 턴에 대화의 흐름, 분위기]", topic.intent]
 
-        # 내용 있는지 확인, 빈문자열 -> False 
+        # 내용 있는지 확인, 빈문자열 -> False
         if topic.opener:
             lines.append(f"문 여는 한 줄 (그대로 말하지 말고 참고만): {topic.opener}")
         lines.append("")
 
         """
         # 이번 주제에 선택지가 존재하는지 확인
-        
+
         topic.choices = (
             "집에서 쉬기",
             "밖에서 활동하기",
@@ -1941,11 +1941,11 @@ class ConversationAgent: # 대화 생성 담당
             )
 
         return "\n".join(lines)
+
     """
     이번엔 선택지를 자연스럽게 말에 녹여서 제시하세요:
         집에서 쉬기 / 밖에서 활동하기 / 친구 만나기 -> 최종
     """
-    
 
     async def generate(
         self,
@@ -3987,9 +3987,7 @@ async def start(
 #### 1단계: LLM 추출
 
 ```python
-raw = await self.extraction.extract(
-    self._history(session)
-)
+raw = await self.extraction.extract(self._history(session))
 ```
 
 답변이 있는 전체 대화를 `ExtractionAgent`에 전달한다.
@@ -4876,7 +4874,7 @@ def describe(name: str, p: PersonaResponse) -> str:
 관심사나 일상 목록이 비어 있으면 `알 수 없음`을 사용한다.
 
 ```python
-', '.join(p.interests) or '알 수 없음'
+", ".join(p.interests) or "알 수 없음"
 ```
 
 ### 결과 예시
