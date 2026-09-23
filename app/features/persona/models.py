@@ -30,7 +30,7 @@ class OnboardingSession(Base):
     __tablename__ = "onboarding_sessions"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    user_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
     nickname: Mapped[str] = mapped_column(String(20))
     total_turns: Mapped[int] = mapped_column(Integer, default=10)
     turn_index: Mapped[int] = mapped_column(Integer, default=0)
@@ -81,7 +81,7 @@ class PersonaRecord(Base):
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id"), index=True)
-    user_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
 
     scores: Mapped[dict] = mapped_column(JSON)
     texts: Mapped[dict] = mapped_column(JSON)  # interests/routine/date_*

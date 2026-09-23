@@ -15,7 +15,7 @@ class PersonaRepository:
 
     # ── 세션 ──────────────────────────────────────────────
 
-    async def create_session(self, nickname: str, total_turns: int, user_id: str | None = None) -> OnboardingSession:
+    async def create_session(self, nickname: str, total_turns: int, user_id: str) -> OnboardingSession:
         session = OnboardingSession(
             nickname=nickname,
             total_turns=total_turns,

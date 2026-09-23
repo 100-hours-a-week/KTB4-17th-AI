@@ -313,7 +313,7 @@ class OnboardingService:
 
     # ── 공개 API ──────────────────────────────────────────
 
-    async def start(self, nickname: str, total_turns: int, user_id: str | None = None) -> TurnResponse:
+    async def start(self, nickname: str, total_turns: int, user_id: str) -> TurnResponse:
         session = await self.repo.create_session(nickname, total_turns, user_id)
         return await self._ask_next(session)
 
