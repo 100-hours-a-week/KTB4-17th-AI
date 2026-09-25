@@ -1,0 +1,41 @@
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+build/
+dist/
+
+#  CI
+.git/
+.github/
+
+# IDE
+.idea/
+.vscode/
+.claude/
+.DS_Store
+*.swp
+
+# runtime
+.env
+.env.*
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Development files
+tests/
+dev/
+docs/
+README.md
+gitconvention.md
+.python-version
