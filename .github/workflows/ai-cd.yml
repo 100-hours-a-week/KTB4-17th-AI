@@ -91,4 +91,4 @@ jobs:
             -o StrictHostKeyChecking=yes \
             -p "${EC2_PORT:-22}" \
             "$EC2_USER@$EC2_HOST" \
-            "cd /home/ubuntu/app && ./deploy-be.sh '$IMAGE_URL'"
+            "cd /home/ubuntu/app && ./deploy-ai.sh '$IMAGE_URL'"
