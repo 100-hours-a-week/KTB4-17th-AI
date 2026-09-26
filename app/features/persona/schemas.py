@@ -9,8 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import IntEnum
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ══ 차원 정의 ══════════════════════════════════════════════
 
@@ -378,8 +379,10 @@ class Tags(BaseModel):
 
 
 class StartRequest(BaseModel):
+    # total_turns 같은 알 수 없는 필드는 조용히 무시하지 않고 422로 거절한다
+    model_config = ConfigDict(extra="forbid")
+
     nickname: str = Field(min_length=1, max_length=20)
-    total_turns: int = Field(default=10, ge=5, le=15)
     # 앱 사용자 식별자. 시뮬레이션·연습대화가 "이 사용자의 페르소나"를 찾을 때 쓴다. 로그인 필수라 항상 있어야 한다.
     user_id: str = Field(min_length=1, max_length=64)
 
@@ -393,9 +396,22 @@ class AnswerRequest(BaseModel):
 MIN_ANSWERS_TO_FINISH = 3
 
 
+# 발화 조각의 종류. 첫 턴은 intro → reason → question → self_disclosure → answer_prompt 고정 순서.
+# 이후 턴은 LLM 자유 발화라 구조를 추측하지 않고 message 하나로, 폴백 질문은 question, 종료는 closing.
+SegmentType = Literal["intro", "reason", "question", "self_disclosure", "answer_prompt", "message", "closing"]
+
+
+class Segment(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)  # 공백만 있는 text 는 min_length 로 거부
+
+    type: SegmentType
+    text: str = Field(min_length=1)
+
+
 class TurnResponse(BaseModel):
     session_id: str
-    utterance: str
+    utterance: str  # segments 텍스트를 공백으로 이은 전체 발화. 기존 소비자는 이것만 써도 된다
+    segments: list[Segment] = Field(default_factory=list)
     choices: list[str] | None = None
     progress: str
     done: bool = False
