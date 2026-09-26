@@ -33,12 +33,16 @@ from .schemas import (
     Gap,
     Narrative,
     PersonaResponse,
+    Segment,
     Topic,
     TurnResponse,
     Weight,
 )
 
 logger = logging.getLogger(__name__)
+
+# 온보딩 전체 질문 수. 나중에 질문 수를 바꿀 때는 이 값만 수정하면 된다.
+ONBOARDING_TOTAL_TURNS = 10
 
 
 # ══ 커버리지 ═══════════════════════════════════════════════
@@ -286,9 +290,11 @@ class OnboardingService:
         topic = next_topic(coverage, session.turn_index, session.total_turns, session.used_topic_ids)
 
         if topic is None or session.turn_index >= session.total_turns:
+            closing = "오늘 얘기 재밌었어요. 지금 대화로 페르소나를 만들고 있어요."
             return TurnResponse(
                 session_id=session.id,
-                utterance="오늘 얘기 재밌었어요. 지금 대화로 페르소나를 만들고 있어요.",
+                utterance=closing,
+                segments=[Segment(type="closing", text=closing)],
                 progress=f"{session.total_turns}/{session.total_turns}",
                 done=True,
                 answered=self._answered(session),
@@ -306,6 +312,7 @@ class OnboardingService:
         return TurnResponse(
             session_id=session.id,
             utterance=utterance.text,
+            segments=list(utterance.segments),
             choices=list(topic.choices) if topic.choices else None,
             progress=f"{session.turn_index + 1}/{session.total_turns}",
             **self._controls(session),
@@ -313,8 +320,8 @@ class OnboardingService:
 
     # ── 공개 API ──────────────────────────────────────────
 
-    async def start(self, nickname: str, total_turns: int, user_id: str) -> TurnResponse:
-        session = await self.repo.create_session(nickname, total_turns, user_id)
+    async def start(self, nickname: str, user_id: str) -> TurnResponse:
+        session = await self.repo.create_session(nickname, ONBOARDING_TOTAL_TURNS, user_id)
         return await self._ask_next(session)
 
     async def submit_answer(self, session: OnboardingSession, answer: str) -> TurnResponse:

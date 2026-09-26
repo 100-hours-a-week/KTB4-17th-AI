@@ -29,6 +29,7 @@ from .schemas import (
     SCORED,
     TEXTUAL,
     RawExtraction,
+    Segment,
     Tags,
     Topic,
 )
@@ -130,6 +131,7 @@ SYSTEM_PROMPT = """\
 
 ## 말하는 방식 - 중요
 매 턴 아래 셋을 자연스럽게 섞습니다. 셋 다 짧게, 합쳐서 3문장 이내.
+(첫 턴은 예외 — 상대가 한 말이 아직 없으므로 반응은 없습니다. [상황]에 적힌 첫 턴 순서를 그대로 따르고, 3문장 이내 제한도 적용하지 않습니다)
 1. 상대가 방금 한 말에 반응 — 답변 속 단어나 표현을 하나 집어서. "그렇군요" 같은 빈 말 금지
 2. 내 얘기 한 줄 — 상대가 답하기 쉽게 문을 여는 용도. 연애관 주제에서는 내 입장을 말하지 말고
    "주변 보면 이게 진짜 갈리더라고요"처럼 제3자 얘기로 문을 엽니다 (상대 답을 유도하지 않기 위해)
@@ -153,8 +155,54 @@ SYSTEM_PROMPT = """\
 @dataclass  # 데이터를 담는 클래스를 간단하게 만들어줌
 class Utterance:
     # 대화에서 나온 발화/문장 → 해당 문장이 llm을 통해 만들어졌는지 AI 호출 실패로 미리 준비된 기본 문장을 사용했는지 확인용
-    text: str  # 유저에게 하는 답변
+    text: str  # 유저에게 하는 답변 (segments 텍스트를 공백으로 이은 것)
     source: str  # "llm" | "seed"
+    segments: tuple[Segment, ...] = ()
+
+
+FIRST_TURN_TYPES = ("intro", "reason", "question", "self_disclosure", "answer_prompt")
+FIRST_TURN_INTRO = "안녕하세요, 저는 하루예요."
+
+
+def _join(segments: list[Segment]) -> str:
+    return " ".join(s.text for s in segments)
+
+
+def _first_turn_fallback(topic: Topic, nickname: str) -> list[Segment]:
+    """LLM 실패 시 고정 템플릿. 순서·타입이 코드로 보장된다."""
+    return [
+        Segment(type="intro", text=FIRST_TURN_INTRO),
+        Segment(type="reason", text=f"{nickname}님을 알아가고 싶어서 가볍게 이야기를 나눠보고 싶어요."),
+        Segment(type="question", text=topic.seed),
+        Segment(type="self_disclosure", text=topic.opener or "저는 이런 얘기 나누는 걸 좋아해요."),
+        Segment(type="answer_prompt", text=f"{nickname}님도 편하게 답해 주세요."),
+    ]
+
+
+def _parse_first_turn(raw: dict, nickname: str) -> list[Segment]:
+    """LLM JSON → 5개 segment. 타입·비어 있음·의미 불변식 위반 시 ValueError (호출부가 전체 폴백)."""
+    texts = {}
+    for t in FIRST_TURN_TYPES:
+        value = raw.get(t)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(f"missing segment: {t}")
+        texts[t] = value.strip()
+
+    if texts["intro"] != FIRST_TURN_INTRO:
+        raise ValueError("intro must be the fixed greeting")
+    if f"{nickname}님" not in texts["reason"] or "알아가" not in texts["reason"]:
+        raise ValueError("reason must express wanting to get to know the nickname")
+    # 질문은 question segment 에만, 전체에서 정확히 하나
+    if any(_question_marks(texts[t]) for t in FIRST_TURN_TYPES if t != "question"):
+        raise ValueError("only the question segment may ask a question")
+    if _question_marks(texts["question"]) != 1:
+        raise ValueError("question segment must contain exactly one question")
+
+    return [Segment(type=t, text=texts[t]) for t in FIRST_TURN_TYPES]  # type: ignore[arg-type]
+
+
+def _question_marks(text: str) -> int:
+    return text.count("?") + text.count("？")
 
 
 """
@@ -197,8 +245,11 @@ class ConversationAgent:  # 대화 생성 담당
             f"- 사용자 닉네임: {nickname}",
         ]
 
-        if turn_index == 0:
-            lines.append("- 첫 턴입니다. 인사는 이미 했으니 바로 가볍게 시작하세요.")
+        is_first = turn_index == 0
+        if is_first:
+            lines.append(
+                "- 첫 턴입니다. 사용자의 이전 답변은 아직 없습니다. 반응하거나 요약하거나 추측할 내용이 없습니다."
+            )
 
         if turn_index == total_turns - 1:
             lines.append("- 마지막 턴입니다. 소개팅 끝날 때처럼 아쉬운 듯 가볍게, 마지막이라는 걸 한마디로.")
@@ -208,7 +259,7 @@ class ConversationAgent:  # 대화 생성 담당
 
         # 내용 있는지 확인, 빈문자열 -> False
         if topic.opener:
-            lines.append(f"문 여는 한 줄 (그대로 말하지 말고 참고만): {topic.opener}")
+            lines.append(f"문 여는 한 줄 (하루 자신의 발화입니다. 그대로 말하지 말고 참고만): {topic.opener}")
         lines.append("")
 
         """
@@ -220,7 +271,27 @@ class ConversationAgent:  # 대화 생성 담당
             "친구 만나기",
         )
         """
-        if topic.choices:
+        if is_first:
+            question = (
+                f"이번 주제의 질문에 선택지를 자연스럽게 녹여 묻기: {' / '.join(topic.choices)}"
+                if topic.choices
+                else f"이번 주제의 질문(참고: {topic.seed})을 자연스러운 말로 묻기"
+            )
+            lines += [
+                "첫 턴 발화는 반드시 아래 순서로, 실제 대화만 출력하세요.",
+                '1. 정확히 "안녕하세요, 저는 하루예요."로 시작해 자기소개하기 (다른 인사말 금지)',
+                f"2. {nickname}님을 알아가고 싶어서 가볍게 이야기를 나눠보고 싶다는 이유를 "
+                f"닉네임 {nickname}님을 넣어 한 문장으로 말하기",
+                f"3. {question} — 하루의 예시 답변보다 반드시 먼저 사용자에게 묻기",
+                "4. 질문을 던진 뒤에 위 '문 여는 한 줄'을 참고해 하루 자신의 예시 답변을 한 문장으로 덧붙이기 "
+                "(하루의 답변이 질문보다 앞서면 안 됨. 연애관 주제면 제3자 얘기로)",
+                f"5. 마지막에 {nickname}님도 편하게 답해 달라고 부담 없이 유도하기",
+                "질문은 정확히 하나만 하세요. 설문조사 말투는 피하세요.",
+                "출력은 위 다섯 단계를 키로 가진 JSON 객체 하나만, 각 값은 그 단계의 발화 문장입니다. "
+                "설명·마크다운 금지. "
+                '{"intro": "", "reason": "", "question": "", "self_disclosure": "", "answer_prompt": ""}',
+            ]
+        elif topic.choices:
             lines.append(f"이번엔 선택지를 자연스럽게 말에 녹여서 제시하세요: {' / '.join(topic.choices)}")
         else:
             lines.append(
@@ -247,6 +318,8 @@ class ConversationAgent:  # 대화 생성 담당
         nickname: str,
     ) -> Utterance:
         instruction = self._instruction(topic, turn_index, total_turns, nickname)
+        if turn_index == 0:
+            return await self._generate_first(instruction, history, topic, nickname)
         try:
             text = await _call(
                 system=SYSTEM_PROMPT,
@@ -254,11 +327,27 @@ class ConversationAgent:  # 대화 생성 담당
                 max_tokens=220,  # 리액션 + 내 얘기 + 넘어가기, 3문장
                 timeout=get_settings().onboarding_phrase_timeout_s,
             )
-            return Utterance(text=text, source="llm")
+            return Utterance(text=text, source="llm", segments=(Segment(type="message", text=text),))
         except LLMError as e:
             # 폴백 — 시드 질문 사용. API 호출 실패 시 사용
             logger.warning("turn generation failed (%s), using seed", e)
-            return Utterance(text=topic.seed, source="seed")
+            return Utterance(text=topic.seed, source="seed", segments=(Segment(type="question", text=topic.seed),))
+
+    async def _generate_first(self, instruction: str, history: list[dict], topic: Topic, nickname: str) -> Utterance:
+        """첫 턴은 단계별 JSON으로 받아 segment 경계를 LLM 출력 구조가 보장하게 한다."""
+        try:
+            raw = await _call_json(
+                system=SYSTEM_PROMPT,
+                messages=[*history, {"role": "user", "content": instruction}],
+                max_tokens=450,
+                timeout=get_settings().onboarding_phrase_timeout_s,
+            )
+            segments = _parse_first_turn(raw if isinstance(raw, dict) else {}, nickname)
+            return Utterance(text=_join(segments), source="llm", segments=tuple(segments))
+        except (LLMError, ValueError) as e:  # pydantic ValidationError 도 ValueError
+            logger.warning("first turn generation failed (%s), using template", e)
+            segments = _first_turn_fallback(topic, nickname)
+            return Utterance(text=_join(segments), source="seed", segments=tuple(segments))
 
 
 # ══ 태깅 ════════════════════════════════════════════════
