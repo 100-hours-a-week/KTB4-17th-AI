@@ -143,6 +143,10 @@ class TooFewAnswers(Exception):
         super().__init__(f"{answered} answered, need {MIN_ANSWERS_TO_FINISH}")
 
 
+class TurnMismatch(Exception):
+    """아직 묻지 않은 턴에 대한 답이 왔다. 클라이언트 상태가 서버와 어긋났다."""
+
+
 class OnboardingNotFinished(Exception):
     """대기 중인 질문이 있거나 약속한 문답 수를 아직 채우지 못했다."""
 
@@ -343,15 +347,7 @@ class OnboardingService:
         topic = next_topic(coverage, session.turn_index, session.total_turns, session.used_topic_ids)
 
         if topic is None or session.turn_index >= session.total_turns:
-            closing = "오늘 얘기 재밌었어요. 지금 대화로 페르소나를 만들고 있어요."
-            return TurnResponse(
-                session_id=session.id,
-                utterance=closing,
-                segments=[Segment(type="closing", text=closing)],
-                progress=f"{session.total_turns}/{session.total_turns}",
-                done=True,
-                answered=self._answered(session),
-            )
+            return self._closing(session)
 
         utterance = await self.conversation.generate(
             history=self._history(session),
@@ -368,6 +364,35 @@ class OnboardingService:
             segments=list(utterance.segments),
             choices=list(topic.choices) if topic.choices else None,
             progress=f"{session.turn_index + 1}/{session.total_turns}",
+            turn_index=session.turn_index,
+            **self._controls(session),
+        )
+
+    def _closing(self, session: OnboardingSession) -> TurnResponse:
+        closing = "오늘 얘기 재밌었어요. 지금 대화로 페르소나를 만들고 있어요."
+        return TurnResponse(
+            session_id=session.id,
+            utterance=closing,
+            segments=[Segment(type="closing", text=closing)],
+            progress=f"{session.total_turns}/{session.total_turns}",
+            done=True,
+            answered=self._answered(session),
+            turn_index=session.turn_index,
+        )
+
+    def _current(self, session: OnboardingSession) -> TurnResponse:
+        """지금 대기 중인 질문(없으면 마무리)을 다시 만든다. LLM 없이 저장된 질문 문장으로."""
+        if session.pending_topic_id is None:
+            return self._closing(session)
+        topic = TOPICS_BY_ID[session.pending_topic_id]
+        question = session.turns[-1].question
+        return TurnResponse(
+            session_id=session.id,
+            utterance=question,
+            segments=[Segment(type="message", text=question)],
+            choices=list(topic.choices) if topic.choices else None,
+            progress=f"{session.turn_index + 1}/{session.total_turns}",
+            turn_index=session.turn_index,
             **self._controls(session),
         )
 
@@ -381,6 +406,7 @@ class OnboardingService:
             choices=list(topic.choices) if topic.choices else None,
             progress=f"{session.turn_index + 1}/{session.total_turns}",
             retry=True,
+            turn_index=session.turn_index,
             **self._controls(session),
         )
 
@@ -390,7 +416,16 @@ class OnboardingService:
         session = await self.repo.create_session(nickname, ONBOARDING_TOTAL_TURNS, user_id)
         return await self._ask_next(session)
 
-    async def submit_answer(self, session: OnboardingSession, answer: str) -> TurnResponse:
+    async def submit_answer(
+        self, session: OnboardingSession, answer: str, *, turn_index: int | None = None
+    ) -> TurnResponse:
+        """turn_index 는 클라이언트가 받은 질문의 턴 번호. 이미 지난 턴이면 재전송이므로
+        저장하지 않고 지금 질문을 그대로 돌려준다 (첫 요청이 받았어야 할 응답). 없으면 검사하지 않는다."""
+        if turn_index is not None and turn_index < session.turn_index:
+            return self._current(session)
+        if turn_index is not None and turn_index > session.turn_index:
+            raise TurnMismatch
+
         topic = TOPICS_BY_ID[session.pending_topic_id]
         question = session.turns[-1].question
 

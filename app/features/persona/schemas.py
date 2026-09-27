@@ -390,6 +390,8 @@ class StartRequest(BaseModel):
 MAX_ANSWER_LEN = 200
 RETRY_ANSWER_EMPTY = "조금 더 길게 입력해 주시면 페르소나를 더 정확하게 만들 수 있어요. 다시 답해 주세요."
 RETRY_ANSWER_TOO_LONG = f"답변은 {MAX_ANSWER_LEN}자 이내로 입력해 주세요. 다시 답해 주세요."
+REQUEST_IN_PROGRESS = {"code": "request_in_progress", "message": "이전 요청을 처리하고 있어요. 잠시만 기다려 주세요."}
+TURN_MISMATCH = {"code": "turn_mismatch", "message": "대화 상태가 맞지 않아요. 화면을 새로고침해 주세요."}
 
 
 class AnswerRequest(BaseModel):
@@ -398,6 +400,10 @@ class AnswerRequest(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
     answer: str = Field(description=f"앞뒤 공백을 뺀 1~{MAX_ANSWER_LEN}자. 벗어나면 422 + 안내 문구(detail.message)")
+    # 받은 질문의 turn_index 를 그대로. 이미 지난 턴이면 재전송으로 보고 저장 없이 지금 질문을 돌려준다
+    turn_index: int | None = Field(
+        default=None, ge=0, description="답하는 질문의 turn_index (TurnResponse 에서 받은 값)"
+    )
 
 
 def answer_problem(answer: str) -> dict | None:
@@ -436,6 +442,8 @@ class TurnResponse(BaseModel):
     can_skip: bool = False  # 이 질문 건너뛰기 가능
     can_finish: bool = False  # 여기서 대화 끝내고 바로 페르소나 만들기 가능
     retry: bool = False  # true 면 답이 질문과 무관해서 같은 질문을 다시 물었다 (턴 소모 없음)
+    # 이 질문의 턴 번호. /answer 요청에 그대로 돌려보내면 재전송된 답이 다음 질문에 잘못 저장되지 않는다
+    turn_index: int = 0
 
 
 # 신뢰도 — 주 근거 건수로. 사용자에게는 등급명이 아니라 CONFIDENCE_LABEL 로 보여준다.

@@ -21,13 +21,13 @@ FIRST_TOPIC = "weekend"  # 빈 커버리지에서 첫 턴(가벼운 주제)으�
 def _client():
     calls = []
 
-    async def get_session(session_id):
-        return SimpleNamespace(id=session_id, pending_topic_id="weekend")
+    async def lock_session(session_id):
+        return SimpleNamespace(id=session_id, pending_topic_id="weekend", turn_index=0)
 
     class FakeService:
-        repo = SimpleNamespace(get_session=get_session)
+        repo = SimpleNamespace(lock_session=lock_session)
 
-        async def submit_answer(self, session, answer):
+        async def submit_answer(self, session, answer, *, turn_index=None):
             calls.append(answer)
             return TurnResponse(session_id=session.id, utterance="다음 질문", progress="3/10")
 

@@ -57,6 +57,8 @@ class OnboardingSession(Base):
 
 class OnboardingTurn(Base):
     __tablename__ = "onboarding_turns"
+    # 한 세션의 같은 턴에 질문 행은 하나뿐. 세션 잠금을 뚫은 동시 요청이 있어도 늦게 쓰는 쪽이 실패한다
+    __table_args__ = (UniqueConstraint("session_id", "turn_index", name="uq_onboarding_turns_session_turn"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id", ondelete="CASCADE"), index=True)
