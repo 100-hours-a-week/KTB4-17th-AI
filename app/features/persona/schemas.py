@@ -419,6 +419,13 @@ class StartRequest(BaseModel):
     nickname: str = Field(min_length=1, max_length=20)
     # 앱 사용자 식별자. 시뮬레이션·연습대화가 "이 사용자의 페르소나"를 찾을 때 쓴다. 로그인 필수라 항상 있어야 한다.
     user_id: str = Field(min_length=1, max_length=64)
+    # 시작할 때 받아 세션에 둔다 — /confirm 이 오류로 MBTI 없이 와도 확정 페르소나에 옮겨 적기 위해
+    mbti: str | None = Field(default=None, description="16가지 MBTI 중 하나. 대소문자·앞뒤 공백 무관")
+
+    @field_validator("mbti", mode="before")
+    @classmethod
+    def _check_mbti(cls, value: object) -> object:
+        return normalize_mbti(value)
 
 
 MAX_ANSWER_LEN = 200
@@ -553,6 +560,17 @@ VALID_MBTI = {
 }
 
 
+def normalize_mbti(value: object) -> object:
+    """대소문자·앞뒤 공백을 정리하고 16가지 유형인지 검사한다. None 은 그대로 (선택 필드)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip().upper()
+        if value in VALID_MBTI:
+            return value
+    raise ValueError("mbti must be one of the 16 MBTI types")
+
+
 class ConfirmPersonaRequest(BaseModel):
     """`/build`가 만든 미확정 가치관을 사용자가 승인할 때 받는 값."""
 
@@ -560,20 +578,14 @@ class ConfirmPersonaRequest(BaseModel):
 
     persona_id: str = Field(min_length=1, max_length=32)
     is_confirmed: Literal[True]
-    mbti: str = Field(min_length=4, max_length=4)
+    # 생략 가능. 없으면 온보딩 시작 때 받은 MBTI 를 쓰고, 그것도 없으면 MBTI 없이 확정한다
+    mbti: str | None = None
     confirmed_at: datetime
 
     @field_validator("mbti", mode="before")
     @classmethod
-    def _normalize_mbti(cls, value: object) -> object:
-        return value.upper() if isinstance(value, str) else value
-
-    @field_validator("mbti")
-    @classmethod
-    def _validate_mbti(cls, value: str) -> str:
-        if value not in VALID_MBTI:
-            raise ValueError("mbti must be one of the 16 MBTI types")
-        return value
+    def _check_mbti(cls, value: object) -> object:
+        return normalize_mbti(value)
 
     @field_validator("confirmed_at")
     @classmethod
@@ -587,7 +599,7 @@ class ConfirmPersonaResponse(BaseModel):
     persona_id: str
     user_id: str
     is_confirmed: Literal[True]
-    mbti: str
+    mbti: str | None  # 시작·확정 어디에도 MBTI 가 없었으면 null
     confirmed_at: datetime
 
 

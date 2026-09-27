@@ -429,8 +429,8 @@ class OnboardingService:
 
     # ── 공개 API ──────────────────────────────────────────
 
-    async def start(self, nickname: str, user_id: str) -> TurnResponse:
-        session = await self.repo.create_session(nickname, ONBOARDING_TOTAL_TURNS, user_id)
+    async def start(self, nickname: str, user_id: str, mbti: str | None = None) -> TurnResponse:
+        session = await self.repo.create_session(nickname, ONBOARDING_TOTAL_TURNS, user_id, mbti)
         return await self._ask_next(session)
 
     async def submit_answer(
@@ -554,20 +554,27 @@ class OnboardingService:
     async def confirm_persona(
         self,
         persona_id: str,
-        mbti: str,
+        mbti: str | None,
         confirmed_at: datetime,
     ) -> ConfirmPersonaResponse:
-        """기존 초안을 확정하고 같은 페르소나 행에 MBTI를 저장한다."""
+        """기존 초안을 확정하고 같은 페르소나 행에 MBTI를 저장한다.
+
+        mbti 가 없으면 온보딩 시작 때 받아 둔 세션의 MBTI 를 쓴다."""
         record = await self.repo.get_persona_for_update(persona_id)
         if record is None:
             raise PersonaDraftNotFound(persona_id)
+        session = await self.repo.get_session_brief(record.session_id)
+        start_mbti = session.mbti if session else None
+        if mbti is not None and start_mbti is not None and mbti != start_mbti:
+            raise PersonaConfirmationConflict(persona_id)
+        mbti = mbti or start_mbti  # 둘 다 없으면 MBTI 없이 확정한다 — MBTI 때문에 확정이 막히지 않게
 
         if record.is_confirmed:
-            if record.mbti not in (None, mbti):
+            if mbti is not None and record.mbti not in (None, mbti):
                 raise PersonaConfirmationConflict(persona_id)
 
             # 기존 데이터처럼 확정값은 있지만 MBTI가 없는 경우 한 번만 보강한다.
-            if record.mbti is None:
+            if record.mbti is None and mbti is not None:
                 stored_at = record.confirmed_at or confirmed_at
                 record = await self.repo.save_confirmation(record, mbti, stored_at)
             return ConfirmPersonaResponse(

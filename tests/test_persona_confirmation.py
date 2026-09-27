@@ -142,9 +142,14 @@ def _service(record):
         return target
 
     service = OnboardingService.__new__(OnboardingService)
+
+    async def get_session_brief(session_id):
+        return SimpleNamespace(mbti=None)  # 시작 요청에 MBTI 가 없던 세션
+
     service.repo = SimpleNamespace(
         get_persona_for_update=get_persona_for_update,
         save_confirmation=save_confirmation,
+        get_session_brief=get_session_brief,
     )
     return service, calls
 
@@ -152,6 +157,7 @@ def _service(record):
 def test_confirm_persona_saves_draft_with_its_user_id():
     record = SimpleNamespace(
         id="persona-123",
+        session_id="session-1",
         user_id="user-1",
         is_confirmed=False,
         confirmed_at=None,
@@ -174,6 +180,7 @@ def test_confirm_persona_saves_draft_with_its_user_id():
 def test_confirm_persona_is_idempotent_for_same_mbti():
     record = SimpleNamespace(
         id="persona-123",
+        session_id="session-1",
         user_id="user-1",
         is_confirmed=True,
         confirmed_at=NOW,
@@ -187,9 +194,27 @@ def test_confirm_persona_is_idempotent_for_same_mbti():
     assert not any(call[0] == "save" for call in calls)
 
 
+def test_reconfirm_without_mbti_keeps_stored_mbti_instead_of_conflicting():
+    record = SimpleNamespace(
+        id="persona-123",
+        session_id="session-1",
+        user_id="user-1",
+        is_confirmed=True,
+        confirmed_at=NOW,
+        mbti="INTP",
+    )
+    service, calls = _service(record)
+
+    result = asyncio.run(service.confirm_persona(record.id, None, NOW))  # 확정 요청 재전송, MBTI 없이
+
+    assert result.mbti == "INTP"
+    assert not any(call[0] == "save" for call in calls)
+
+
 def test_confirm_persona_fills_empty_legacy_persona_mbti():
     record = SimpleNamespace(
         id="persona-123",
+        session_id="session-1",
         user_id="user-1",
         is_confirmed=True,
         confirmed_at=NOW,
@@ -206,6 +231,7 @@ def test_confirm_persona_fills_empty_legacy_persona_mbti():
 def test_confirm_persona_rejects_conflicting_mbti():
     record = SimpleNamespace(
         id="persona-123",
+        session_id="session-1",
         user_id="user-1",
         is_confirmed=True,
         confirmed_at=NOW,

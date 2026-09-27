@@ -47,7 +47,7 @@ async def start(
     service: OnboardingService = Depends(get_service),
     db: AsyncSession = Depends(get_db),
 ) -> TurnResponse:
-    result = await service.start(req.nickname, req.user_id)
+    result = await service.start(req.nickname, req.user_id, req.mbti)
     await db.commit()
     return result
 
