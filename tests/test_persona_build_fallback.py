@@ -16,8 +16,8 @@ from app.features.persona import api
 from app.features.persona.agents import BuildFailed, ExtractionAgent
 from app.features.persona.models import OnboardingSession, OnboardingTurn
 from app.features.persona.repository import PersonaRepository
-from app.features.persona.schemas import PersonaResponse, RawExtraction
-from app.features.persona.service import OnboardingService
+from app.features.persona.schemas import PersonaResponse, RawExtraction, Summary
+from app.features.persona.service import OnboardingService, valid_summaries
 
 
 class FakeExtraction(ExtractionAgent):
@@ -100,6 +100,46 @@ def test_next_build_retries_llm_and_replaces_fallback_draft():
     assert rebuilt.version == 2
     assert rebuilt.scores["avoidance"] == 78
     assert rebuilt.interests == ["러닝"]
+
+
+def test_build_persists_valid_summaries_and_drops_invalid_or_duplicate_categories():
+    raw = RawExtraction(
+        avoidance=78,
+        seriousness=90,
+        summaries=[
+            Summary(category="intimacy", title="천천히 가까워지는 편", content="서서히 알아가는 걸 편하게 느껴요"),
+            Summary(category="intimacy", title="중복", content="같은 area 두 번째 — 버려져야 함"),
+            Summary(category="not_a_real_area", title="가짜", content="area 밖 값 — 버려져야 함"),
+            Summary(category="orientation", title="진지하게 만나는 편", content="오래 볼 사람을 찾는 중이에요"),
+        ],
+    )
+
+    (draft,), _ = _build(raw)
+
+    assert [s.category for s in draft.summaries] == ["intimacy", "orientation"]
+    assert draft.summaries[0].title == "천천히 가까워지는 편"
+
+
+def test_build_summaries_default_to_empty_list_when_llm_omits_them():
+    (draft,), _ = _build(GOOD)
+
+    assert draft.summaries == []
+
+
+def test_valid_summaries_keeps_first_occurrence_per_known_area():
+    summaries = [
+        Summary(category="conflict", title="a", content="a"),
+        Summary(category="unknown", title="b", content="b"),
+        Summary(category="conflict", title="c", content="c"),
+        Summary(category="ideal", title="d", content="d"),
+    ]
+
+    out = valid_summaries(summaries)
+
+    assert out == [
+        {"category": "conflict", "title": "a", "content": "a"},
+        {"category": "ideal", "title": "d", "content": "d"},
+    ]
 
 
 def test_retry_while_llm_still_down_returns_same_fallback_draft():

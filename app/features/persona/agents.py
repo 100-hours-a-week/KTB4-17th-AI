@@ -410,6 +410,13 @@ def _textual_section() -> str:
     return "\n".join(f"- {key} ({label}) — 문자열 배열로 추출" for key, label in TEXTUAL.items())
 
 
+def _area_section() -> str:
+    labels: dict[str, list[str]] = {}
+    for d in SCORED.values():
+        labels.setdefault(d.area, []).append(d.label)
+    return "\n".join(f"- {area}: {', '.join(dims)}" for area, dims in labels.items())
+
+
 RUBRIC = f"""\
 대화 전체를 읽고 사용자의 연애 성향을 JSON으로 추출하세요.
 
@@ -469,12 +476,23 @@ RUBRIC = f"""\
 - 근거가 없는 차원은 서술하지 않습니다. 점수와 모순되게 쓰지 않습니다.
 - "회피형", "불안형" 같은 유형명 금지. 평가·조언 금지 ("좋은 분", "고치면 좋겠다" ✕).
 
+## 요약 카드 (summaries) — narrative를 area별로 쪼갠 짧은 카드
+결과 화면에서 narrative 아래에 카드로 나열됩니다. area마다 최대 한 장, 새 area를 만들지 마세요.
+{_area_section()}
+
+- category: 위 area 이름을 철자 그대로. (예: "intimacy")
+- title: 한 줄. "○○ 편" 꼴. 20자 이내. 예: "천천히 가까워지는 편"
+- content: 한 문장, "~해요" 톤. 40자 이내. 예: "만나자마자 깊어지기보다 서서히 알아가는 걸 편하게 느껴요"
+- 그 area에 속한 차원 전부에 근거가 없으면 그 area는 카드를 생략하세요. 억지로 채우지 마세요.
+- narrative와 내용이 겹쳐도 됩니다 — narrative는 종합 서술, summaries는 area별 스니펫입니다.
+
 ## 출력 형식
 JSON 객체 하나만 출력하세요. 설명·마크다운·코드펜스 금지.
 점수형은 정수, 텍스트형은 문자열 배열.
 근거를 찾지 못한 차원은 키를 아예 생략하세요. (50으로 채우지 마세요)
 {{"avoidance": 78, ..., "interests": ["러닝"], "routine": [], "date_prefer": [], "date_avoid": [],
-  "narrative": {{"headline": "...", "body": "...", "traits": ["...", "..."]}}}}
+  "narrative": {{"headline": "...", "body": "...", "traits": ["...", "..."]}},
+  "summaries": [{{"category": "intimacy", "title": "...", "content": "..."}}]}}
 """
 
 
