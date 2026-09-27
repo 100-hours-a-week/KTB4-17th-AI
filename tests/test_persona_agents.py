@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 import pytest
 
@@ -209,3 +210,47 @@ def test_tagging_keeps_tags_when_llm_wraps_json_in_uppercase_fence(monkeypatch):
 
     assert tags is not None
     assert tags.primary == ["contact_rhythm"]
+
+
+def _extract(monkeypatch, summaries):
+    """추출 LLM 이 점수·서술과 함께 summaries 를 보냈을 때. _call 만 가짜."""
+    payload = {
+        "avoidance": 78,
+        "seriousness": 90,
+        "narrative": {"headline": "h", "body": "b", "traits": []},
+        "summaries": summaries,
+    }
+
+    async def fake_call(**kwargs):
+        return json.dumps(payload, ensure_ascii=False)
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+    return asyncio.run(agents.ExtractionAgent().extract([{"role": "user", "content": "러닝해요"}]))
+
+
+def _card(category, title="천천히 가까워지는 편"):
+    return {"category": category, "title": title, "content": "서서히 알아가는 걸 편하게 느껴요"}
+
+
+def test_overlong_summary_card_is_dropped_without_losing_the_extraction(monkeypatch):
+    raw = _extract(monkeypatch, [_card("intimacy", title="가" * 41), _card("orientation")])
+
+    assert (raw.avoidance, raw.seriousness) == (78, 90)  # 점수·서술은 그대로
+    assert [s.category for s in raw.summaries] == ["orientation"]  # 형식을 어긴 카드만 버린다
+
+
+def test_too_many_summary_cards_do_not_fail_the_extraction(monkeypatch):
+    areas = ["intimacy", "communication", "conflict", "ideal", "orientation", "intimacy"]
+
+    raw = _extract(monkeypatch, [_card(a) for a in areas])
+
+    assert raw.avoidance == 78
+    assert len(raw.summaries) == 6  # 중복 정리는 service(valid_summaries) 몫
+
+
+@pytest.mark.parametrize("value", ["카드 없음", 3, {"category": "intimacy"}, None], ids=["str", "int", "dict", "null"])
+def test_malformed_summaries_value_is_ignored(monkeypatch, value):
+    raw = _extract(monkeypatch, value)
+
+    assert raw.avoidance == 78
+    assert raw.summaries == []
