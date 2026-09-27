@@ -3,10 +3,18 @@ import asyncio
 import pytest
 from conftest import seed_persona, with_db
 
-from app.features.persona.schemas import PersonaRef
 from app.features.practice.agents import FALLBACK_REPLY, OPENING_INSTRUCTION, LLMError, PartnerAgent
 from app.features.practice.schemas import PracticeStartRequest
-from app.features.practice.service import NothingToRetry, PersonaNotFound, PracticeService, SessionEnded
+from app.features.practice.service import (
+    ConcurrentRequest,
+    NothingToRetry,
+    OpeningAlreadyDone,
+    PersonaNotFound,
+    PracticeService,
+    ReplyFailed,
+    SessionEnded,
+    collect_reply,
+)
 
 
 class FakePartner(PartnerAgent):
@@ -47,7 +55,7 @@ def _run(scenario):
 async def _start(factory, **req):
     async with factory() as db:
         service = PracticeService(db)
-        result = await service.start(PracticeStartRequest(partner=PersonaRef(persona_id="partner"), **req))
+        result = await service.start(PracticeStartRequest(partner_user_id="u-partner", **req))
         await db.commit()
         return result
 
@@ -90,7 +98,7 @@ def test_start_without_me_calls_me_member():
 
 def test_start_with_my_persona_uses_my_onboarding_nickname():
     async def scenario(factory):
-        return await _start(factory, me=PersonaRef(user_id="u-me"))
+        return await _start(factory, me_user_id="u-me")
 
     assert _run(scenario).my_nickname == "민수"
 
@@ -98,7 +106,7 @@ def test_start_with_my_persona_uses_my_onboarding_nickname():
 def test_start_with_unconfirmed_partner_is_persona_not_found():
     async def scenario(factory):
         async with factory() as db:
-            await PracticeService(db).start(PracticeStartRequest(partner=PersonaRef(persona_id="draft")))
+            await PracticeService(db).start(PracticeStartRequest(partner_user_id="u-draft"))
 
     with pytest.raises(PersonaNotFound) as e:
         _run(scenario)
@@ -228,3 +236,115 @@ def test_history_after_partner_greeted_starts_with_opening_instruction():
         {"role": "assistant", "content": "반가워요!"},
         {"role": "user", "content": "저도요"},
     ]
+
+
+def test_opening_twice_is_refused_without_calling_llm():
+    async def scenario(factory):
+        sid = (await _start(factory)).session_id
+        await _stream(factory, sid, FakePartner(chunks=("반가워요!",)))
+        agent = FakePartner()
+        try:
+            await _stream(factory, sid, agent)
+        finally:
+            assert agent.calls == []
+
+    with pytest.raises(OpeningAlreadyDone):
+        _run(scenario)
+
+
+# ── 닉네임 ────────────────────────────────────────────
+
+
+def test_nickname_is_ignored_when_my_persona_exists():
+    async def scenario(factory):
+        return await _start(factory, me_user_id="u-me", nickname="다른이름")
+
+    assert _run(scenario).my_nickname == "민수"
+
+
+def test_nickname_is_used_when_no_my_persona():
+    async def scenario(factory):
+        return await _start(factory, nickname="직접입력")
+
+    assert _run(scenario).my_nickname == "직접입력"
+
+
+# ── 동시 요청 ─────────────────────────────────────────
+
+
+def test_concurrent_message_with_same_index_loses_and_is_not_saved():
+    async def scenario(factory):
+        sid = (await _start(factory)).session_id
+        # 두 요청이 같은 시점(message_count=0)의 세션을 읽었다
+        async with factory() as db_a, factory() as db_b:
+            svc_a, svc_b = PracticeService(db_a), PracticeService(db_b)
+            svc_a.agent, svc_b.agent = FakePartner(), FakePartner()
+            session_a = await svc_a.repo.get_session(sid)
+            session_b = await svc_b.repo.get_session(sid)
+            await _collect(svc_a.stream_reply(session_a, "먼저 온 메시지"))
+            with pytest.raises(ConcurrentRequest):
+                await _collect(svc_b.stream_reply(session_b, "늦게 온 메시지"))
+        return await _history(factory, sid)
+
+    history = _run(scenario)
+
+    assert [(i, r, c) for i, r, c in history if r == "user"] == [(0, "user", "먼저 온 메시지")]
+
+
+# ── 목록 ──────────────────────────────────────────────
+
+
+def test_list_returns_only_my_sessions_newest_first_with_limit():
+    async def scenario(factory):
+        first = (await _start(factory, me_user_id="u-me")).session_id
+        second = (await _start(factory, me_user_id="u-me")).session_id
+        await _start(factory)  # me 없이 시작 — 목록에 안 나온다
+        async with factory() as db:
+            service = PracticeService(db)
+            return first, second, await service.list_for_user("u-me", 50), await service.list_for_user("u-me", 1)
+
+    first, second, listed, limited = _run(scenario)
+
+    assert {s.session_id for s in listed} == {first, second}
+    assert all(s.partner.nickname == "지수" and s.status == "active" for s in listed)
+    assert len(limited) == 1
+
+
+def test_list_for_unknown_user_is_empty():
+    async def scenario(factory):
+        async with factory() as db:
+            return await PracticeService(db).list_for_user("nobody", 50)
+
+    assert _run(scenario) == []
+
+
+# ── 일반(JSON)용 collect_reply ────────────────────────
+
+
+def test_collect_reply_returns_final_done_event():
+    async def scenario(factory):
+        sid = (await _start(factory)).session_id
+        async with factory() as db:
+            service = PracticeService(db)
+            service.agent = FakePartner(chunks=("안녕", "하세요"))
+            session = await service.repo.get_session(sid)
+            return await collect_reply(service.stream_opening(session))
+
+    done = _run(scenario)
+
+    assert done.content == "안녕하세요"
+    assert (done.message_index, done.source) == (0, "llm")
+
+
+def test_collect_reply_turns_mid_stream_break_into_reply_failed_and_keeps_my_message():
+    async def scenario(factory):
+        sid = (await _start(factory)).session_id
+        async with factory() as db:
+            service = PracticeService(db)
+            service.agent = FakePartner(fail_after=1)
+            session = await service.repo.get_session(sid)
+            with pytest.raises(ReplyFailed):
+                await collect_reply(service.stream_reply(session, "안녕하세요"))
+        return await _history(factory, sid)
+
+    assert _run(scenario) == [(0, "user", "안녕하세요")]  # 답변만 실패, 내 메시지는 남아 /retry 로 이어진다

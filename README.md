@@ -187,14 +187,17 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 
 | 메서드 | 경로 | 역할 |
 | --- | --- | --- |
-| POST | `/v1/practice/start` | `{partner, me?, nickname?}` → 세션. |
+| POST | `/v1/practice/start` | `{partner_user_id, me_user_id?, nickname?}` → 세션. |
 | POST | `/v1/practice/{id}/opening` | 상대가 먼저 인사 (SSE). |
 | POST | `/v1/practice/{id}/messages` | `{message}` → 상대 답변 (SSE: `start` → `delta`… → `done` / `error`). |
 | POST | `/v1/practice/{id}/retry` | 답변이 도중에 끊긴 내 마지막 메시지에 답변만 다시 받기 (SSE). 내 메시지는 이미 저장돼 있어 다시 보내지 않습니다. 다시 받을 게 없으면 409. |
 | GET | `/v1/practice/{id}` | 세션 + 전체 메시지. |
+| GET | `/v1/practice?user_id=&limit=` | 내 연습대화 목록 (`me_user_id`로 시작한 세션, 최신순). |
+| POST | `/v1/practice/{id}/opening` · `/messages` · `/retry` | 상대 인사 / 내 메시지 → 답변 / 답변만 다시. 답변을 **모아서 JSON 한 번에**. |
+| POST | `/v1/practice/{id}/opening/stream` · `/messages/stream` · `/retry/stream` | 위 세 개의 **스트리밍(SSE)** 버전. |
 | POST | `/v1/practice/{id}/end` | 세션 닫기. |
 
-`me` / `partner` 는 `{"persona_id"}` · `{"user_id"}` · `{"session_id"}` 중 하나로 저장된 페르소나를 가리킵니다.
+연습대화는 `partner_user_id` / `me_user_id` 로, 그 사용자의 최신 확정 페르소나를 가리킵니다.
 상세 설계와 변경 내역은 [docs/simulation-practice.md](docs/simulation-practice.md).
 
 ## 개발 도구

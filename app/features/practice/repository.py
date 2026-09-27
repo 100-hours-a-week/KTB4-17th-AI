@@ -47,6 +47,16 @@ class PracticeRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    # 내(user_id) 세션을 최신순으로. me_user_id 없이 시작한 세션은 user_id 가 null 이라 잡히지 않는다
+    async def list_for_user(self, user_id: str, limit: int) -> list[PracticeSession]:
+        stmt = (
+            select(PracticeSession)
+            .where(PracticeSession.user_id == user_id)
+            .order_by(PracticeSession.created_at.desc(), PracticeSession.id)
+            .limit(limit)
+        )
+        return list((await self.db.execute(stmt)).scalars())
+
     # 메시지 한 건을 세션에 추가하고 message_count 를 1 올린다 (index 는 이 카운트를 그대로 씀)
     async def add_message(
         self, session: PracticeSession, role: str, content: str, source: str | None = None
