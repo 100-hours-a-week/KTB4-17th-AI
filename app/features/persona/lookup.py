@@ -42,8 +42,8 @@ async def load_persona(db: AsyncSession, ref: PersonaRef) -> LoadedPersona | Non
     elif ref.user_id:
         record = await repo.latest_persona_for_user(ref.user_id)
     else:
-        record = await repo.latest_persona(ref.session_id or "")
-    if record is None:
+        record = await repo.latest_confirmed_persona(ref.session_id or "")
+    if record is None or not record.is_confirmed:
         return None
 
     # 닉네임은 온보딩 세션에만 있다. 세션이 지워졌으면(없을 리 없지만) 페르소나 id 앞자리로.

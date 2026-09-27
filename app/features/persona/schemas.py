@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from enum import IntEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 # ══ 차원 정의 ══════════════════════════════════════════════
 
@@ -455,6 +455,9 @@ class Change(BaseModel):
 class PersonaResponse(BaseModel):
     persona_id: str
     version: int = 1
+    is_confirmed: bool = False
+    confirmed_at: datetime | None = None
+    mbti: str | None = None
     scores: dict[str, int]
     interests: list[str] = Field(default_factory=list)
     routine: list[str] = Field(default_factory=list)
@@ -466,6 +469,64 @@ class PersonaResponse(BaseModel):
     gaps: list[Gap] = Field(default_factory=list)  # LOW 먼저, 그다음 MEDIUM
     changes: list[Change] = Field(default_factory=list)  # 이전 버전 대비
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+VALID_MBTI = {
+    "ENFJ",
+    "ENFP",
+    "ENTJ",
+    "ENTP",
+    "ESFJ",
+    "ESFP",
+    "ESTJ",
+    "ESTP",
+    "INFJ",
+    "INFP",
+    "INTJ",
+    "INTP",
+    "ISFJ",
+    "ISFP",
+    "ISTJ",
+    "ISTP",
+}
+
+
+class ConfirmPersonaRequest(BaseModel):
+    """`/build`가 만든 미확정 가치관을 사용자가 승인할 때 받는 값."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    persona_id: str = Field(min_length=1, max_length=32)
+    is_confirmed: Literal[True]
+    mbti: str = Field(min_length=4, max_length=4)
+    confirmed_at: datetime
+
+    @field_validator("mbti", mode="before")
+    @classmethod
+    def _normalize_mbti(cls, value: object) -> object:
+        return value.upper() if isinstance(value, str) else value
+
+    @field_validator("mbti")
+    @classmethod
+    def _validate_mbti(cls, value: str) -> str:
+        if value not in VALID_MBTI:
+            raise ValueError("mbti must be one of the 16 MBTI types")
+        return value
+
+    @field_validator("confirmed_at")
+    @classmethod
+    def _require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("confirmed_at must include a timezone")
+        return value
+
+
+class ConfirmPersonaResponse(BaseModel):
+    persona_id: str
+    user_id: str
+    is_confirmed: Literal[True]
+    mbti: str
+    confirmed_at: datetime
 
 
 class SupplementRequest(BaseModel):

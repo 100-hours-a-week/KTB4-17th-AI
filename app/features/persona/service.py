@@ -7,6 +7,7 @@ agents는 "어떻게 말할까"만 맡는다.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from .agents import (
     ConversationAgent,
@@ -30,6 +31,7 @@ from .schemas import (
     TOPICS,
     TOPICS_BY_ID,
     Change,
+    ConfirmPersonaResponse,
     Gap,
     Narrative,
     PersonaResponse,
@@ -139,6 +141,22 @@ class TooFewAnswers(Exception):
         super().__init__(f"{answered} answered, need {MIN_ANSWERS_TO_FINISH}")
 
 
+class OnboardingNotFinished(Exception):
+    """대기 중인 질문이 있거나 약속한 문답 수를 아직 채우지 못했다."""
+
+
+class PersonaDraftNotFound(Exception):
+    """확정할 가치관 초안을 찾을 수 없다."""
+
+
+class PersonaConfirmationConflict(Exception):
+    """이미 확정된 페르소나에 서로 다른 MBTI로 다시 확정을 요청했다."""
+
+
+class PersonaAlreadyConfirmed(Exception):
+    """같은 세션의 가치관이 이미 확정되어 새 build가 필요하지 않다."""
+
+
 # ══ 서술 검증 ══════════════════════════════════════════════
 # 서술이 점수와 정면으로 모순되는 흔한 경우만 잡는다. 걸리면 서술만 버리고 점수는 살린다 —
 # 재생성은 호출이 하나 더 들어가므로. (차원, 점수 조건, 서술에 있으면 안 되는 표현)
@@ -241,6 +259,9 @@ def persona_response(
     return PersonaResponse(
         persona_id=record.id,
         version=record.version,
+        is_confirmed=record.is_confirmed,
+        confirmed_at=record.confirmed_at,
+        mbti=record.mbti,
         scores=record.scores,
         confidence=record.confidence,
         narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
@@ -359,8 +380,25 @@ class OnboardingService:
         await self.repo.finish_early(session)
         return await self._ask_next(session)  # is_done → 마무리 발화
 
+    async def build_draft(self, session: OnboardingSession) -> PersonaResponse:
+        """API용 build. 기존 초안은 재사용해 네트워크 재시도를 멱등하게 처리한다."""
+        if session.pending_topic_id is not None or session.turn_index < session.total_turns:
+            raise OnboardingNotFinished
+
+        latest = await self.repo.latest_persona(session.id)
+        if latest is not None:
+            if latest.is_confirmed:
+                raise PersonaAlreadyConfirmed(session.id)
+            previous = await self.repo.latest_before(latest) if latest.previous_id else None
+            return self._to_response(session, latest, previous)
+
+        return await self.build_persona(session)
+
     async def build_persona(self, session: OnboardingSession) -> PersonaResponse:
-        """대화 전체 → 새 페르소나 버전. 재빌드(보강 문답 뒤)도 이 함수."""
+        """완료된 대화 전체 → 미확정 가치관 초안. 재빌드(보강 문답 뒤)도 이 함수."""
+        if session.pending_topic_id is not None or session.turn_index < session.total_turns:
+            raise OnboardingNotFinished
+
         raw = await self.extraction.extract(self._history(session))
         coverage = Coverage(session.coverage)
 
@@ -384,6 +422,42 @@ class OnboardingService:
             session, scores, texts, confidence, narrative.model_dump() if narrative else None
         )
         return self._to_response(session, record, previous)
+
+    async def confirm_persona(
+        self,
+        persona_id: str,
+        mbti: str,
+        confirmed_at: datetime,
+    ) -> ConfirmPersonaResponse:
+        """기존 초안을 확정하고 같은 페르소나 행에 MBTI를 저장한다."""
+        record = await self.repo.get_persona_for_update(persona_id)
+        if record is None:
+            raise PersonaDraftNotFound(persona_id)
+
+        if record.is_confirmed:
+            if record.mbti not in (None, mbti):
+                raise PersonaConfirmationConflict(persona_id)
+
+            # 기존 데이터처럼 확정값은 있지만 MBTI가 없는 경우 한 번만 보강한다.
+            if record.mbti is None:
+                stored_at = record.confirmed_at or confirmed_at
+                record = await self.repo.save_confirmation(record, mbti, stored_at)
+            return ConfirmPersonaResponse(
+                persona_id=record.id,
+                user_id=record.user_id,
+                is_confirmed=True,
+                mbti=record.mbti or mbti,
+                confirmed_at=record.confirmed_at or confirmed_at,
+            )
+
+        record = await self.repo.save_confirmation(record, mbti, confirmed_at)
+        return ConfirmPersonaResponse(
+            persona_id=record.id,
+            user_id=record.user_id,
+            is_confirmed=True,
+            mbti=record.mbti or mbti,
+            confirmed_at=record.confirmed_at or confirmed_at,
+        )
 
     def _to_response(
         self, session: OnboardingSession, record: PersonaRecord, previous: PersonaRecord | None
