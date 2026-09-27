@@ -93,6 +93,48 @@ def test_simulation_script_with_null_ideal_fit_value_does_not_fail(monkeypatch):
     assert out.report.ideal_fit == {"ideal_warmth": 80, "ideal_status": None}
 
 
+def test_simulation_script_with_real_names_instead_of_ab_is_normalized(monkeypatch):
+    """실제로 503(Literal["a","b"] 검증 실패)까지 냈던 사례 — LLM 이 speaker 에 a/b 대신 실제 닉네임을 준다.
+
+    name_a="민수", name_b="지수" 는 _run_simulation() 의 기본값과 맞춘 것."""
+    payload = {
+        "transcript": [
+            {"speaker": "민수", "text": "안녕하세요"},
+            {"speaker": "지수", "text": "반가워요"},
+            {"speaker": "민수", "text": "주말에 뭐 하세요?"},
+            {"speaker": "지수", "text": "러닝해요"},
+        ],
+        "report": NARRATIVE,
+    }
+    _llm_returns(monkeypatch, json.dumps(payload, ensure_ascii=False))
+
+    out = _run_simulation()
+
+    assert [(line.speaker, line.text) for line in out.transcript] == [
+        ("a", "안녕하세요"),
+        ("b", "반가워요"),
+        ("a", "주말에 뭐 하세요?"),
+        ("b", "러닝해요"),
+    ]
+
+
+def test_simulation_script_drops_lines_with_unrecognized_speaker():
+    data = {
+        "transcript": [
+            {"speaker": "민수", "text": "안녕하세요"},
+            {"speaker": "사회자", "text": "이제 소개팅을 시작하겠습니다"},  # 못 알아보는 화자 — 버려짐
+            {"speaker": "지수", "text": "반가워요"},
+        ]
+    }
+
+    out = agents._normalize_speaker_labels(data, "민수", "지수")
+
+    assert [(line["speaker"], line["text"]) for line in out["transcript"]] == [
+        ("a", "안녕하세요"),
+        ("b", "반가워요"),
+    ]
+
+
 def test_simulation_asks_for_requested_turns_with_token_budget(monkeypatch):
     seen = _llm_returns(monkeypatch, LLMError("stop here"))
 

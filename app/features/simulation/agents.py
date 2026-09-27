@@ -185,6 +185,7 @@ SIMULATION_SYSTEM = f"""당신은 소개팅 시뮬레이터이자 매칭 리포�
 
 # 출력
 JSON 객체 하나만. 설명·마크다운·코드펜스 금지.
+transcript 의 speaker 는 반드시 "a" 또는 "b" 리터럴만 쓰세요 — 실제 이름(위에서 알려준 닉네임)을 넣지 마세요.
 {{
   "transcript": [
     {{"speaker": "a", "text": "..."}},
@@ -203,6 +204,35 @@ class SimulationFailed(Exception):
     def __init__(self, message: str, *, reason: str = "unknown") -> None:
         super().__init__(message)
         self.reason = reason
+
+
+def _normalize_speaker_labels(data: dict, name_a: str, name_b: str) -> dict:
+    """LLM 이 화자를 "a"/"b" 대신 실제 닉네임으로 쓸 때가 있다. ScriptLine.speaker 는 Literal["a","b"]
+    라 그대로면 검증에서 대본 전체가 거부된다 — normalize_script(순서 보정)가 손쓰기도 전에 막힌다.
+
+    검증 직전에 이름 → a/b 로 되돌리고, 그래도 못 알아보는 화자는 그 줄만 버린다.
+    (전체를 실패시키는 것보다, 알아볼 수 있는 줄이라도 살리는 편이 낫다)"""
+    transcript = data.get("transcript")
+    if not isinstance(transcript, list):
+        return data
+
+    def key(s: str) -> str:
+        return s.strip().casefold()
+
+    aliases = {"a": "a", "b": "b", key(name_a): "a", key(name_b): "b"}
+
+    fixed = []
+    for line in transcript:
+        if not isinstance(line, dict):
+            continue
+        raw_speaker = line.get("speaker")
+        mapped = aliases.get(key(str(raw_speaker))) if raw_speaker is not None else None
+        if mapped is None:
+            logger.warning("dropping script line with unrecognized speaker: %r", raw_speaker)
+            continue
+        fixed.append({**line, "speaker": mapped})
+
+    return {**data, "transcript": fixed}
 
 
 class SimulationAgent:
@@ -238,6 +268,7 @@ class SimulationAgent:
             )
         except LLMError as e:
             raise SimulationFailed(str(e), reason=e.reason) from e
+        data = _normalize_speaker_labels(data, name_a, name_b)
         try:
             return ScriptOutput.model_validate(data)
         except ValidationError as e:
