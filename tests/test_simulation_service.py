@@ -17,6 +17,7 @@ from app.features.simulation.schemas import (
 )
 from app.features.simulation.service import (
     PersonaNotFound,
+    ReportPreviewNotFound,
     SimulationAlreadyRunning,
     SimulationNotFound,
     SimulationService,
@@ -112,6 +113,60 @@ def test_risk_caution_is_always_in_report_even_if_llm_omits_it():
     assert report.risks == ["pursue_withdraw"]
     assert report.cautions[0] == "주말 계획을 미리 맞춰보세요"
     assert any("연락 기대치를 초반에 맞추는" in c for c in report.cautions)
+
+
+# ── /report/preview 기록 (내부 확인용) ─────────────────
+# DB 조회 없이 요청 본문을 그대로 쓰는 기능이라 seed_persona 없이도 돌아간다.
+
+
+def test_preview_report_is_saved_and_readable_back():
+    async def scenario(factory):
+        async with factory() as db:
+            service = SimulationService(db)
+            saved = await service.preview_report(
+                ReportInput(persona_a=ANXIOUS, persona_b=AVOIDANT, nickname_a="가상A", nickname_b="가상B"),
+                use_llm=False,
+            )
+            await db.commit()
+        async with factory() as db:
+            detail = await SimulationService(db).get_preview(saved.preview_id)
+        return saved, detail
+
+    saved, detail = asyncio.run(with_db(scenario))
+
+    assert saved.report.narrative_source == "template"
+    assert detail.preview_id == saved.preview_id
+    assert (detail.nickname_a, detail.nickname_b) == ("가상A", "가상B")
+    assert detail.use_llm is False
+    assert detail.persona_a.persona_id == "pa"
+    assert detail.report.narrative_source == "template"
+
+
+def test_get_preview_unknown_is_not_found():
+    async def scenario(factory):
+        async with factory() as db:
+            return await SimulationService(db).get_preview("nope")
+
+    with pytest.raises(ReportPreviewNotFound):
+        asyncio.run(with_db(scenario))
+
+
+def test_list_previews_is_newest_first_and_respects_limit():
+    async def scenario(factory):
+        async with factory() as db:
+            service = SimulationService(db)
+            for nickname in ("첫번째", "두번째", "세번째"):
+                await service.preview_report(
+                    ReportInput(persona_a=ANXIOUS, persona_b=AVOIDANT, nickname_a=nickname), use_llm=False
+                )
+            await db.commit()
+        async with factory() as db:
+            return await SimulationService(db).list_previews(limit=2)
+
+    listed = asyncio.run(with_db(scenario))
+
+    assert len(listed) == 2
+    assert listed[0].nickname_a == "세번째"
 
 
 # ── run: 페르소나 두 개 → 대본 + 리포트 저장 ────────────

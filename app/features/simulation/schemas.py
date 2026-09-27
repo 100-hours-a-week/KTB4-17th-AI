@@ -349,3 +349,44 @@ class SimulationSummary(BaseModel):
     grade_label: str
     headline: str
     created_at: datetime
+
+
+# ══ /report/preview 기록 (내부 확인용) ══════════════════════
+# preview 는 실제 저장된 페르소나가 아니라 요청 본문을 그대로 쓰므로 me/partner(PersonaBrief) 대신
+# 요청받은 PersonaResponse·닉네임을 그대로 보여준다.
+
+
+class ReportPreviewResponse(BaseModel):
+    """POST /report/preview 응답. report 는 기존과 같은 MatchingReport, preview_id 로 나중에 다시 볼 수 있다."""
+
+    preview_id: str
+    report: MatchingReport
+
+
+class ReportPreviewSummary(BaseModel):
+    """목록용 한 줄."""
+
+    preview_id: str
+    nickname_a: str
+    nickname_b: str
+    use_llm: bool
+    narrative_source: Literal["llm", "template"]
+    overall_score: int
+    grade: Grade
+    grade_label: str
+    headline: str
+    created_at: datetime
+
+
+class ReportPreviewDetail(BaseModel):
+    """단건 조회 — 무엇을 넣었길래 이 리포트가 나왔는지 그대로 다시 본다."""
+
+    preview_id: str
+    persona_a: PersonaResponse
+    persona_b: PersonaResponse
+    nickname_a: str
+    nickname_b: str
+    transcript: Transcript
+    use_llm: bool
+    report: MatchingReport
+    created_at: datetime
