@@ -207,6 +207,7 @@ class PersonaRepository:
         texts: dict,
         confidence: dict,
         narrative: dict | None = None,
+        source: str = "llm",
     ) -> tuple[PersonaRecord, PersonaRecord | None]:
         """새 버전을 추가한다. (새 행, 직전 행) — 직전 행은 변화 계산용."""
         previous = await self.latest_persona(session.id)
@@ -222,6 +223,7 @@ class PersonaRepository:
             is_confirmed=False,
             confirmed_at=None,
             mbti=None,
+            source=source,
         )
         self.db.add(record)
         session.status = "completed"

@@ -48,7 +48,7 @@ def test_build_rejects_unfinished_onboarding_before_llm_call():
 
 
 def test_build_reuses_latest_unconfirmed_draft():
-    draft = SimpleNamespace(is_confirmed=False, previous_id=None)
+    draft = SimpleNamespace(is_confirmed=False, previous_id=None, source="llm")
 
     async def latest_persona(session_id):
         return draft
@@ -94,6 +94,7 @@ def test_persona_response_includes_stored_mbti():
         is_confirmed=True,
         confirmed_at=NOW,
         mbti="INTP",
+        source="llm",
         scores={},
         confidence={},
         narrative=None,
