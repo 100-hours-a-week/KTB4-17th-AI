@@ -1722,7 +1722,6 @@ import asyncio  # 비동기 작업 표준 라이브러리
 import json  # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
 import os
-import re  # 문자열에서 특정 패턴을 찾거나 변경하는 정규표현식 모듈
 from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 
 from openai import AsyncOpenAI
@@ -1759,9 +1758,6 @@ _client = AsyncOpenAI(
 
 logger = logging.getLogger(__name__)
 # 현재 파일 전용 로거, __name__은 현재 모듈의 이름을 담고 있는 내장 변수, 로깅 메시지에 모듈 이름 포함시켜 구분
-
-_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-# JSON 마크다운 코드 블록 표시 제거하기 위한 정규표현식 패턴, re.MULTILINE → 여러 줄에 걸쳐 적용
 
 
 class LLMError(Exception):
@@ -1818,7 +1814,9 @@ async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: 
 # 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
 async def _call_json(**kwargs) -> dict:
     text = await _call(**kwargs)  # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
-    cleaned = _FENCE.sub("", text).strip()  # ```<< 코드 블록 표시 제거, .strip() << 앞뒤의 공백과 줄바꿈을 제거
+    # 코드펜스(```json, ```JSON)나 앞뒤 설명 문장이 붙어 와도 첫 { ~ 마지막 } 만 잘라 파싱한다
+    start, end = text.find("{"), text.rfind("}")
+    cleaned = text[start : end + 1] if start != -1 and end > start else text.strip()
     try:
         return json.loads(cleaned)  # json 문자열 파이썬 객체로 변환
     except json.JSONDecodeError as e:  # LLM이 올바르지 않은 JSON을 생성하면 실행
@@ -2182,25 +2180,6 @@ OpenAI 호환 형식으로 OpenRouter를 호출하는 비동기 클라이언트�
 
 현재 모듈 이름을 가진 로거이다. JSON 변환 실패, 태깅 실패, 추출 실패 같은 상황을 기록한다.
 
-### `_FENCE`
-
-```python
-_FENCE = re.compile(
-    r"^```(?:json)?\s*|\s*```$",
-    re.MULTILINE,
-)
-```
-
-LLM이 JSON을 마크다운 코드 블록으로 감쌌을 때 앞뒤 표시를 제거하기 위한 정규표현식이다.
-
-````text
-```json
-{"primary": ["contact_rhythm"]}
-```
-````
-
-위 응답에서 시작의 `json` 코드펜스와 마지막 코드펜스를 제거한다.
-
 ## 3. `LLMError`
 
 ```python
@@ -2330,13 +2309,27 @@ async def _call_json(**kwargs) -> dict:
 ### 처리 순서
 
 1. `_call()`로 LLM 텍스트 응답을 받는다.
-2. `_FENCE.sub()`로 마크다운 코드펜스를 제거한다.
-3. `.strip()`으로 앞뒤 공백과 줄바꿈을 제거한다.
-4. `json.loads()`로 JSON 문자열을 파이썬 객체로 바꾼다.
-5. JSON 문법이 틀렸으면 응답 앞 200자를 경고 로그로 남긴다.
-6. `JSONDecodeError`를 `LLMError`로 바꿔 발생시킨다.
+2. 응답에서 첫 `{`부터 마지막 `}`까지만 잘라낸다. `{`가 없으면 앞뒤 공백만 제거한다.
+3. `json.loads()`로 JSON 문자열을 파이썬 객체로 바꾼다.
+4. JSON 문법이 틀렸으면 응답 앞 200자를 경고 로그로 남긴다.
+5. `JSONDecodeError`를 `LLMError`로 바꿔 발생시킨다.
 
-`cleaned`는 “코드펜스와 공백을 정리한 문자열”이라는 뜻의 일반 변수명이다.
+LLM은 "JSON만 출력하라"고 해도 아래처럼 감싸서 답할 때가 있다.
+
+````text
+```JSON
+{"primary": ["contact_rhythm"]}
+```
+````
+
+```text
+결과입니다:
+{"primary": ["contact_rhythm"]}
+```
+
+예전에는 정규식(`_FENCE`)으로 소문자 ```` ```json ```` 코드펜스만 지웠다. 그래서 대문자 `JSON`이나 앞에 붙은 설명 문장이 남아 파싱이 실패했다(태깅은 조용히 빠지고, `/build`는 503). 중괄호 범위로 잘라내면 이런 경우가 모두 처리된다. `tests/test_persona_agents.py`가 이 동작을 검증한다.
+
+`cleaned`는 “JSON 부분만 잘라낸 문자열”이라는 뜻의 일반 변수명이다.
 
 주의할 점은 `json.loads()`가 딕셔너리뿐 아니라 리스트나 숫자도 반환할 수 있다는 것이다. 현재 함수는 반환 타입을 `dict`라고 표시했지만 실제 딕셔너리인지 별도로 검사하지는 않는다.
 

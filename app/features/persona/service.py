@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 
 from .agents import (
+    BuildFailed,
     ConversationAgent,
     ExtractionAgent,
     TaggingAgent,
@@ -35,6 +36,7 @@ from .schemas import (
     Gap,
     Narrative,
     PersonaResponse,
+    RawExtraction,
     Segment,
     Topic,
     TurnResponse,
@@ -157,6 +159,30 @@ class PersonaAlreadyConfirmed(Exception):
     """같은 세션의 가치관이 이미 확정되어 새 build가 필요하지 않다."""
 
 
+# ══ 추출 폴백 ══════════════════════════════════════════════
+# 추출 LLM 이 죽어도 온보딩은 끝나야 한다. 자유 답변은 LLM 없이 읽을 수 없으니,
+# 선택지로 답한 질문만 점수로 옮기고 나머지 차원은 비워 둔다(→ 기본값 50, 신뢰도 LOW).
+# {주제 id: (차원, {선택지: 점수})}. "아직 잘 모르겠어요" 처럼 표에 없는 답은 근거 없음으로 둔다.
+
+CHOICE_SCORES: dict[str, tuple[str, dict[str, int]]] = {
+    "orientation": ("seriousness", {"진지하게 만날 사람": 80, "편하게 알아가기": 25}),
+}
+
+
+def fallback_extraction(session: OnboardingSession) -> RawExtraction:
+    """LLM 없이 규칙으로 만든 추출 결과. 서술·텍스트 항목은 비어 있다."""
+    scores: dict[str, int] = {}
+    for turn in session.turns:
+        rule = CHOICE_SCORES.get(turn.topic_id)
+        if rule is None or not turn.answer:
+            continue
+        dimension, by_choice = rule
+        for choice, score in by_choice.items():
+            if choice in turn.answer:
+                scores[dimension] = score
+    return RawExtraction(**scores)
+
+
 # ══ 서술 검증 ══════════════════════════════════════════════
 # 서술이 점수와 정면으로 모순되는 흔한 경우만 잡는다. 걸리면 서술만 버리고 점수는 살린다 —
 # 재생성은 호출이 하나 더 들어가므로. (차원, 점수 조건, 서술에 있으면 안 되는 표현)
@@ -262,6 +288,7 @@ def persona_response(
         is_confirmed=record.is_confirmed,
         confirmed_at=record.confirmed_at,
         mbti=record.mbti,
+        source=record.source,
         scores=record.scores,
         confidence=record.confidence,
         narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
@@ -381,7 +408,9 @@ class OnboardingService:
         return await self._ask_next(session)  # is_done → 마무리 발화
 
     async def build_draft(self, session: OnboardingSession) -> PersonaResponse:
-        """API용 build. 기존 초안은 재사용해 네트워크 재시도를 멱등하게 처리한다."""
+        """API용 build. 기존 초안은 재사용해 네트워크 재시도를 멱등하게 처리한다.
+
+        단, 규칙으로 만든 폴백 초안이면 LLM 추출을 다시 시도한다."""
         if session.pending_topic_id is not None or session.turn_index < session.total_turns:
             raise OnboardingNotFinished
 
@@ -389,17 +418,33 @@ class OnboardingService:
         if latest is not None:
             if latest.is_confirmed:
                 raise PersonaAlreadyConfirmed(session.id)
+            if latest.source == "fallback":
+                try:
+                    return await self.build_persona(session)
+                except BuildFailed as e:
+                    # 아직도 LLM 이 안 된다 — 폴백 초안을 새 버전으로 또 쌓지 않고 있는 것을 돌려준다
+                    logger.warning("extraction retry failed (%s), keeping fallback draft", e)
             previous = await self.repo.latest_before(latest) if latest.previous_id else None
             return self._to_response(session, latest, previous)
 
-        return await self.build_persona(session)
+        return await self.build_persona(session, allow_fallback=True)
 
-    async def build_persona(self, session: OnboardingSession) -> PersonaResponse:
-        """완료된 대화 전체 → 미확정 가치관 초안. 재빌드(보강 문답 뒤)도 이 함수."""
+    async def build_persona(self, session: OnboardingSession, *, allow_fallback: bool = False) -> PersonaResponse:
+        """완료된 대화 전체 → 미확정 가치관 초안. 재빌드(보강 문답 뒤)도 이 함수.
+
+        allow_fallback 이면 추출 LLM 이 실패해도 규칙 초안(source="fallback")으로 끝낸다.
+        보강 재빌드는 폴백하지 않는다 — LLM 으로 만든 기존 초안을 기본값투성이로 덮으면 안 되므로."""
         if session.pending_topic_id is not None or session.turn_index < session.total_turns:
             raise OnboardingNotFinished
 
-        raw = await self.extraction.extract(self._history(session))
+        source = "llm"
+        try:
+            raw = await self.extraction.extract(self._history(session))
+        except BuildFailed as e:
+            if not allow_fallback:
+                raise
+            logger.warning("extraction failed (%s), using rule-based fallback draft", e)
+            raw, source = fallback_extraction(session), "fallback"
         coverage = Coverage(session.coverage)
 
         scores: dict[str, int] = {}
@@ -419,7 +464,7 @@ class OnboardingService:
                 narrative = None
 
         record, previous = await self.repo.save_persona(
-            session, scores, texts, confidence, narrative.model_dump() if narrative else None
+            session, scores, texts, confidence, narrative.model_dump() if narrative else None, source
         )
         return self._to_response(session, record, previous)
 

@@ -458,6 +458,7 @@ class PersonaResponse(BaseModel):
     is_confirmed: bool = False
     confirmed_at: datetime | None = None
     mbti: str | None = None
+    source: Literal["llm", "fallback"] = "llm"  # fallback 이면 LLM 없이 규칙으로 만든 임시 초안
     scores: dict[str, int]
     interests: list[str] = Field(default_factory=list)
     routine: list[str] = Field(default_factory=list)

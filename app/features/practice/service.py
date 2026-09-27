@@ -51,6 +51,10 @@ class SessionEnded(Exception):
     pass
 
 
+class NothingToRetry(Exception):
+    """다시 받을 답변이 없다 — 마지막 메시지가 이미 상대 답변이거나 대화가 비어 있다."""
+
+
 class PracticeService:
     # 이 요청의 DB 세션에 묶인 repository/agent 를 만든다
     def __init__(self, db: AsyncSession) -> None:
@@ -147,11 +151,22 @@ class PracticeService:
         async for ev in self._respond(session, opening=not session.messages):
             yield ev
 
-    # 내 메시지를 먼저 저장한 뒤 상대 답변을 스트리밍한다
+    # 내 메시지를 먼저 커밋한 뒤 상대 답변을 스트리밍한다.
+    # 답변이 도중에 끊겨도 내 메시지는 남는다 — 새로고침해도 보이고, /retry 로 답변만 다시 받는다
     async def stream_reply(self, session: PracticeSession, message: str) -> AsyncIterator[Event]:
         if session.status != "active":
             raise SessionEnded(session.id)
         await self.repo.add_message(session, "user", message)
+        await self.db.commit()
+        async for ev in self._respond(session, opening=False):
+            yield ev
+
+    # 답을 못 받은 내 마지막 메시지에 상대 답변만 다시 받는다 (메시지를 다시 보내지 않는다)
+    async def stream_retry(self, session: PracticeSession) -> AsyncIterator[Event]:
+        if session.status != "active":
+            raise SessionEnded(session.id)
+        if not session.messages or session.messages[-1].role != "user":
+            raise NothingToRetry(session.id)
         async for ev in self._respond(session, opening=False):
             yield ev
 

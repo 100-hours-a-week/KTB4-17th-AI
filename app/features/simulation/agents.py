@@ -18,7 +18,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import re
 from functools import lru_cache
 
 from openai import AsyncOpenAI
@@ -31,8 +30,6 @@ from app.features.persona.schemas import SCORED, PersonaResponse
 from .schemas import AREAS, DIMENSIONS_BY_AREA, RULES, Fit, ReportNarrative, ScriptOutput, Transcript
 
 logger = logging.getLogger(__name__)
-
-_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 
 # practice.agents 와 같은 OpenAI 호환 클라이언트. 플레이그라운드는 _call 자체를 갈아끼운다.
@@ -75,7 +72,9 @@ async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: 
 
 async def _call_json(**kwargs) -> dict:
     text = await _call(**kwargs)
-    cleaned = _FENCE.sub("", text).strip()
+    # 코드펜스(```json, ```JSON)나 앞뒤 설명 문장이 붙어 와도 첫 { ~ 마지막 } 만 잘라 파싱한다
+    start, end = text.find("{"), text.rfind("}")
+    cleaned = text[start : end + 1] if start != -1 and end > start else text.strip()
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as e:

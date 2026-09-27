@@ -167,7 +167,7 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 | --- | --- | --- |
 | POST | `/v1/persona/onboarding/start` | 세션을 만들고 첫 질문을 반환합니다. `user_id` 를 주면 그 사용자의 페르소나로 저장됩니다. |
 | POST | `/v1/persona/onboarding/{session_id}/answer` | 답을 받고 다음 질문을 반환합니다. |
-| POST | `/v1/persona/{session_id}/build` | 완료된 대화에서 미확정 가치관 초안을 생성·저장합니다. |
+| POST | `/v1/persona/{session_id}/build` | 완료된 대화에서 미확정 가치관 초안을 생성·저장합니다. 추출 LLM 이 실패하면 규칙으로 만든 임시 초안(`source: "fallback"`)을 돌려주고, 다시 부르면 LLM 추출을 재시도합니다. |
 | POST | `/v1/persona/{persona_id}/confirm` | 가치관 초안을 확정하고 같은 페르소나 행에 MBTI를 저장합니다. |
 
 기본 턴 수는 10회(5~15)입니다. 플레이그라운드 UI는 10으로 고정합니다.
@@ -190,6 +190,7 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 | POST | `/v1/practice/start` | `{partner, me?, nickname?}` → 세션. |
 | POST | `/v1/practice/{id}/opening` | 상대가 먼저 인사 (SSE). |
 | POST | `/v1/practice/{id}/messages` | `{message}` → 상대 답변 (SSE: `start` → `delta`… → `done` / `error`). |
+| POST | `/v1/practice/{id}/retry` | 답변이 도중에 끊긴 내 마지막 메시지에 답변만 다시 받기 (SSE). 내 메시지는 이미 저장돼 있어 다시 보내지 않습니다. 다시 받을 게 없으면 409. |
 | GET | `/v1/practice/{id}` | 세션 + 전체 메시지. |
 | POST | `/v1/practice/{id}/end` | 세션 닫기. |
 

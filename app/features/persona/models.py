@@ -109,5 +109,7 @@ class PersonaRecord(Base):
     is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     mbti: Mapped[str | None] = mapped_column(String(4))
+    # "llm" | "fallback" — 추출 LLM 이 실패해 규칙으로 만든 초안이면 fallback. 다음 /build 때 LLM 으로 다시 시도한다
+    source: Mapped[str] = mapped_column(String(8), default="llm", server_default="llm")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

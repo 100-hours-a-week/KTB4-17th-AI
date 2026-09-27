@@ -3,6 +3,7 @@
   POST /v1/practice/start                 : 상대 페르소나 골라 세션 열기 (JSON)
   POST /v1/practice/{id}/opening          : 상대가 먼저 인사 (SSE)
   POST /v1/practice/{id}/messages         : 내 메시지 → 상대 답변 (SSE)
+  POST /v1/practice/{id}/retry            : 답변이 끊긴 내 마지막 메시지에 답변만 다시 (SSE)
   GET  /v1/practice/{id}                  : 세션 + 전체 메시지
   POST /v1/practice/{id}/end              : 세션 닫기
 
@@ -121,6 +122,18 @@ async def send_message(
     if session.status != "active":
         raise HTTPException(409, "session ended")
     return _stream_response(service.stream_reply(session, req.message.strip()))
+
+
+# 답변이 도중에 끊겼을 때, 이미 저장된 내 마지막 메시지에 대한 상대 답변만 다시 받는다
+@router.post("/{session_id}/retry")
+async def retry(session_id: str, service: PracticeService = Depends(get_stream_service)) -> StreamingResponse:
+    """메시지를 다시 보내지 않고 답변만 다시 받는다. 마지막 메시지가 답을 못 받은 내 메시지일 때만. SSE."""
+    session = await _session_or_404(service, session_id)
+    if session.status != "active":
+        raise HTTPException(409, "session ended")
+    if not session.messages or session.messages[-1].role != "user":
+        raise HTTPException(409, "nothing to retry")
+    return _stream_response(service.stream_retry(session))
 
 
 # 세션과 지금까지의 전체 메시지를 조회
