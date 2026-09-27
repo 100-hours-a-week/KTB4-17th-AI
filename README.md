@@ -190,6 +190,7 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 | POST | `/v1/practice/start` | `{partner, me?, nickname?}` → 세션. |
 | POST | `/v1/practice/{id}/opening` | 상대가 먼저 인사 (SSE). |
 | POST | `/v1/practice/{id}/messages` | `{message}` → 상대 답변 (SSE: `start` → `delta`… → `done` / `error`). |
+| POST | `/v1/practice/{id}/retry` | 답변이 도중에 끊긴 내 마지막 메시지에 답변만 다시 받기 (SSE). 내 메시지는 이미 저장돼 있어 다시 보내지 않습니다. 다시 받을 게 없으면 409. |
 | GET | `/v1/practice/{id}` | 세션 + 전체 메시지. |
 | POST | `/v1/practice/{id}/end` | 세션 닫기. |
 
