@@ -12,12 +12,13 @@ agents 는 "어떻게 말할까"만, report 는 "점수는 어떻게 매길까"�
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.persona.lookup import LoadedPersona, load_persona
-from app.features.persona.schemas import PersonaBrief, PersonaRef
+from app.features.persona.schemas import PersonaBrief, PersonaRef, PersonaResponse
 
 from .agents import SimulationAgent, SimulationFailed
 from .models import SimulationRecord
@@ -48,6 +49,22 @@ class PersonaNotFound(Exception):
 
 class SimulationNotFound(Exception):
     pass
+
+
+class SimulationAlreadyRunning(Exception):
+    """같은 페르소나 조합의 시뮬레이션이 이미 처리 중이다.
+
+    더블클릭·네트워크 재시도로 똑같은 LLM 호출이 중복되는 걸 막는다. 프로세스 안에서만
+    유효하다 — 워커를 여러 개 띄우면 워커별로 따로 추적되어 완전히는 못 막는다."""
+
+    def __init__(self, pair: frozenset[str]) -> None:
+        self.pair = pair
+        super().__init__(f"simulation already running for {sorted(pair)}")
+
+
+# 진행 중인 (persona_a_id, persona_b_id) 조합. 순서 없는 쌍이라 frozenset.
+_IN_FLIGHT: set[frozenset[str]] = set()
+_IN_FLIGHT_LOCK = asyncio.Lock()
 
 
 # ══ 대본 정리 ══════════════════════════════════════════════
@@ -103,6 +120,26 @@ class SimulationService:
         partner = await self._load("partner", req.partner_ref())
         pa, pb = me.response, partner.response
 
+        # 같은 페르소나 조합이 이미 처리 중이면 더블클릭·재시도로 보고 LLM 을 또 부르지 않는다
+        pair = frozenset((me.record.id, partner.record.id))
+        async with _IN_FLIGHT_LOCK:
+            if pair in _IN_FLIGHT:
+                raise SimulationAlreadyRunning(pair)
+            _IN_FLIGHT.add(pair)
+        try:
+            return await self._run_locked(req, me, partner, pa, pb)
+        finally:
+            async with _IN_FLIGHT_LOCK:
+                _IN_FLIGHT.discard(pair)
+
+    async def _run_locked(
+        self,
+        req: SimulationRequest,
+        me: LoadedPersona,
+        partner: LoadedPersona,
+        pa: PersonaResponse,
+        pb: PersonaResponse,
+    ) -> SimulationResponse:
         # 규칙 점수를 먼저 — LLM 에게 "설명할 재료"로 준다. ideal 은 아직 None
         dims, area_scores, _ = score_layer(pa, pb)
 
@@ -118,7 +155,7 @@ class SimulationService:
         )
         turns = normalize_script(script.transcript, req.turns)
         if len(turns) < 2:
-            raise SimulationFailed("script too short after normalization")
+            raise SimulationFailed("script too short after normalization", reason="script_too_short")
 
         # 하이라이트가 잘려 나간 줄을 가리키면 버린다
         narrative = script.report

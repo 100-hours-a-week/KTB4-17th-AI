@@ -84,10 +84,10 @@ class Settings(BaseSettings):
     persona_extract_timeout_s: float = 15.0
     # 연습 대화(practice) 실시간 스트리밍 답변 전체 타임아웃
     practice_timeout_s: float = 12.0
-    # 시뮬레이션 단일 발화 생성 타임아웃
-    simulation_utterance_timeout_s: float = 5.0
-    # 시뮬레이션 최종 종합 리포트 생성 타임아웃
-    simulation_report_timeout_s: float = 15.0
+    # 시뮬레이션 대본+리포트 1회 호출 타임아웃 (SimulationAgent.run)
+    simulation_script_timeout_s: float = 120.0
+    # /report/preview 의 서술만 생성하는 호출 타임아웃 (ReportAgent.write)
+    simulation_narrative_timeout_s: float = 60.0
 
 
 @lru_cache

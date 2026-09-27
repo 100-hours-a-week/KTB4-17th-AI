@@ -9,7 +9,7 @@ from app.features.persona.schemas import PersonaBrief, PersonaRef
 from app.features.simulation import api
 from app.features.simulation.agents import SimulationFailed
 from app.features.simulation.schemas import MatchingReport, SimulationResponse, Turn
-from app.features.simulation.service import PersonaNotFound, SimulationNotFound
+from app.features.simulation.service import PersonaNotFound, SimulationAlreadyRunning, SimulationNotFound
 
 REPORT = MatchingReport.model_validate(json.loads(Path("tests/fixtures/matching_report.json").read_text()))
 
@@ -108,19 +108,38 @@ def test_run_with_missing_persona_is_404_without_commit():
     res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
 
     assert res.status_code == 404
-    assert res.json()["detail"].startswith("partner: 저장된 페르소나가 없어요 (u2)")
+    assert res.json()["detail"].startswith("partner: 확정된 페르소나가 없어요 (u2)")
     assert ("commit",) not in calls
 
 
-def test_run_llm_failure_is_503_and_rolls_back():
-    client, calls = _client(run_error=SimulationFailed("timeout"))
+def test_run_llm_failure_is_503_with_reason_and_rolls_back():
+    client, calls = _client(run_error=SimulationFailed("timeout", reason="timeout"))
 
     res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
 
     assert res.status_code == 503
-    assert res.json()["detail"] == "simulation failed: timeout"
+    assert res.json()["detail"] == {"message": "simulation failed: timeout", "reason": "timeout"}
     assert calls[-1] == ("rollback",)
     assert ("commit",) not in calls
+
+
+def test_run_already_running_is_409():
+    client, calls = _client(run_error=SimulationAlreadyRunning(frozenset({"pa", "pb"})))
+
+    res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
+
+    assert res.status_code == 409
+    assert "이미 처리 중" in res.json()["detail"]
+    assert ("commit",) not in calls
+
+
+def test_list_with_no_ref_or_two_refs_has_query_specific_message():
+    client, _ = _client()
+
+    for params in ({}, {"user_id": "u1", "persona_id": "p1"}):
+        res = client.get("/v1/simulation", params=params)
+        assert res.status_code == 422
+        assert res.json()["detail"] == "user_id 또는 persona_id 중 하나만 지정하세요"
 
 
 def test_get_unknown_simulation_is_404():

@@ -43,7 +43,21 @@ def _get_client() -> AsyncOpenAI:
 
 
 class LLMError(Exception):
-    """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다."""
+    """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다.
+
+    reason 은 SimulationFailed 가 그대로 물려받아 API 503 응답에 실린다 —
+    클라이언트가 "그냥 재시도"(timeout)와 "다른 조치가 필요"(그 외)를 구분할 수 있게."""
+
+    def __init__(self, message: str, *, reason: str = "llm_error") -> None:
+        super().__init__(message)
+        self.reason = reason
+
+
+# 동시에 진행 중인 LLM 호출 수를 settings.simulation_max_inflight 로 제한한다.
+# 프로세스 하나에서만 유효 — 워커를 여러 개 띄우면 워커별로 따로 센다.
+@lru_cache
+def _semaphore() -> asyncio.Semaphore:
+    return asyncio.Semaphore(get_settings().simulation_max_inflight)
 
 
 async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
@@ -51,14 +65,14 @@ async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: 
     client = _get_client()
     payload = [{"role": "system", "content": system}, *messages]
     try:
-        async with asyncio.timeout(timeout):
+        async with _semaphore(), asyncio.timeout(timeout):
             resp = await client.chat.completions.create(
                 model=settings.llm_model,
                 messages=payload,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
             )
     except TimeoutError as e:
-        raise LLMError(f"timeout after {timeout}s") from e
+        raise LLMError(f"timeout after {timeout}s", reason="timeout") from e
     except Exception as e:
         raise LLMError(str(e)) from e
 
@@ -79,7 +93,7 @@ async def _call_json(**kwargs) -> dict:
         return json.loads(cleaned)
     except json.JSONDecodeError as e:
         logger.warning("JSON parse failed: %s", cleaned[:200])
-        raise LLMError(f"invalid JSON: {e}") from e
+        raise LLMError(f"invalid JSON: {e}", reason="invalid_json") from e
 
 
 # ══ 프롬프트 재료 — schemas 정의에서 생성 ═══════════════════
@@ -181,7 +195,14 @@ JSON 객체 하나만. 설명·마크다운·코드펜스 금지.
 
 
 class SimulationFailed(Exception):
-    """대본을 못 받았다. 대화 없이 리포트만 만들 수는 없으므로 호출부가 503 으로 올린다."""
+    """대본을 못 받았다. 대화 없이 리포트만 만들 수는 없으므로 호출부가 503 으로 올린다.
+
+    reason 은 API 503 응답에 그대로 실린다 — 클라이언트가 재시도 전략을 고를 수 있게
+    (예: script_too_short 면 turns 를 줄여서, timeout 이면 그냥 다시)."""
+
+    def __init__(self, message: str, *, reason: str = "unknown") -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 class SimulationAgent:
@@ -213,15 +234,15 @@ class SimulationAgent:
                 messages=[{"role": "user", "content": user}],
                 # 발화 한 줄 ≈ 60~90 토큰 × 2×turns + 리포트 ≈ 1500. 15턴이어도 남게.
                 max_tokens=2200 + 180 * turns,
-                timeout=120.0,
+                timeout=get_settings().simulation_script_timeout_s,
             )
         except LLMError as e:
-            raise SimulationFailed(str(e)) from e
+            raise SimulationFailed(str(e), reason=e.reason) from e
         try:
             return ScriptOutput.model_validate(data)
         except ValidationError as e:
             logger.warning("script validation failed: %s", e)
-            raise SimulationFailed(f"invalid script: {e}") from e
+            raise SimulationFailed(f"invalid script: {e}", reason="invalid_script") from e
 
 
 # ══ 2. 리포트만 — 대화록을 밖에서 줄 때 (/report/preview) ═══
@@ -262,7 +283,7 @@ class ReportAgent:
             system=SYSTEM,
             messages=[{"role": "user", "content": user}],
             max_tokens=1800,
-            timeout=60.0,
+            timeout=get_settings().simulation_narrative_timeout_s,
         )
         try:
             return ReportNarrative.model_validate(data)

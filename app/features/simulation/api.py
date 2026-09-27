@@ -1,10 +1,11 @@
 """라우터. 검증과 상태코드만 담당하고 로직은 service/report 로 넘긴다.
 
 POST /v1/simulation                 : 내 페르소나 × 상대 페르소나 → 10턴 대본 + 매칭 리포트 (LLM 1회). 저장됨
+                                       같은 페르소나 조합이 이미 처리 중이면 409, 실패하면 503(+reason)
 GET  /v1/simulation/{id}            : 저장된 시뮬레이션 (대본 + 리포트)
 GET  /v1/simulation/{id}/report     : 리포트만
 GET  /v1/simulation?user_id=…       : 내 시뮬레이션 목록
-POST /v1/simulation/report/preview  : 페르소나 둘 + 대화록을 직접 넣어 리포트만. 프론트·플레이그라운드용
+POST /v1/simulation/report/preview  : 페르소나 둘 + 대화록을 직접 넣어 리포트만. 저장 안 함, 테스트/미리보기 전용
 """
 
 from __future__ import annotations
@@ -18,7 +19,7 @@ from app.features.persona.schemas import PersonaRef
 from .agents import ReportAgent, SimulationFailed
 from .report import build_report
 from .schemas import MatchingReport, ReportInput, SimulationRequest, SimulationResponse, SimulationSummary
-from .service import PersonaNotFound, SimulationNotFound, SimulationService
+from .service import PersonaNotFound, SimulationAlreadyRunning, SimulationNotFound, SimulationService
 
 router = APIRouter(prefix="/v1/simulation", tags=["simulation"])
 
@@ -38,11 +39,15 @@ async def run_simulation(
         result = await service.run(req)
     except PersonaNotFound as e:
         raise HTTPException(
-            404, f"{e.who}: 저장된 페르소나가 없어요 ({e.ref.describe()}). 온보딩 후 /build 를 먼저."
+            404, f"{e.who}: 확정된 페르소나가 없어요 ({e.ref.describe()}). 온보딩 → /build → /confirm 을 먼저."
+        ) from e
+    except SimulationAlreadyRunning as e:
+        raise HTTPException(
+            409, "같은 페르소나 조합의 시뮬레이션이 이미 처리 중이에요. 잠시 뒤 다시 시도하세요."
         ) from e
     except SimulationFailed as e:
         await db.rollback()
-        raise HTTPException(503, f"simulation failed: {e}") from e
+        raise HTTPException(503, {"message": f"simulation failed: {e}", "reason": e.reason}) from e
     await db.commit()
     return result
 
@@ -57,14 +62,23 @@ async def list_simulations(
     try:
         ref = PersonaRef(user_id=user_id, persona_id=persona_id)
     except ValueError as e:
-        raise HTTPException(422, str(e)) from e
+        # PersonaRef 자체 메시지는 session_id 까지 언급하는데, 이 쿼리는 user_id/persona_id 둘만 받는다
+        raise HTTPException(422, "user_id 또는 persona_id 중 하나만 지정하세요") from e
     try:
         return await service.list_for(ref)
     except PersonaNotFound as e:
-        raise HTTPException(404, f"저장된 페르소나가 없어요 ({e.ref.describe()})") from e
+        raise HTTPException(404, f"확정된 페르소나가 없어요 ({e.ref.describe()})") from e
 
 
-@router.post("/report/preview", response_model=MatchingReport)
+@router.post(
+    "/report/preview",
+    response_model=MatchingReport,
+    description="""
+페르소나 둘과 대화록을 요청 본문에 직접 넣어 리포트만 만듭니다. **저장하지 않으며, DB 조회도 하지 않습니다.**
+입력한 페르소나 데이터(확정 여부 포함)를 검증 없이 그대로 사용하는 테스트/미리보기 전용 엔드포인트입니다.
+실제 사용자의 확정 페르소나로 매칭 결과가 필요하면 `POST /v1/simulation`을 쓰세요.
+""",
+)
 async def preview_report(
     inp: ReportInput,
     use_llm: bool = Query(default=True, description="False 면 LLM 없이 템플릿 서술로"),

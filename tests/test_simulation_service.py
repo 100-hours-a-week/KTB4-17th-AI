@@ -15,7 +15,13 @@ from app.features.simulation.schemas import (
     SimulationRequest,
     grade_of,
 )
-from app.features.simulation.service import PersonaNotFound, SimulationNotFound, SimulationService, normalize_script
+from app.features.simulation.service import (
+    PersonaNotFound,
+    SimulationAlreadyRunning,
+    SimulationNotFound,
+    SimulationService,
+    normalize_script,
+)
 
 # ── 대본 정리 규칙 (LLM 이 순서·줄 수를 틀릴 때) ─────────
 
@@ -183,7 +189,72 @@ def test_run_fails_and_saves_nothing_when_script_has_no_a_line():
     result, listed, _ = _run(FakeSimulationAgent(_script(lines)), partner_user_id="u-partner")
 
     assert isinstance(result, SimulationFailed)
+    assert result.reason == "script_too_short"
     assert listed == []
+
+
+# ── 중복 실행(같은 페르소나 조합) 방지 ─────────────────
+
+
+def test_concurrent_run_for_same_pair_is_refused_without_second_llm_call():
+    """같은 (me, partner) 조합을 동시에 돌리면 하나만 LLM 을 부르고 다른 하나는 즉시 거절된다."""
+
+    class SlowAgent(SimulationAgent):
+        def __init__(self, script):
+            self.script = script
+            self.calls = 0
+
+        async def run(self, **kwargs):
+            self.calls += 1
+            await asyncio.sleep(0.05)
+            return self.script
+
+    async def scenario(factory):
+        async with factory() as db:
+            await seed_persona(db, persona_id="me", user_id="u-me", nickname="민수")
+            await seed_persona(db, persona_id="partner", user_id="u-partner", nickname="지수")
+        lines = [("a", "안녕"), ("b", "반가워요")]
+        agent = SlowAgent(_script(lines))
+        async with factory() as db_a, factory() as db_b:
+            svc_a, svc_b = SimulationService(db_a), SimulationService(db_b)
+            svc_a.agent = svc_b.agent = agent
+            req = SimulationRequest(me_user_id="u-me", partner_user_id="u-partner", turns=3)
+            results = await asyncio.gather(svc_a.run(req), svc_b.run(req), return_exceptions=True)
+            for db in (db_a, db_b):
+                await db.commit()
+        return agent.calls, results
+
+    calls, results = asyncio.run(with_db(scenario))
+
+    assert calls == 1  # 진 쪽은 LLM 을 부르지 않았다
+    outcomes = [type(r) for r in results]
+    assert outcomes.count(SimulationAlreadyRunning) == 1
+    assert sum(not isinstance(r, Exception) for r in results) == 1
+
+
+def test_concurrent_run_for_different_pairs_are_not_blocked():
+    async def scenario(factory):
+        async with factory() as db:
+            await seed_persona(db, persona_id="me", user_id="u-me", nickname="민수")
+            await seed_persona(db, persona_id="partner", user_id="u-partner", nickname="지수")
+            await seed_persona(db, persona_id="other", user_id="u-other", nickname="서연")
+        lines = [("a", "안녕"), ("b", "반가워요")]
+        async with factory() as db_a, factory() as db_b:
+            svc_a, svc_b = SimulationService(db_a), SimulationService(db_b)
+            svc_a.agent = FakeSimulationAgent(_script(lines))
+            svc_b.agent = FakeSimulationAgent(_script(lines))
+            results = await asyncio.gather(
+                svc_a.run(SimulationRequest(me_user_id="u-me", partner_user_id="u-partner", turns=3)),
+                svc_b.run(SimulationRequest(me_user_id="u-me", partner_user_id="u-other", turns=3)),
+                return_exceptions=True,
+            )
+            for db in (db_a, db_b):
+                await db.commit()
+        return results
+
+    results = asyncio.run(with_db(scenario))
+
+    assert all(not isinstance(r, Exception) for r in results)
 
 
 def test_run_with_unknown_partner_is_persona_not_found():

@@ -14,7 +14,7 @@ def _llm_returns(monkeypatch, text):
     seen = {}
 
     async def fake_call(*, system, messages, max_tokens, timeout):
-        seen.update(system=system, messages=messages, max_tokens=max_tokens)
+        seen.update(system=system, messages=messages, max_tokens=max_tokens, timeout=timeout)
         if isinstance(text, Exception):
             raise text
         return text
@@ -43,8 +43,9 @@ def test_json_is_extracted_from_common_llm_wrappings(monkeypatch, raw):
 
 
 def test_empty_or_non_json_reply_is_llm_error(monkeypatch):
-    with pytest.raises(LLMError):
+    with pytest.raises(LLMError) as exc:
         _parse(monkeypatch, "죄송해요, 지금은 답할 수 없어요.")
+    assert exc.value.reason == "invalid_json"
 
 
 PERSONA = PersonaResponse(persona_id="p", scores={})
@@ -89,6 +90,94 @@ def test_simulation_asks_for_requested_turns_with_token_budget(monkeypatch):
     assert "턴 수: 5 왕복" in user
     assert "총 10줄" in user
     assert seen["max_tokens"] == 2200 + 180 * 5
+
+
+def test_simulation_timeout_comes_from_settings(monkeypatch):
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("SIMULATION_SCRIPT_TIMEOUT_S", "7.5")
+    get_settings.cache_clear()
+    try:
+        seen = _llm_returns(monkeypatch, LLMError("stop here"))
+        with pytest.raises(SimulationFailed):
+            _run_simulation()
+        assert seen["timeout"] == 7.5
+    finally:
+        get_settings.cache_clear()
+
+
+def test_llm_error_reason_propagates_to_simulation_failed(monkeypatch):
+    _llm_returns(monkeypatch, LLMError("stop here", reason="timeout"))
+
+    with pytest.raises(SimulationFailed) as exc:
+        _run_simulation()
+
+    assert exc.value.reason == "timeout"
+
+
+def test_invalid_script_shape_has_invalid_script_reason(monkeypatch):
+    payload = json.dumps({"transcript": [{"speaker": "a", "text": "안녕"}], "report": NARRATIVE})
+    _llm_returns(monkeypatch, payload)
+
+    with pytest.raises(SimulationFailed) as exc:
+        _run_simulation()
+
+    assert exc.value.reason == "invalid_script"
+
+
+def test_call_limits_concurrency_to_simulation_max_inflight(monkeypatch):
+    """settings.simulation_max_inflight=1 이면 두 _call() 이 겹치지 않는다 (한 번에 하나씩)."""
+    from types import SimpleNamespace
+
+    from app.core.config import get_settings
+
+    active = 0
+    max_active = 0
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            nonlocal active, max_active
+            active += 1
+            max_active = max(max_active, active)
+            await asyncio.sleep(0.05)
+            active -= 1
+            return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="ok"))])
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    monkeypatch.setattr(agents, "_get_client", lambda: fake_client)
+    monkeypatch.setenv("SIMULATION_MAX_INFLIGHT", "1")
+    get_settings.cache_clear()
+    agents._semaphore.cache_clear()
+
+    async def both():
+        await asyncio.gather(
+            agents._call(system="s", messages=[], max_tokens=10, timeout=5),
+            agents._call(system="s", messages=[], max_tokens=10, timeout=5),
+        )
+
+    try:
+        asyncio.run(both())
+        assert max_active == 1
+    finally:
+        get_settings.cache_clear()
+        agents._semaphore.cache_clear()
+
+
+def test_call_timeout_reason_is_timeout(monkeypatch):
+    from types import SimpleNamespace
+
+    class SlowCompletions:
+        async def create(self, **kwargs):
+            await asyncio.sleep(1)
+            return SimpleNamespace(choices=[])
+
+    fake_client = SimpleNamespace(chat=SimpleNamespace(completions=SlowCompletions()))
+    monkeypatch.setattr(agents, "_get_client", lambda: fake_client)
+
+    with pytest.raises(LLMError) as exc:
+        asyncio.run(agents._call(system="s", messages=[], max_tokens=10, timeout=0.01))
+
+    assert exc.value.reason == "timeout"
 
 
 @pytest.mark.parametrize(
