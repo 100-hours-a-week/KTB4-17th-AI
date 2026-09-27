@@ -11,7 +11,7 @@ from datetime import UTC, datetime
 from enum import IntEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 # ══ 차원 정의 ══════════════════════════════════════════════
 
@@ -382,7 +382,23 @@ class RawExtraction(BaseModel):
     date_avoid: list[str] = Field(default_factory=list)
 
     narrative: Narrative | None = None
-    summaries: list[Summary] = Field(default_factory=list, max_length=len(AREAS))
+    summaries: list[Summary] = Field(default_factory=list)
+
+    @field_validator("summaries", mode="before")
+    @classmethod
+    def _keep_valid_cards(cls, value: object) -> list:
+        """카드는 부가 정보다. 형식을 어긴 카드(길이 초과·필드 누락)는 그 카드만 버린다 —
+        여기서 ValidationError 가 나면 점수·서술까지 추출 전체가 실패해 폴백 초안으로 떨어진다.
+        area 밖·중복 category 정리는 service.valid_summaries 몫."""
+        if not isinstance(value, list):
+            return []
+        kept = []
+        for item in value:
+            try:
+                kept.append(Summary.model_validate(item))
+            except ValidationError:
+                continue
+        return kept
 
 
 class Tags(BaseModel):
