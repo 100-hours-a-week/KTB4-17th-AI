@@ -28,12 +28,21 @@ def _now() -> datetime:
 
 class OnboardingSession(Base):
     __tablename__ = "onboarding_sessions"
+    __table_args__ = (
+        CheckConstraint(
+            "mbti IS NULL OR mbti IN ('ENFJ', 'ENFP', 'ENTJ', 'ENTP', 'ESFJ', 'ESFP', 'ESTJ', 'ESTP', "
+            "'INFJ', 'INFP', 'INTJ', 'INTP', 'ISFJ', 'ISFP', 'ISTJ', 'ISTP')",
+            name="ck_onboarding_sessions_mbti_valid",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     user_id: Mapped[str] = mapped_column(String(64), index=True)
     nickname: Mapped[str] = mapped_column(String(20))
     total_turns: Mapped[int] = mapped_column(Integer, default=10)
     turn_index: Mapped[int] = mapped_column(Integer, default=0)
+    # 시작 요청에서 받은 MBTI. /confirm 이 MBTI 없이 와도 확정된 페르소나에 이 값을 옮겨 적는다
+    mbti: Mapped[str | None] = mapped_column(String(4))
 
     # 지금 질문해두고 답변을 기다리는 주제의 id
     pending_topic_id: Mapped[str | None] = mapped_column(String(32))

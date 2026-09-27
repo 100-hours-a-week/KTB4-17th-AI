@@ -27,8 +27,8 @@ def test_service_start_creates_session_with_constant():
     assert ONBOARDING_TOTAL_TURNS == 10
     captured = {}
 
-    async def create_session(nickname, total_turns, user_id):
-        captured["args"] = (nickname, total_turns, user_id)
+    async def create_session(nickname, total_turns, user_id, mbti=None):
+        captured["args"] = (nickname, total_turns, user_id, mbti)
         return "session"
 
     async def ask_next(session):
@@ -39,14 +39,14 @@ def test_service_start_creates_session_with_constant():
     svc._ask_next = ask_next
 
     assert asyncio.run(svc.start("민수", "u1")) == "session"
-    assert captured["args"] == ("민수", 10, "u1")
+    assert captured["args"] == ("민수", 10, "u1", None)
 
 
 def _client():
     calls = []
 
     class FakeService:
-        async def start(self, nickname, user_id):
+        async def start(self, nickname, user_id, mbti=None):
             calls.append((nickname, user_id))
             return {"session_id": "s", "utterance": "안녕", "progress": "1/10"}
 

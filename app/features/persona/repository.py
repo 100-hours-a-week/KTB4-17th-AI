@@ -30,11 +30,14 @@ class PersonaRepository:
 
     # ── 세션 ──────────────────────────────────────────────
 
-    async def create_session(self, nickname: str, total_turns: int, user_id: str) -> OnboardingSession:
+    async def create_session(
+        self, nickname: str, total_turns: int, user_id: str, mbti: str | None = None
+    ) -> OnboardingSession:
         session = OnboardingSession(
             nickname=nickname,
             total_turns=total_turns,
             user_id=user_id,
+            mbti=mbti,
             used_topic_ids=[],
             coverage={"primary": {}, "secondary": {}},
             # 비워서라도 넣어야 한다 — 생성 직후 service._history() 가 turns 를 읽는데,
