@@ -19,6 +19,7 @@ from .models import OnboardingSession, PersonaRecord
 from .repository import PersonaRepository
 from .schemas import (
     ALL_DIMENSIONS,
+    AREAS,
     CONFIDENCE_HIGH,
     CONFIDENCE_LABEL,
     CONFIDENCE_LOW,
@@ -38,6 +39,7 @@ from .schemas import (
     PersonaResponse,
     RawExtraction,
     Segment,
+    Summary,
     Topic,
     TurnResponse,
     Weight,
@@ -216,6 +218,20 @@ def narrative_contradiction(scores: dict[str, int], narrative: Narrative) -> str
     return None
 
 
+def valid_summaries(summaries: list[Summary]) -> list[dict]:
+    """AREAS 밖 category·중복 category는 버린다. category당 첫 항목만 남긴다.
+
+    LLM이 area 이름을 지어내거나 같은 area를 두 번 낼 수 있어 여기서 걸러낸다."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for s in summaries:
+        if s.category not in AREAS or s.category in seen:
+            continue
+        seen.add(s.category)
+        out.append(s.model_dump())
+    return out
+
+
 # ══ 신뢰도 · 정확도 · 갭 · 변화 ═══════════════════════════
 
 
@@ -300,6 +316,7 @@ def persona_response(
         scores=record.scores,
         confidence=record.confidence,
         narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
+        summaries=[Summary.model_validate(s) for s in record.summaries] if record.summaries else [],
         accuracy=accuracy_of(record.confidence),
         gaps=gaps or [],
         changes=changes or [],
@@ -521,8 +538,16 @@ class OnboardingService:
                 logger.warning("narrative contradicts scores (%s) — dropped", why)
                 narrative = None
 
+        summaries = valid_summaries(raw.summaries)
+
         record, previous = await self.repo.save_persona(
-            session, scores, texts, confidence, narrative.model_dump() if narrative else None, source
+            session,
+            scores,
+            texts,
+            confidence,
+            narrative=narrative.model_dump() if narrative else None,
+            summaries=summaries or None,
+            source=source,
         )
         return self._to_response(session, record, previous)
 

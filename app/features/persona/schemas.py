@@ -130,6 +130,9 @@ DEFAULT_SCORE = 50
 
 ALL_DIMENSIONS: list[str] = [*SCORED.keys(), *TEXTUAL.keys()]
 
+# 차원의 area 를 등장 순서대로 중복 없이. summaries 카드의 category 값 후보.
+AREAS: list[str] = list(dict.fromkeys(d.area for d in SCORED.values()))
+
 
 # ══ 주제 정의 ══════════════════════════════════════════════
 
@@ -338,6 +341,20 @@ class Narrative(BaseModel):
     traits: list[str] = Field(default_factory=list, max_length=6)  # 한 줄짜리 특징 3~5개
 
 
+class Summary(BaseModel):
+    """area 하나를 한 장으로 요약한 카드. narrative와 같은 호출에서 LLM이 쓴다.
+
+    category는 AREAS(차원의 area) 중 하나여야 하며, service가 그 밖의 값과
+    중복 category는 걸러낸다 — LLM이 지어낸 카테고리를 그대로 보여주지 않기 위해.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    category: str
+    title: str = Field(max_length=40)
+    content: str = Field(max_length=200)
+
+
 class RawExtraction(BaseModel):
     """추출 LLM의 원본 출력. 근거를 못 찾은 차원은 키가 없다."""
 
@@ -365,6 +382,7 @@ class RawExtraction(BaseModel):
     date_avoid: list[str] = Field(default_factory=list)
 
     narrative: Narrative | None = None
+    summaries: list[Summary] = Field(default_factory=list, max_length=len(AREAS))
 
 
 class Tags(BaseModel):
@@ -492,6 +510,7 @@ class PersonaResponse(BaseModel):
     date_avoid: list[str] = Field(default_factory=list)
     confidence: dict[str, str] = Field(default_factory=dict)  # {차원: LOW|MEDIUM|HIGH}
     narrative: Narrative | None = None  # 점수와 모순되면 service 가 None 으로 떨어뜨림
+    summaries: list[Summary] = Field(default_factory=list)  # area별 요약 카드. 최대 len(AREAS)개
     accuracy: int = 0  # 0~100. confidence 가중 평균
     gaps: list[Gap] = Field(default_factory=list)  # LOW 먼저, 그다음 MEDIUM
     changes: list[Change] = Field(default_factory=list)  # 이전 버전 대비

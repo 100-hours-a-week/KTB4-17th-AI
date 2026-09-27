@@ -98,6 +98,7 @@ def test_persona_response_includes_stored_mbti():
         scores={},
         confidence={},
         narrative=None,
+        summaries=None,
         texts={},
         created_at=NOW,
     )

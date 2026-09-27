@@ -102,6 +102,7 @@ class PersonaRecord(Base):
     texts: Mapped[dict] = mapped_column(JSON)  # interests/routine/date_*
     confidence: Mapped[dict] = mapped_column(JSON)  # {차원: "LOW"}
     narrative: Mapped[dict | None] = mapped_column(JSON)  # headline/body/traits
+    summaries: Mapped[list | None] = mapped_column(JSON)  # area별 [{category, title, content}]
 
     # 같은 세션에서 재빌드할 때마다 새 행. 이전 행을 가리켜 "뭐가 바뀌었나"를 계산한다.
     version: Mapped[int] = mapped_column(Integer, default=1)

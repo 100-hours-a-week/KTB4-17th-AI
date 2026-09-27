@@ -244,6 +244,7 @@ class PersonaRepository:
         texts: dict,
         confidence: dict,
         narrative: dict | None = None,
+        summaries: list[dict] | None = None,
         source: str = "llm",
     ) -> tuple[PersonaRecord, PersonaRecord | None]:
         """새 버전을 추가한다. (새 행, 직전 행) — 직전 행은 변화 계산용."""
@@ -255,6 +256,7 @@ class PersonaRepository:
             texts=texts,
             confidence=confidence,
             narrative=narrative,
+            summaries=summaries,
             version=(previous.version + 1) if previous else 1,
             previous_id=previous.id if previous else None,
             is_confirmed=False,
