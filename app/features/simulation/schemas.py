@@ -209,8 +209,10 @@ class ReportNarrative(BaseModel):
     strengths: list[str] = Field(default_factory=list, max_length=5)
     cautions: list[str] = Field(default_factory=list, max_length=5)
     date_comment: str = Field(default="", max_length=300)
-    # ideal 영역만 LLM이 점수를 준다. {차원: 0~100}. 대화에서 근거를 못 찾으면 키 없음.
-    ideal_fit: dict[str, int] = Field(default_factory=dict)
+    # ideal 영역만 LLM이 점수를 준다. {차원: 0~100}. 대화에서 근거를 못 찾으면 키를 빼거나
+    # null — LLM이 가끔 키는 넣고 값만 null로 주는 경우가 있어 둘 다 받는다(score_dimensions가
+    # 둘 다 "판정 못함"으로 같이 취급한다).
+    ideal_fit: dict[str, int | None] = Field(default_factory=dict)
 
 
 class ScriptLine(BaseModel):

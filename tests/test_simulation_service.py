@@ -5,7 +5,7 @@ from conftest import seed_persona, with_db
 
 from app.features.persona.schemas import PersonaRef, PersonaResponse
 from app.features.simulation.agents import LLMError, ReportAgent, SimulationAgent, SimulationFailed
-from app.features.simulation.report import build_report, dimension_score, overall_score
+from app.features.simulation.report import build_report, dimension_score, overall_score, score_dimensions
 from app.features.simulation.schemas import (
     Fit,
     ReportInput,
@@ -70,6 +70,16 @@ def test_dimension_score_by_fit_rule(fit, a, b, expected):
 @pytest.mark.parametrize(("score", "grade"), [(70, "GOOD"), (69, "OK"), (45, "OK"), (44, "CAUTION")])
 def test_grade_boundaries(score, grade):
     assert grade_of(score) == grade
+
+
+def test_score_dimensions_treats_null_ideal_fit_value_same_as_missing_key():
+    """ideal_fit 스키마가 int|None 을 허용한 뒤 — null 값도 '판정 못함'(None)으로 처리돼야 한다."""
+    dims = score_dimensions(ANXIOUS, AVOIDANT, {"ideal_warmth": 80, "ideal_status": None})
+    by_dim = {d.dimension: d.score for d in dims}
+
+    assert by_dim["ideal_warmth"] == 80
+    assert by_dim["ideal_status"] is None  # null 값
+    assert by_dim["ideal_vitality"] is None  # 키 자체가 없음 — 같은 결과
 
 
 def test_overall_weights_conflict_and_orientation_heavier_and_subtracts_risk_penalty():

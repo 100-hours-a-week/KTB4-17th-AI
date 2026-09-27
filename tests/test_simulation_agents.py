@@ -6,7 +6,7 @@ import pytest
 from app.features.persona.schemas import PersonaResponse
 from app.features.simulation import agents
 from app.features.simulation.agents import LLMError, ReportAgent, SimulationAgent, SimulationFailed
-from app.features.simulation.schemas import Transcript
+from app.features.simulation.schemas import ReportNarrative, Transcript
 
 
 def _llm_returns(monkeypatch, text):
@@ -78,6 +78,19 @@ def test_simulation_parses_script_and_report(monkeypatch):
 
     assert [(line.speaker, line.text) for line in out.transcript] == [("a", "안녕하세요"), ("b", "반가워요")]
     assert out.report.headline == "연락 리듬이 맞는 두 사람"
+
+
+def test_simulation_script_with_null_ideal_fit_value_does_not_fail(monkeypatch):
+    """실제로 503(invalid_script)까지 냈던 사례 — report.ideal_fit 안의 null 값 하나로 대본 전체가 버려졌다."""
+    payload = {
+        "transcript": [{"speaker": "a", "text": "안녕하세요"}, {"speaker": "b", "text": "반가워요"}],
+        "report": {**NARRATIVE, "ideal_fit": {"ideal_warmth": 80, "ideal_status": None}},
+    }
+    _llm_returns(monkeypatch, json.dumps(payload, ensure_ascii=False))
+
+    out = _run_simulation()
+
+    assert out.report.ideal_fit == {"ideal_warmth": 80, "ideal_status": None}
 
 
 def test_simulation_asks_for_requested_turns_with_token_budget(monkeypatch):
@@ -221,6 +234,15 @@ def test_report_agent_parses_narrative(monkeypatch):
 
     assert narrative.headline == "연락 리듬이 맞는 두 사람"
     assert narrative.ideal_fit == {"ideal_warmth": 80}
+
+
+def test_ideal_fit_with_null_value_does_not_raise():
+    """실제로 관측된 사례: 근거 없는 차원을 키를 빼는 대신 null 로 채워 보낸다. 검증에서 안 터져야 한다."""
+    payload = {**NARRATIVE, "ideal_fit": {"ideal_warmth": 80, "ideal_status": None}}
+
+    narrative = ReportNarrative.model_validate(payload)
+
+    assert narrative.ideal_fit == {"ideal_warmth": 80, "ideal_status": None}
 
 
 def test_report_agent_says_when_there_is_no_transcript(monkeypatch):
