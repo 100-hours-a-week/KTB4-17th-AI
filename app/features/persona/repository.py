@@ -96,6 +96,11 @@ class PersonaRepository:
 
         await self.db.flush()
 
+    async def mark_reasked(self, session: OnboardingSession) -> None:
+        """대기 중인 질문을 한 번 되물었다고 표시한다. 답이 오기 전의 tags 칸을 쓴다 — record_answer 가 덮어쓴다."""
+        session.turns[-1].tags = {"reasked": True}
+        await self.db.flush()
+
     async def skip_question(self, session: OnboardingSession) -> None:
         """대기 중인 질문을 답 없이 넘긴다. 턴은 소비되고 커버리지는 그대로."""
         stmt = select(OnboardingTurn).where(

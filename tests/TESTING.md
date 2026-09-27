@@ -173,3 +173,18 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 ### 참고 — 이번 작업과 무관한 기존 불일치
 `uv run alembic check` 가 모델과 DB 의 차이를 보고한다: `personas.feedback` 컬럼·`ix_personas_user_id_is_confirmed` 인덱스,
 `practice_messages.user_id` 컬럼·인덱스가 DB 에는 있고 모델에는 없다. `source` 는 차이에 없다(모델·마이그레이션 일치). 손대지 않음.
+
+## 온보딩 답변 — 짧은 답·빈 답·무관한 답 대응 (red → green)
+
+`tests/test_persona_answer.py`
+
+- **한 글자 답 허용**: 최소 2자 → 앞뒤 공백을 뺀 1자. `"네"` 는 받고, `" 네 "` 는 `"네"` 로 저장
+- **422 + 안내 문구**: 빈 답·공백만·200자 초과는 422, `detail = {code, message}`. 질문은 소모하지 않아 바로 다시 보낼 수 있다
+  - `answer_empty` — "조금 더 길게 입력해 주시면 페르소나를 더 정확하게 만들 수 있어요. 다시 답해 주세요."
+  - `answer_too_long` — "답변은 200자 이내로 입력해 주세요. 다시 답해 주세요."
+- **무관한 답(태깅 `off_topic`)**
+  - 처음이면 같은 주제의 기본 질문으로 한 번 되묻는다 (`retry: true`, 턴·LLM 소모 없음, 답 저장 안 함)
+  - 되물어도 무관하면 다음 질문으로 넘어가되 `answered` 에서 뺀다 (건너뛰기·끝내기 조건 3개에 안 들어감)
+  - 태깅 LLM 실패(`None`)는 무관한 답으로 보지 않는다
+- 되물었다는 표시는 대기 중인 턴의 `tags` 칸(`{"reasked": true}`)에 둔다 — 답이 오면 `record_answer` 가 덮어쓴다. 새 컬럼 없음
+- mutation 점검 9개 모두 잡힘 (공백 자르기·빈 답/길이 검사·422·되묻기·1회 제한·개수 집계·retry 표시·되묻기 문구)
