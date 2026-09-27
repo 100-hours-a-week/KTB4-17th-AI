@@ -1,0 +1,374 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>연습대화 테스트</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #fff; --line: #e2e5ea; --text: #1d2330; --muted: #6b7385;
+    --me: #3b6cf6; --me-text: #fff; --bot: #eef0f4; --ok: #1f9d55; --err: #d64545; --warn: #b7791f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14171d; --panel: #1c2027; --line: #2c323c; --text: #e7eaf0; --muted: #8d95a6; --bot: #262b34; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; background: var(--bg); color: var(--text); }
+  header { padding: 12px 20px; border-bottom: 1px solid var(--line); background: var(--panel); display: flex; align-items: baseline; gap: 12px; }
+  header h1 { margin: 0; font-size: 16px; }
+  header span { color: var(--muted); font-size: 12px; }
+  main { display: grid; grid-template-columns: 320px 1fr 360px; gap: 12px; padding: 12px; height: calc(100vh - 50px); }
+  @media (max-width: 1100px) { main { grid-template-columns: 1fr; height: auto; } }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px; overflow: auto; min-height: 0; }
+  h2 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, select, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); font: inherit; }
+  textarea { resize: vertical; }
+  button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--me); }
+  button.primary { background: var(--me); border-color: var(--me); color: var(--me-text); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .row > * { flex: 1 1 auto; }
+  .chat { display: flex; flex-direction: column; height: 100%; }
+  #log { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 4px 2px 10px; }
+  .msg { max-width: 82%; padding: 8px 12px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; }
+  .msg.user { align-self: flex-end; background: var(--me); color: var(--me-text); border-bottom-right-radius: 4px; }
+  .msg.persona { align-self: flex-start; background: var(--bot); border-bottom-left-radius: 4px; }
+  .msg small { display: block; opacity: .65; font-size: 11px; margin-top: 2px; }
+  .notice { align-self: center; font-size: 12px; color: var(--muted); }
+  .notice.err { color: var(--err); }
+  .composer { display: flex; gap: 8px; margin-top: 8px; }
+  .composer textarea { flex: 1; height: 44px; }
+  .composer button { width: 76px; }
+  .badge { display: inline-block; padding: 1px 8px; border-radius: 99px; font-size: 11px; border: 1px solid var(--line); color: var(--muted); }
+  .badge.ok { color: var(--ok); border-color: var(--ok); }
+  .badge.err { color: var(--err); border-color: var(--err); }
+  .partner { margin-top: 12px; padding: 10px; background: var(--bg); border-radius: 8px; font-size: 13px; }
+  .partner b { display: block; }
+  .sessions { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+  .sessions button { text-align: left; font-size: 12px; }
+  .mode { display: flex; gap: 6px; }
+  .mode label { display: flex; align-items: center; gap: 6px; margin: 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--text); font-size: 13px; cursor: pointer; flex: 1; }
+  .mode input { width: auto; }
+  .exchange { border: 1px solid var(--line); border-radius: 8px; margin-bottom: 8px; overflow: hidden; }
+  .exchange summary { padding: 6px 10px; cursor: pointer; font-size: 12px; display: flex; gap: 8px; align-items: center; background: var(--bg); }
+  .exchange pre { margin: 0; padding: 8px 10px; font: 11px/1.45 ui-monospace, Menlo, monospace; white-space: pre-wrap; word-break: break-all; border-top: 1px solid var(--line); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>연습대화 테스트</h1>
+  <span>페르소나(user_id)를 골라 실제 API로 대화해 봅니다 · 오른쪽에서 요청/응답 원본 확인</span>
+</header>
+<main>
+  <!-- 설정 -->
+  <section>
+    <h2>1. 세션</h2>
+    <label for="partner">상대 user_id (필수, 확정된 페르소나)</label>
+    <input id="partner" value="dummy-user-b" list="known">
+    <label for="me">내 user_id (선택 — 있으면 상대가 나를 조금 앎)</label>
+    <input id="me" value="dummy-user-a" list="known">
+    <label for="nickname">닉네임 (내 user_id가 없을 때만 사용)</label>
+    <input id="nickname" placeholder="비우면 &quot;회원&quot;">
+    <datalist id="known"><option value="dummy-user-a"><option value="dummy-user-b"><option value="dummy-user-c"></datalist>
+    <div class="row">
+      <button id="start" class="primary">세션 시작</button>
+      <button id="end" disabled>세션 종료</button>
+    </div>
+
+    <div class="partner" id="partnerInfo" hidden></div>
+
+    <h2 style="margin-top:18px">2. 응답 방식</h2>
+    <div class="mode">
+      <label><input type="radio" name="mode" value="json" checked> 한 번에 (JSON)</label>
+      <label><input type="radio" name="mode" value="stream"> 스트리밍 (SSE)</label>
+    </div>
+    <div class="hint" id="modeHint"></div>
+
+    <h2 style="margin-top:18px">3. 내 연습대화 목록</h2>
+    <button id="list" style="width:100%">내 user_id로 목록 불러오기</button>
+    <div class="sessions" id="sessions"></div>
+  </section>
+
+  <!-- 대화 -->
+  <section class="chat">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+      <h2 style="margin:0">대화</h2>
+      <span><span class="badge" id="sid">세션 없음</span> <span class="badge" id="status"></span></span>
+    </div>
+    <div id="log"><div class="notice">왼쪽에서 세션을 시작하세요.</div></div>
+    <div class="row" style="margin-top:0">
+      <button id="opening" disabled>상대가 먼저 인사</button>
+      <button id="retry" disabled>답변만 다시 받기</button>
+    </div>
+    <div class="composer">
+      <textarea id="input" placeholder="메시지 입력 (Enter 전송, Shift+Enter 줄바꿈)" disabled></textarea>
+      <button id="send" class="primary" disabled>전송</button>
+    </div>
+  </section>
+
+  <!-- 원본 -->
+  <section>
+    <h2>요청 / 응답 원본 <button id="clear" style="float:right;padding:2px 8px;font-size:11px">지우기</button></h2>
+    <div id="raw"></div>
+  </section>
+</main>
+
+<script>
+const API = "/ai/api/v1/practice";
+const $ = (id) => document.getElementById(id);
+let sessionId = null;
+let busy = false;
+
+const mode = () => document.querySelector('input[name="mode"]:checked').value;
+const suffix = () => (mode() === "stream" ? "/stream" : "");
+
+function updateModeHint() {
+  $("modeHint").textContent = mode() === "stream"
+    ? "start → delta(조각)… → done. 글자가 실시간으로 써집니다. 오류는 error 이벤트로 옵니다."
+    : "답변이 다 만들어진 뒤 JSON 한 번으로 옵니다. 오류는 HTTP 상태코드(409/404/503)로 옵니다.";
+}
+document.querySelectorAll('input[name="mode"]').forEach((el) => el.addEventListener("change", updateModeHint));
+updateModeHint();
+
+// ── 화면 ─────────────────────────────────────────
+function addNotice(text, err = false) {
+  const d = document.createElement("div");
+  d.className = "notice" + (err ? " err" : "");
+  d.textContent = text;
+  $("log").appendChild(d);
+  scrollDown();
+  return d;
+}
+function addMsg(role, text, meta = "") {
+  const d = document.createElement("div");
+  d.className = "msg " + role;
+  const body = document.createElement("span");
+  body.textContent = text;
+  d.appendChild(body);
+  if (meta) { const s = document.createElement("small"); s.textContent = meta; d.appendChild(s); }
+  $("log").appendChild(d);
+  scrollDown();
+  return { el: d, body };
+}
+function scrollDown() { const l = $("log"); l.scrollTop = l.scrollHeight; }
+function setBusy(v) { busy = v; refresh(); }
+function refresh() {
+  const active = !!sessionId && $("status").dataset.state === "active";
+  $("start").disabled = busy;
+  $("end").disabled = busy || !active;
+  $("opening").disabled = busy || !active;
+  $("retry").disabled = busy || !active;
+  $("send").disabled = busy || !active;
+  $("input").disabled = busy || !active;
+}
+function setSession(id, status) {
+  sessionId = id;
+  $("sid").textContent = id ? "세션 " + id.slice(0, 8) : "세션 없음";
+  const st = $("status");
+  st.dataset.state = status || "";
+  st.textContent = status || "";
+  st.className = "badge " + (status === "active" ? "ok" : status === "ended" ? "err" : "");
+  refresh();
+}
+function showPartner(p, myNickname) {
+  const box = $("partnerInfo");
+  box.hidden = false;
+  box.replaceChildren();
+  const b = document.createElement("b");
+  b.textContent = `상대: ${p.nickname} (정확도 ${p.accuracy})`;
+  const h = document.createElement("div");
+  h.textContent = p.headline || "";
+  const me = document.createElement("div");
+  me.style.color = "var(--muted)";
+  me.textContent = `나: ${myNickname}`;
+  box.append(b, h, me);
+}
+
+// ── 원본 패널 ────────────────────────────────────
+function logRaw(title, status, request, response) {
+  const det = document.createElement("details");
+  det.className = "exchange";
+  det.open = true;
+  const sum = document.createElement("summary");
+  const badge = document.createElement("span");
+  badge.className = "badge " + (status >= 200 && status < 300 ? "ok" : "err");
+  badge.textContent = status;
+  const t = document.createElement("span");
+  t.textContent = title;
+  sum.append(badge, t);
+  const pre = document.createElement("pre");
+  pre.textContent = JSON.stringify({ request, response }, null, 2);
+  det.append(sum, pre);
+  $("raw").prepend(det);
+  return { pre, badge, request };
+}
+$("clear").onclick = () => $("raw").replaceChildren();
+
+// ── 호출 ─────────────────────────────────────────
+async function callJson(method, path, body, params) {
+  const url = API + path + (params ? "?" + new URLSearchParams(params) : "");
+  const res = await fetch(url, { method, headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  let data = null;
+  try { data = await res.json(); } catch { /* 본문 없음 */ }
+  logRaw(`${method} ${path}`, res.status, { url, body: body ?? null }, data);
+  return { res, data };
+}
+
+// SSE 를 읽어 이벤트마다 onEvent 호출. 서버가 보낸 순서·개수 그대로 events 에 모은다
+async function callStream(path, body, onEvent) {
+  const url = API + path;
+  const res = await fetch(url, { method: "POST", headers: { "content-type": "application/json" }, body: body ? JSON.stringify(body) : undefined });
+  const ct = res.headers.get("content-type") || "";
+  if (!ct.startsWith("text/event-stream")) {
+    let data = null;
+    try { data = await res.json(); } catch { /* */ }
+    logRaw(`POST ${path}`, res.status, { url, body: body ?? null }, data);
+    return { res, data, events: null };
+  }
+  const events = [];
+  const raw = logRaw(`POST ${path}`, res.status, { url, body: body ?? null }, events);
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += dec.decode(value, { stream: true });
+    let i;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const block = buf.slice(0, i); buf = buf.slice(i + 2);
+      const ev = {};
+      for (const line of block.split("\n")) {
+        const k = line.indexOf(": ");
+        if (k > 0) ev[line.slice(0, k)] = line.slice(k + 2);
+      }
+      if (!ev.event) continue;
+      const item = { event: ev.event, data: JSON.parse(ev.data) };
+      events.push(item);
+      raw.pre.textContent = JSON.stringify({ request: raw.request, response: events }, null, 2);
+      onEvent(item);
+    }
+  }
+  return { res, data: null, events };
+}
+
+// 답변 하나를 받아 화면에 그린다. 현재 모드에 맞게 JSON/스트리밍으로 호출
+async function askReply(kind, body) {
+  setBusy(true);
+  try {
+    if (mode() === "json") {
+      const wait = addNotice("상대가 답변을 만드는 중…");
+      const { res, data } = await callJson("POST", `/${sessionId}/${kind}`, body);
+      wait.remove();
+      if (res.ok) addMsg("persona", data.content, `#${data.message_index} · ${data.source}`);
+      else addNotice(`실패 ${res.status}: ${data?.detail ?? JSON.stringify(data)}`, true);
+      if (res.status === 503) addNotice("내 메시지는 저장됨 → ‘답변만 다시 받기’를 누르세요.", true);
+      return;
+    }
+    let bubble = null, text = "";
+    const { res, data, events } = await callStream(`/${sessionId}/${kind}/stream`, body, ({ event, data: d }) => {
+      if (event === "delta") {
+        if (!bubble) bubble = addMsg("persona", "");
+        text += d.text;
+        bubble.body.textContent = text;
+        scrollDown();
+      } else if (event === "done") {
+        if (!bubble) bubble = addMsg("persona", d.content);
+        bubble.body.textContent = d.content;
+        const s = document.createElement("small");
+        s.textContent = `#${d.message_index} · ${d.source}`;
+        bubble.el.appendChild(s);
+      } else if (event === "error") {
+        if (bubble) { bubble.el.style.opacity = ".55"; bubble.body.textContent += "  (중단됨)"; }
+        addNotice(`error 이벤트: ${d.detail}`, true);
+        addNotice("내 메시지는 저장돼 있을 수 있어요 → ‘답변만 다시 받기’ 또는 같은 내용 재전송.", true);
+      }
+    });
+    if (!events) addNotice(`실패 ${res.status}: ${data?.detail ?? JSON.stringify(data)}`, true);
+  } catch (e) {
+    addNotice("네트워크 오류: " + e.message, true);
+  } finally {
+    setBusy(false);
+    await syncStatus();
+  }
+}
+
+// 서버의 세션 상태(종료 여부)를 다시 읽어 맞춘다
+async function syncStatus() {
+  if (!sessionId) return;
+  const res = await fetch(`${API}/${sessionId}`);
+  if (res.ok) { const d = await res.json(); setSession(sessionId, d.status); }
+}
+
+// ── 버튼 ─────────────────────────────────────────
+$("start").onclick = async () => {
+  const body = { partner_user_id: $("partner").value.trim() };
+  if ($("me").value.trim()) body.me_user_id = $("me").value.trim();
+  if ($("nickname").value.trim()) body.nickname = $("nickname").value.trim();
+  setBusy(true);
+  try {
+    const { res, data } = await callJson("POST", "/start", body);
+    $("log").replaceChildren();
+    if (!res.ok) { addNotice(`시작 실패 ${res.status}: ${JSON.stringify(data.detail)}`, true); setSession(null, ""); return; }
+    setSession(data.session_id, "active");
+    showPartner(data.partner, data.my_nickname);
+    addNotice(`세션 시작 — ${data.partner.nickname}님과 연습합니다. ‘상대가 먼저 인사’ 또는 메시지를 보내세요.`);
+  } catch (e) { addNotice("네트워크 오류: " + e.message, true); }
+  finally { setBusy(false); }
+};
+
+$("opening").onclick = () => askReply("opening");
+$("retry").onclick = () => askReply("retry");
+
+async function send() {
+  const text = $("input").value.trim();
+  if (!text || busy) return;
+  $("input").value = "";
+  addMsg("user", text);
+  await askReply("messages", { message: text });
+}
+$("send").onclick = send;
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); }
+});
+
+$("end").onclick = async () => {
+  setBusy(true);
+  const { res, data } = await callJson("POST", `/${sessionId}/end`);
+  if (res.ok) { setSession(sessionId, data.status); addNotice("세션을 종료했어요."); }
+  setBusy(false);
+};
+
+async function loadSession(id) {
+  const { res, data } = await callJson("GET", `/${id}`);
+  if (!res.ok) return addNotice("불러오기 실패", true);
+  $("log").replaceChildren();
+  data.messages.forEach((m) => addMsg(m.role, m.content, `#${m.index}`));
+  setSession(id, data.status);
+  showPartner(data.partner, data.my_nickname);
+  addNotice(`세션 ${id.slice(0, 8)} 불러옴 (${data.messages.length}개 메시지)`);
+}
+
+$("list").onclick = async () => {
+  const uid = $("me").value.trim();
+  if (!uid) return alert("내 user_id를 입력하세요.");
+  const { res, data } = await callJson("GET", "", null, { user_id: uid, limit: 20 });
+  const box = $("sessions");
+  box.replaceChildren();
+  if (!res.ok) return;
+  if (!data.length) { const d = document.createElement("div"); d.className = "hint"; d.textContent = "세션이 없어요."; box.appendChild(d); return; }
+  data.forEach((s) => {
+    const b = document.createElement("button");
+    b.textContent = `${s.partner.nickname} · ${s.status} · ${s.message_count}개 · ${new Date(s.created_at).toLocaleString("ko-KR")}`;
+    b.onclick = () => loadSession(s.session_id);
+    box.appendChild(b);
+  });
+};
+
+refresh();
+</script>
+</body>
+</html>

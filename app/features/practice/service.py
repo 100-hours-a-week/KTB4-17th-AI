@@ -14,6 +14,7 @@ import logging
 from collections.abc import AsyncIterator
 
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.persona.lookup import LoadedPersona, load_persona
@@ -29,6 +30,7 @@ from .schemas import (
     ErrorEvent,
     PracticeMessageItem,
     PracticeSessionResponse,
+    PracticeSessionSummary,
     PracticeStartRequest,
     PracticeStartResponse,
     StartEvent,
@@ -55,6 +57,21 @@ class NothingToRetry(Exception):
     """다시 받을 답변이 없다 — 마지막 메시지가 이미 상대 답변이거나 대화가 비어 있다."""
 
 
+class OpeningAlreadyDone(Exception):
+    """상대의 첫 인사는 세션당 한 번 — 이미 메시지가 있으면 다시 열 수 없다."""
+
+
+CONCURRENT_DETAIL = "다른 요청을 처리 중이에요. 잠시 뒤 다시 시도해 주세요"
+
+
+class ReplyFailed(Exception):
+    """답변 스트림이 도중에 끊겼다 (일반 JSON 응답으로 모을 때만 쓴다)."""
+
+
+class ConcurrentRequest(Exception):
+    """같은 세션에 동시에 들어온 요청과 메시지 index 가 겹쳤다 — 늦게 커밋한 쪽이 진다."""
+
+
 class PracticeService:
     # 이 요청의 DB 세션에 묶인 repository/agent 를 만든다
     def __init__(self, db: AsyncSession) -> None:
@@ -73,9 +90,11 @@ class PracticeService:
 
     # 상대(+선택적으로 나) 페르소나를 로드해 세션 row 를 만든다. LLM 호출 없음
     async def start(self, req: PracticeStartRequest) -> PracticeStartResponse:
-        partner = await self._load("partner", req.partner)
-        me = await self._load("me", req.me) if req.me else None
-        my_nickname = req.nickname or (me.nickname if me else "회원")
+        partner = await self._load("partner", req.partner_ref())
+        me_ref = req.me_ref()
+        me = await self._load("me", me_ref) if me_ref else None
+        # 내 페르소나가 있으면 온보딩 닉네임이 우선. nickname 은 페르소나가 없는 사용자용이다
+        my_nickname = me.nickname if me else (req.nickname or "회원")
 
         session = await self.repo.create_session(
             partner_persona_id=partner.record.id,
@@ -92,6 +111,24 @@ class PracticeService:
             message_count=0,
             created_at=session.created_at,
         )
+
+    # 내(user_id) 연습대화 목록. 상대 정보는 세션에 고정된 페르소나 버전 기준
+    async def list_for_user(self, user_id: str, limit: int) -> list[PracticeSessionSummary]:
+        summaries = []
+        for s in await self.repo.list_for_user(user_id, limit):
+            partner = await load_persona(self.db, PersonaRef(persona_id=s.partner_persona_id))
+            summaries.append(
+                PracticeSessionSummary(
+                    session_id=s.id,
+                    partner=partner.brief if partner else _brief_fallback(s),
+                    my_nickname=s.my_nickname,
+                    status=s.status,
+                    message_count=s.message_count,
+                    created_at=s.created_at,
+                    updated_at=s.updated_at,
+                )
+            )
+        return summaries
 
     # 세션 + 메시지 목록을 응답 스키마로 조립. 상대 페르소나가 지워졌으면 최소 정보로 대체
     async def get(self, session: PracticeSession) -> PracticeSessionResponse:
@@ -114,6 +151,15 @@ class PracticeService:
         return await self.get(session)
 
     # ── 스트리밍 ──────────────────────────────────────────
+
+    # 메시지를 저장·커밋하되 (session_id, index) 유니크 위반(flush/commit 어느 쪽이든)이면 롤백하고 ConcurrentRequest 로 바꾼다
+    async def _save_message(self, session: PracticeSession, role: str, content: str, source: str | None = None) -> None:
+        try:
+            await self.repo.add_message(session, role, content, source)
+            await self.db.commit()
+        except IntegrityError as e:
+            await self.db.rollback()
+            raise ConcurrentRequest from e
 
     # 상대(+나) 페르소나 프로필을 불러와 이번 대화의 시스템 프롬프트를 만든다
     async def _system(self, session: PracticeSession) -> str:
@@ -145,10 +191,12 @@ class PracticeService:
 
     # 상대가 먼저 말을 거는 첫 답변을 스트리밍한다
     async def stream_opening(self, session: PracticeSession) -> AsyncIterator[Event]:
-        """상대가 먼저 말을 건다. 이미 메시지가 있으면 그냥 다음 답변으로 취급."""
+        """상대가 먼저 말을 건다. 이미 메시지가 있으면 OpeningAlreadyDone."""
         if session.status != "active":
             raise SessionEnded(session.id)
-        async for ev in self._respond(session, opening=not session.messages):
+        if session.messages:
+            raise OpeningAlreadyDone(session.id)
+        async for ev in self._respond(session, opening=True):
             yield ev
 
     # 내 메시지를 먼저 커밋한 뒤 상대 답변을 스트리밍한다.
@@ -156,8 +204,7 @@ class PracticeService:
     async def stream_reply(self, session: PracticeSession, message: str) -> AsyncIterator[Event]:
         if session.status != "active":
             raise SessionEnded(session.id)
-        await self.repo.add_message(session, "user", message)
-        await self.db.commit()
+        await self._save_message(session, "user", message)
         async for ev in self._respond(session, opening=False):
             yield ev
 
@@ -198,9 +245,19 @@ class PracticeService:
             yield "delta", DeltaEvent(text=FALLBACK_REPLY)
 
         content = "".join(parts).strip()
-        await self.repo.add_message(session, "persona", content, source)
-        await self.db.commit()
+        await self._save_message(session, "persona", content, source)
         yield "done", DoneEvent(session_id=session.id, message_index=index, content=content, source=source)
+
+
+# 스트림 이벤트를 끝까지 소비해 최종 done 이벤트를 돌려준다 — 일반(JSON) 라우트용.
+# error 이벤트(도중 끊김)는 ReplyFailed 로, 스트림 안에서 나는 도메인 예외는 그대로 올라간다
+async def collect_reply(events: AsyncIterator[Event]) -> DoneEvent:
+    async for _, data in events:
+        if isinstance(data, ErrorEvent):
+            raise ReplyFailed(data.detail)
+        if isinstance(data, DoneEvent):
+            return data
+    raise ReplyFailed("답변이 만들어지지 않았어요")
 
 
 # 상대 페르소나 레코드가 지워졌을 때, 세션에 남은 값만으로 최소한의 브리핑을 만든다
