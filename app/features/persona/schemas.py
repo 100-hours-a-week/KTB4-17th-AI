@@ -387,9 +387,26 @@ class StartRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=64)
 
 
+MAX_ANSWER_LEN = 200
+RETRY_ANSWER_EMPTY = "조금 더 길게 입력해 주시면 페르소나를 더 정확하게 만들 수 있어요. 다시 답해 주세요."
+RETRY_ANSWER_TOO_LONG = f"답변은 {MAX_ANSWER_LEN}자 이내로 입력해 주세요. 다시 답해 주세요."
+
+
 class AnswerRequest(BaseModel):
-    # 문서 §6: 1~200자, 최소 2자
-    answer: str = Field(min_length=2, max_length=200)
+    # 앞뒤 공백을 자른 뒤 1~200자. "네" 같은 한 글자 답도 받는다 — 성의 없는 답은 태깅의 off_topic 으로 따로 대응.
+    # 길이는 여기서 막지 않고 api 가 answer_problem 으로 검사한다 — 422 에 화면에 띄울 안내 문구를 싣기 위해
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    answer: str = Field(description=f"앞뒤 공백을 뺀 1~{MAX_ANSWER_LEN}자. 벗어나면 422 + 안내 문구(detail.message)")
+
+
+def answer_problem(answer: str) -> dict | None:
+    """답변을 받을 수 없으면 422 detail 로 쓸 {code, message}. 받을 수 있으면 None."""
+    if not answer:
+        return {"code": "answer_empty", "message": RETRY_ANSWER_EMPTY}
+    if len(answer) > MAX_ANSWER_LEN:
+        return {"code": "answer_too_long", "message": RETRY_ANSWER_TOO_LONG}
+    return None
 
 
 # 이 수 이상 답하면 건너뛰기·끝내기가 열린다. 그 밑이면 페르소나가 너무 비어서 의미가 없다.

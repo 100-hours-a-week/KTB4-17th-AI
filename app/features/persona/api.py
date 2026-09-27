@@ -17,6 +17,7 @@ from .schemas import (
     StartRequest,
     SupplementRequest,
     TurnResponse,
+    answer_problem,
 )
 from .service import (
     NoPersonaYet,
@@ -54,6 +55,11 @@ async def answer(
     service: OnboardingService = Depends(get_service),
     db: AsyncSession = Depends(get_db),
 ) -> TurnResponse:
+    # 빈 답·너무 긴 답은 질문을 소모하지 않고 422. detail.message 를 그대로 띄우면 사용자가 다시 보낼 수 있다
+    problem = answer_problem(req.answer)
+    if problem is not None:
+        raise HTTPException(422, problem)
+
     session = await service.repo.get_session(session_id)
     if session is None:
         raise HTTPException(404, "session not found")
