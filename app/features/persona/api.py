@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
 
 from .agents import BuildFailed
-from .repository import PersonaRepository
+from .repository import PersonaRepository, SessionBusy
 from .schemas import (
+    REQUEST_IN_PROGRESS,
+    TURN_MISMATCH,
     AnswerRequest,
     ConfirmPersonaRequest,
     ConfirmPersonaResponse,
@@ -27,6 +30,7 @@ from .service import (
     PersonaConfirmationConflict,
     PersonaDraftNotFound,
     TooFewAnswers,
+    TurnMismatch,
     UnknownDimension,
 )
 
@@ -48,6 +52,17 @@ async def start(
     return result
 
 
+# 답변·건너뛰기·끝내기 공통 전처리. 같은 세션의 요청을 처리 중이면 기다리지 않고 409, 없으면 404
+async def _lock_or_409(service: OnboardingService, session_id: str):
+    try:
+        session = await service.repo.lock_session(session_id)
+    except SessionBusy as e:
+        raise HTTPException(409, REQUEST_IN_PROGRESS) from e
+    if session is None:
+        raise HTTPException(404, "session not found")
+    return session
+
+
 @router.post("/onboarding/{session_id}/answer", response_model=TurnResponse)
 async def answer(
     session_id: str,
@@ -60,14 +75,20 @@ async def answer(
     if problem is not None:
         raise HTTPException(422, problem)
 
-    session = await service.repo.get_session(session_id)
-    if session is None:
-        raise HTTPException(404, "session not found")
-    if session.pending_topic_id is None:
+    session = await _lock_or_409(service, session_id)
+    # 이미 지난 턴에 대한 답(재전송)이면 끝난 세션이어도 마지막 응답을 다시 돌려준다
+    resend = req.turn_index is not None and req.turn_index < session.turn_index
+    if session.pending_topic_id is None and not resend:
         raise HTTPException(409, "no pending question")
 
-    result = await service.submit_answer(session, req.answer)
-    await db.commit()
+    try:
+        result = await service.submit_answer(session, req.answer, turn_index=req.turn_index)
+        await db.commit()
+    except TurnMismatch as e:
+        raise HTTPException(409, TURN_MISMATCH) from e
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(409, REQUEST_IN_PROGRESS) from e
     return result
 
 
@@ -78,17 +99,18 @@ async def skip(
     db: AsyncSession = Depends(get_db),
 ) -> TurnResponse:
     """이 질문 건너뛰기. 답한 턴이 3개 이상일 때만."""
-    session = await service.repo.get_session(session_id)
-    if session is None:
-        raise HTTPException(404, "session not found")
+    session = await _lock_or_409(service, session_id)
     if session.pending_topic_id is None:
         raise HTTPException(409, "no pending question")
 
     try:
         result = await service.skip(session)
+        await db.commit()
     except TooFewAnswers as e:
         raise HTTPException(409, f"need more answers before skipping ({e.answered} answered)") from e
-    await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(409, REQUEST_IN_PROGRESS) from e
     return result
 
 
@@ -99,15 +121,16 @@ async def finish(
     db: AsyncSession = Depends(get_db),
 ) -> TurnResponse:
     """대화 여기서 끝내기. 답한 턴이 3개 이상일 때만. 이후 /build 로 페르소나 생성."""
-    session = await service.repo.get_session(session_id)
-    if session is None:
-        raise HTTPException(404, "session not found")
+    session = await _lock_or_409(service, session_id)
 
     try:
         result = await service.finish(session)
+        await db.commit()
     except TooFewAnswers as e:
         raise HTTPException(409, f"need more answers before finishing ({e.answered} answered)") from e
-    await db.commit()
+    except IntegrityError as e:
+        await db.rollback()
+        raise HTTPException(409, REQUEST_IN_PROGRESS) from e
     return result
 
 

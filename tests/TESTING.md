@@ -188,3 +188,17 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
   - 태깅 LLM 실패(`None`)는 무관한 답으로 보지 않는다
 - 되물었다는 표시는 대기 중인 턴의 `tags` 칸(`{"reasked": true}`)에 둔다 — 답이 오면 `record_answer` 가 덮어쓴다. 새 컬럼 없음
 - mutation 점검 9개 모두 잡힘 (공백 자르기·빈 답/길이 검사·422·되묻기·1회 제한·개수 집계·retry 표시·되묻기 문구)
+
+## 온보딩 답변 — 중복 전송 방지 (red → green)
+
+`tests/test_persona_duplicate_answer.py`
+
+- **재전송 (`turn_index`)**: `TurnResponse.turn_index` 를 `/answer` 요청에 그대로 보내면
+  - 이미 지난 턴 → 저장·LLM 호출 없이 지금 질문(끝났으면 마무리)을 다시 돌려줌. 끝난 세션이어도 409 아님
+  - 아직 안 온 턴 → 409 `turn_mismatch`
+  - 안 보내면 기존과 같음 (호환)
+- **동시 요청 (세션 잠금)**: `/answer`·`/skip`·`/finish` 가 `SELECT … FOR UPDATE NOWAIT` 로 세션을 잠금. 처리 중이면 기다리지 않고 409 `request_in_progress`
+  - SQLite 는 FOR UPDATE 를 무시하므로 잠금 자체는 로컬 Postgres 로 확인: 두 번째 요청이 18ms 만에 거절, 첫 요청 커밋 뒤엔 정상 획득
+  - Postgres 오류 코드(55P03) → `SessionBusy` 변환은 가짜 DB 오류로 테스트
+- **마지막 안전장치**: `onboarding_turns (session_id, turn_index)` 유니크 제약 (마이그레이션 `i9d0e1f2a3b4`). 걸리면 롤백 + 409 `request_in_progress`
+- mutation 점검 11개 모두 잡힘

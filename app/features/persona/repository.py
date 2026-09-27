@@ -5,10 +5,23 @@ from __future__ import annotations
 from datetime import datetime
 
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from .models import OnboardingSession, OnboardingTurn, PersonaRecord
+
+# Postgres lock_not_available — FOR UPDATE NOWAIT 가 이미 잠긴 행을 만났을 때
+_LOCK_NOT_AVAILABLE = "55P03"
+
+
+class SessionBusy(Exception):
+    """같은 온보딩 세션의 다른 요청(더블클릭·재전송)을 지금 처리 중이다."""
+
+
+def _sqlstate(e: DBAPIError) -> str | None:
+    orig = e.orig
+    return getattr(orig, "sqlstate", None) or getattr(getattr(orig, "__cause__", None), "sqlstate", None)
 
 
 class PersonaRepository:
@@ -39,6 +52,25 @@ class PersonaRepository:
             .options(selectinload(OnboardingSession.turns))
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def lock_session(self, session_id: str) -> OnboardingSession | None:
+        """답변·건너뛰기·끝내기용. 세션 행을 잠그되 이미 잠겨 있으면 기다리지 않고 SessionBusy.
+
+        처리 중에 같은 세션으로 또 들어온 요청은 기다렸다 처리하면 다음 질문의 답으로 잘못 들어가므로 바로 돌려보낸다.
+        DB 잠금이라 워커가 여러 개여도 막힌다. (SQLite 는 FOR UPDATE 를 무시한다 — 테스트에서는 잠금 없음)"""
+        stmt = (
+            select(OnboardingSession)
+            .where(OnboardingSession.id == session_id)
+            .options(selectinload(OnboardingSession.turns))
+            .with_for_update(nowait=True)
+        )
+        try:
+            return (await self.db.execute(stmt)).scalar_one_or_none()
+        except DBAPIError as e:
+            if _sqlstate(e) == _LOCK_NOT_AVAILABLE:
+                await self.db.rollback()
+                raise SessionBusy(session_id) from e
+            raise
 
     async def get_session_for_update(self, session_id: str) -> OnboardingSession | None:
         """동일 세션의 동시 build가 같은 version을 만들지 못하도록 세션 행을 잠근다."""
