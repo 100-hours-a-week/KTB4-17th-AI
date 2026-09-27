@@ -12,7 +12,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -48,15 +48,15 @@ class OnboardingSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
-    turns: Mapped[list[ConversationTurn]] = relationship(
+    turns: Mapped[list[OnboardingTurn]] = relationship(
         back_populates="session",
-        order_by="ConversationTurn.turn_index",
+        order_by="OnboardingTurn.turn_index",
         cascade="all, delete-orphan",
     )
 
 
-class ConversationTurn(Base):
-    __tablename__ = "conversation_turns"
+class OnboardingTurn(Base):
+    __tablename__ = "onboarding_turns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id", ondelete="CASCADE"), index=True)
@@ -78,6 +78,19 @@ class ConversationTurn(Base):
 
 class PersonaRecord(Base):
     __tablename__ = "personas"
+    __table_args__ = (
+        UniqueConstraint("session_id", "version", name="uq_personas_session_version"),
+        CheckConstraint(
+            "(is_confirmed AND confirmed_at IS NOT NULL) OR (NOT is_confirmed AND confirmed_at IS NULL)",
+            name="ck_personas_confirmation_consistent",
+        ),
+        CheckConstraint("mbti IS NULL OR is_confirmed", name="ck_personas_mbti_confirmed_only"),
+        CheckConstraint(
+            "mbti IS NULL OR mbti IN ('ENFJ', 'ENFP', 'ENTJ', 'ENTP', 'ESFJ', 'ESFP', 'ESTJ', 'ESTP', "
+            "'INFJ', 'INFP', 'INTJ', 'INTP', 'ISFJ', 'ISFP', 'ISTJ', 'ISTP')",
+            name="ck_personas_mbti_valid",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
     session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id"), index=True)
@@ -91,5 +104,10 @@ class PersonaRecord(Base):
     # 같은 세션에서 재빌드할 때마다 새 행. 이전 행을 가리켜 "뭐가 바뀌었나"를 계산한다.
     version: Mapped[int] = mapped_column(Integer, default=1)
     previous_id: Mapped[str | None] = mapped_column(String(32))
+
+    # /build 에서는 미확정 초안으로 만들고, /confirm 에서 사용자 승인을 반영한다.
+    is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    mbti: Mapped[str | None] = mapped_column(String(4))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

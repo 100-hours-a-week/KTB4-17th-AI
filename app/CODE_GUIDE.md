@@ -380,7 +380,7 @@ class Base(DeclarativeBase):
 
 모든 DB 테이블 모델이 상속하는 공통 기반 클래스이다.
 
-예를 들어 `OnboardingSession`, `ConversationTurn`, `PersonaRecord`가 이 `Base`를 상속한다.
+예를 들어 `OnboardingSession`, `OnboardingTurn`, `PersonaRecord`가 이 `Base`를 상속한다.
 
 기능마다 별도의 `Base`를 만들지 않는 이유는 다음과 같다.
 
@@ -1456,15 +1456,15 @@ class OnboardingSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
-    turns: Mapped[list[ConversationTurn]] = relationship(
+    turns: Mapped[list[OnboardingTurn]] = relationship(
         back_populates="session",
-        order_by="ConversationTurn.turn_index",
+        order_by="OnboardingTurn.turn_index",
         cascade="all, delete-orphan",
     )
 
 
-class ConversationTurn(Base):
-    __tablename__ = "conversation_turns"
+class OnboardingTurn(Base):
+    __tablename__ = "onboarding_turns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id", ondelete="CASCADE"), index=True)
@@ -1516,7 +1516,7 @@ class PersonaRecord(Base):
 | 클래스 | DB 테이블 | 저장하는 내용 |
 |---|---|---|
 | `OnboardingSession` | `onboarding_sessions` | 온보딩 한 번의 전체 진행 상태 |
-| `ConversationTurn` | `conversation_turns` | 질문과 답변 한 턴 |
+| `OnboardingTurn` | `onboarding_turns` | 질문과 답변 한 턴 |
 | `PersonaRecord` | `personas` | 대화에서 만든 페르소나 한 버전 |
 
 ## 2. 보조 함수
@@ -1585,16 +1585,16 @@ coverage: Mapped[dict]
 ### `turns` 관계
 
 ```python
-turns: Mapped[list[ConversationTurn]] = relationship(...)
+turns: Mapped[list[OnboardingTurn]] = relationship(...)
 ```
 
-이 세션에 속한 모든 `ConversationTurn`을 연결한다.
+이 세션에 속한 모든 `OnboardingTurn`을 연결한다.
 
 - `order_by`: 턴 번호 순으로 정렬한다.
 - `back_populates`: 턴에서도 원래 세션을 찾을 수 있게 양방향 연결한다.
 - `cascade="all, delete-orphan"`: 세션이 삭제되면 소속 턴도 함께 삭제한다.
 
-## 4. `ConversationTurn`
+## 4. `OnboardingTurn`
 
 질문 하나와 그에 대한 답변 하나를 저장한다.
 
@@ -1683,11 +1683,11 @@ session: Mapped[OnboardingSession] = relationship(back_populates="turns")
 
 ```text
 OnboardingSession 1개
-├─ ConversationTurn 여러 개
+├─ OnboardingTurn 여러 개
 └─ PersonaRecord 여러 버전
 ```
 
-`ConversationTurn.session_id`는 세션 삭제 시 함께 삭제되도록 `ondelete="CASCADE"`가 설정되어 있다. `PersonaRecord`는 세션을 참조하지만 별도의 버전 기록으로 관리된다.
+`OnboardingTurn.session_id`는 세션 삭제 시 함께 삭제되도록 `ondelete="CASCADE"`가 설정되어 있다. `PersonaRecord`는 세션을 참조하지만 별도의 버전 기록으로 관리된다.
 
 ## 7. 주의할 점
 
@@ -2658,7 +2658,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import ConversationTurn, OnboardingSession, PersonaRecord, _now
+from .models import OnboardingTurn, OnboardingSession, PersonaRecord, _now
 
 
 class PersonaRepository:
@@ -2698,8 +2698,8 @@ class PersonaRepository:
         topic_id: str,
         question: str,
         source: str,
-    ) -> ConversationTurn:
-        turn = ConversationTurn(
+    ) -> OnboardingTurn:
+        turn = OnboardingTurn(
             session_id=session.id,
             turn_index=session.turn_index,
             topic_id=topic_id,
@@ -2722,9 +2722,9 @@ class PersonaRepository:
         tags: dict | None,
         coverage: dict,
     ) -> None:
-        stmt = select(ConversationTurn).where(
-            ConversationTurn.session_id == session.id,
-            ConversationTurn.turn_index == session.turn_index,
+        stmt = select(OnboardingTurn).where(
+            OnboardingTurn.session_id == session.id,
+            OnboardingTurn.turn_index == session.turn_index,
         )
         turn = (await self.db.execute(stmt)).scalar_one()
         turn.answer = answer
@@ -2738,9 +2738,9 @@ class PersonaRepository:
 
     async def skip_question(self, session: OnboardingSession) -> None:
         """대기 중인 질문을 답 없이 넘긴다. 턴은 소비되고 커버리지는 그대로."""
-        stmt = select(ConversationTurn).where(
-            ConversationTurn.session_id == session.id,
-            ConversationTurn.turn_index == session.turn_index,
+        stmt = select(OnboardingTurn).where(
+            OnboardingTurn.session_id == session.id,
+            OnboardingTurn.turn_index == session.turn_index,
         )
         turn = (await self.db.execute(stmt)).scalar_one()
         turn.skipped = True
@@ -2764,9 +2764,9 @@ class PersonaRepository:
         question: str,
         answer: str,
         coverage: dict,
-    ) -> ConversationTurn:
+    ) -> OnboardingTurn:
         """보강 문답 한 건. 온보딩 턴 뒤에 이어 붙고, 진행 카운터는 건드리지 않는다."""
-        turn = ConversationTurn(
+        turn = OnboardingTurn(
             session_id=session.id,
             turn_index=len(session.turns),
             topic_id=f"supplement:{dimension}",
@@ -2935,7 +2935,7 @@ LLM 또는 기본 질문으로 만든 다음 질문을 DB에 추가한다.
 
 #### 처리 순서
 
-1. 현재 `session.turn_index`로 `ConversationTurn`을 만든다.
+1. 현재 `session.turn_index`로 `OnboardingTurn`을 만든다.
 2. 질문 내용, 주제 ID, 질문 출처를 저장한다.
 3. 세션의 `pending_topic_id`를 현재 주제로 설정한다.
 4. 현재 주제를 `used_topic_ids`의 새 리스트에 추가한다.
@@ -2955,7 +2955,7 @@ JSON 컬럼의 변경을 SQLAlchemy가 확실하게 알아차리도록 하기 �
 
 #### 처리 순서
 
-1. 현재 세션 ID와 턴 번호에 해당하는 `ConversationTurn`을 찾는다.
+1. 현재 세션 ID와 턴 번호에 해당하는 `OnboardingTurn`을 찾는다.
 2. `turn.answer`에 사용자 답변을 저장한다.
 3. `turn.tags`에 태깅 결과를 저장한다.
 4. 세션의 `turn_index`를 1 증가시킨다.
@@ -3884,7 +3884,7 @@ self.extraction = ExtractionAgent()
 
 ### `_history()`
 
-DB의 `ConversationTurn` 목록을 OpenAI 메시지 형식으로 바꾼다.
+DB의 `OnboardingTurn` 목록을 OpenAI 메시지 형식으로 바꾼다.
 
 답변이 없는 턴은 질문까지 통째로 제외한다.
 

@@ -11,12 +11,23 @@ from .agents import BuildFailed
 from .repository import PersonaRepository
 from .schemas import (
     AnswerRequest,
+    ConfirmPersonaRequest,
+    ConfirmPersonaResponse,
     PersonaResponse,
     StartRequest,
     SupplementRequest,
     TurnResponse,
 )
-from .service import NoPersonaYet, OnboardingService, TooFewAnswers, UnknownDimension
+from .service import (
+    NoPersonaYet,
+    OnboardingNotFinished,
+    OnboardingService,
+    PersonaAlreadyConfirmed,
+    PersonaConfirmationConflict,
+    PersonaDraftNotFound,
+    TooFewAnswers,
+    UnknownDimension,
+)
 
 router = APIRouter(prefix="/v1/persona", tags=["persona"])
 
@@ -31,7 +42,7 @@ async def start(
     service: OnboardingService = Depends(get_service),
     db: AsyncSession = Depends(get_db),
 ) -> TurnResponse:
-    result = await service.start(req.nickname, req.total_turns, req.user_id)
+    result = await service.start(req.nickname, req.user_id)
     await db.commit()
     return result
 
@@ -100,16 +111,42 @@ async def build(
     service: OnboardingService = Depends(get_service),
     db: AsyncSession = Depends(get_db),
 ) -> PersonaResponse:
-    session = await service.repo.get_session(session_id)
+    session = await service.repo.get_session_for_update(session_id)
     if session is None:
         raise HTTPException(404, "session not found")
 
     try:
-        result = await service.build_persona(session)
+        result = await service.build_draft(session)
+    except OnboardingNotFinished as e:
+        raise HTTPException(409, "onboarding is not finished") from e
+    except PersonaAlreadyConfirmed as e:
+        raise HTTPException(409, "persona is already confirmed") from e
     except BuildFailed as e:
         await db.rollback()
         # 세션은 남는다 — 재시도 가능해야 하므로
         raise HTTPException(503, f"build failed: {e}") from e
+
+    await db.commit()
+    return result
+
+
+@router.post("/{persona_id}/confirm", response_model=ConfirmPersonaResponse)
+async def confirm(
+    persona_id: str,
+    req: ConfirmPersonaRequest,
+    service: OnboardingService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
+) -> ConfirmPersonaResponse:
+    """`/build`가 만든 가치관 초안을 확정하고 같은 user_id에 MBTI를 저장한다."""
+    if persona_id != req.persona_id:
+        raise HTTPException(409, "persona_id in path and body do not match")
+
+    try:
+        result = await service.confirm_persona(persona_id, req.mbti, req.confirmed_at)
+    except PersonaDraftNotFound as e:
+        raise HTTPException(404, "persona draft not found") from e
+    except PersonaConfirmationConflict as e:
+        raise HTTPException(409, "persona is already confirmed with different data") from e
 
     await db.commit()
     return result

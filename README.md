@@ -167,9 +167,11 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 | --- | --- | --- |
 | POST | `/v1/persona/onboarding/start` | 세션을 만들고 첫 질문을 반환합니다. `user_id` 를 주면 그 사용자의 페르소나로 저장됩니다. |
 | POST | `/v1/persona/onboarding/{session_id}/answer` | 답을 받고 다음 질문을 반환합니다. |
-| POST | `/v1/persona/{session_id}/build` | 대화 전체에서 페르소나를 추출합니다. |
+| POST | `/v1/persona/{session_id}/build` | 완료된 대화에서 미확정 가치관 초안을 생성·저장합니다. |
+| POST | `/v1/persona/{persona_id}/confirm` | 가치관 초안을 확정하고 같은 페르소나 행에 MBTI를 저장합니다. |
 
 기본 턴 수는 10회(5~15)입니다. 플레이그라운드 UI는 10으로 고정합니다.
+시뮬레이션과 연습대화에서는 확정된 페르소나만 사용할 수 있습니다.
 
 시뮬레이션 API:
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import ConversationTurn, OnboardingSession, PersonaRecord
+from .models import OnboardingSession, OnboardingTurn, PersonaRecord
 
 
 class PersonaRepository:
@@ -38,6 +40,16 @@ class PersonaRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
+    async def get_session_for_update(self, session_id: str) -> OnboardingSession | None:
+        """동일 세션의 동시 build가 같은 version을 만들지 못하도록 세션 행을 잠근다."""
+        stmt = (
+            select(OnboardingSession)
+            .where(OnboardingSession.id == session_id)
+            .options(selectinload(OnboardingSession.turns))
+            .with_for_update()
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     # ── 턴 ────────────────────────────────────────────────
 
     async def add_question(
@@ -46,8 +58,8 @@ class PersonaRepository:
         topic_id: str,
         question: str,
         source: str,
-    ) -> ConversationTurn:
-        turn = ConversationTurn(
+    ) -> OnboardingTurn:
+        turn = OnboardingTurn(
             session_id=session.id,
             turn_index=session.turn_index,
             topic_id=topic_id,
@@ -70,9 +82,9 @@ class PersonaRepository:
         tags: dict | None,
         coverage: dict,
     ) -> None:
-        stmt = select(ConversationTurn).where(
-            ConversationTurn.session_id == session.id,
-            ConversationTurn.turn_index == session.turn_index,
+        stmt = select(OnboardingTurn).where(
+            OnboardingTurn.session_id == session.id,
+            OnboardingTurn.turn_index == session.turn_index,
         )
         turn = (await self.db.execute(stmt)).scalar_one()
         turn.answer = answer
@@ -86,9 +98,9 @@ class PersonaRepository:
 
     async def skip_question(self, session: OnboardingSession) -> None:
         """대기 중인 질문을 답 없이 넘긴다. 턴은 소비되고 커버리지는 그대로."""
-        stmt = select(ConversationTurn).where(
-            ConversationTurn.session_id == session.id,
-            ConversationTurn.turn_index == session.turn_index,
+        stmt = select(OnboardingTurn).where(
+            OnboardingTurn.session_id == session.id,
+            OnboardingTurn.turn_index == session.turn_index,
         )
         turn = (await self.db.execute(stmt)).scalar_one()
         turn.skipped = True
@@ -112,9 +124,9 @@ class PersonaRepository:
         question: str,
         answer: str,
         coverage: dict,
-    ) -> ConversationTurn:
+    ) -> OnboardingTurn:
         """보강 문답 한 건. 온보딩 턴 뒤에 이어 붙고, 진행 카운터는 건드리지 않는다."""
-        turn = ConversationTurn(
+        turn = OnboardingTurn(
             session_id=session.id,
             turn_index=len(session.turns),
             topic_id=f"supplement:{dimension}",
@@ -141,15 +153,43 @@ class PersonaRepository:
     async def get_persona(self, persona_id: str) -> PersonaRecord | None:
         return await self.db.get(PersonaRecord, persona_id)
 
-    async def latest_persona_for_user(self, user_id: str) -> PersonaRecord | None:
-        """그 사용자의 가장 최근 페르소나. 세션이 여럿이면 가장 늦게 만든 행."""
+    async def get_persona_for_update(self, persona_id: str) -> PersonaRecord | None:
+        """확정 요청끼리 같은 초안을 동시에 갱신하지 못하도록 행 잠금으로 조회한다."""
+        stmt = select(PersonaRecord).where(PersonaRecord.id == persona_id).with_for_update()
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def latest_confirmed_persona(self, session_id: str) -> PersonaRecord | None:
         stmt = (
             select(PersonaRecord)
-            .where(PersonaRecord.user_id == user_id)
-            .order_by(PersonaRecord.created_at.desc(), PersonaRecord.version.desc())
+            .where(PersonaRecord.session_id == session_id, PersonaRecord.is_confirmed.is_(True))
+            .order_by(PersonaRecord.confirmed_at.desc(), PersonaRecord.version.desc())
             .limit(1)
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def latest_persona_for_user(self, user_id: str) -> PersonaRecord | None:
+        """그 사용자가 마지막으로 확정한 페르소나. 미확정 초안은 노출하지 않는다."""
+        stmt = (
+            select(PersonaRecord)
+            .where(PersonaRecord.user_id == user_id, PersonaRecord.is_confirmed.is_(True))
+            .order_by(PersonaRecord.confirmed_at.desc(), PersonaRecord.created_at.desc())
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def save_confirmation(
+        self,
+        record: PersonaRecord,
+        mbti: str,
+        confirmed_at: datetime,
+    ) -> PersonaRecord:
+        """확정 상태와 MBTI를 같은 페르소나 행에 저장한다."""
+        record.is_confirmed = True
+        record.confirmed_at = confirmed_at
+        record.mbti = mbti
+
+        await self.db.flush()
+        return record
 
     async def get_session_brief(self, session_id: str) -> OnboardingSession | None:
         """turns 를 안 싣는 가벼운 조회. 닉네임만 필요할 때 (simulation·practice)."""
@@ -179,6 +219,9 @@ class PersonaRepository:
             narrative=narrative,
             version=(previous.version + 1) if previous else 1,
             previous_id=previous.id if previous else None,
+            is_confirmed=False,
+            confirmed_at=None,
+            mbti=None,
         )
         self.db.add(record)
         session.status = "completed"
