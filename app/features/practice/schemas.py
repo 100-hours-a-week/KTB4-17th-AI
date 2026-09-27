@@ -41,6 +41,9 @@ class PracticeStartResponse(BaseModel):
 # POST /{id}/messages 요청 바디 — 내가 보내는 메시지 한 줄.
 # session_id 는 미리 만들어져 있어야 한다(지금은 /start) — 없으면 404.
 class PracticeMessageRequest(BaseModel):
+    # 공백만 보낸 메시지는 앞뒤를 잘라 빈 문자열로 만든 뒤 min_length 에서 422 로 막는다
+    model_config = {"str_strip_whitespace": True}
+
     message: str = Field(
         min_length=1,
         max_length=MAX_MESSAGE_LEN,
