@@ -5,11 +5,24 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.db import get_db
-from app.features.persona.schemas import PersonaBrief, PersonaRef
+from app.features.persona.schemas import PersonaBrief, PersonaRef, PersonaResponse
 from app.features.simulation import api
 from app.features.simulation.agents import SimulationFailed
-from app.features.simulation.schemas import MatchingReport, SimulationResponse, Turn
-from app.features.simulation.service import PersonaNotFound, SimulationNotFound
+from app.features.simulation.schemas import (
+    MatchingReport,
+    ReportPreviewDetail,
+    ReportPreviewResponse,
+    ReportPreviewSummary,
+    SimulationResponse,
+    Transcript,
+    Turn,
+)
+from app.features.simulation.service import (
+    PersonaNotFound,
+    ReportPreviewNotFound,
+    SimulationAlreadyRunning,
+    SimulationNotFound,
+)
 
 REPORT = MatchingReport.model_validate(json.loads(Path("tests/fixtures/matching_report.json").read_text()))
 
@@ -26,7 +39,7 @@ def _response() -> SimulationResponse:
     )
 
 
-def _client(run_error=None):
+def _client(run_error=None, preview_error=None):
     calls = []
 
     class FakeService:
@@ -49,6 +62,44 @@ def _client(run_error=None):
         async def list_for(self, ref):
             calls.append(("list", ref.describe()))
             return []
+
+        async def preview_report(self, inp, use_llm):
+            calls.append(("preview", inp.nickname_a, inp.nickname_b, use_llm))
+            if preview_error:
+                raise preview_error
+            return ReportPreviewResponse(preview_id="prev_demo", report=REPORT)
+
+        async def get_preview(self, preview_id):
+            if preview_id != "prev_demo":
+                raise ReportPreviewNotFound(preview_id)
+            return ReportPreviewDetail(
+                preview_id="prev_demo",
+                persona_a=PersonaResponse(persona_id="pa", scores={}),
+                persona_b=PersonaResponse(persona_id="pb", scores={}),
+                nickname_a="A",
+                nickname_b="B",
+                transcript=Transcript(),
+                use_llm=True,
+                report=REPORT,
+                created_at=REPORT.generated_at,
+            )
+
+        async def list_previews(self, limit):
+            calls.append(("list_previews", limit))
+            return [
+                ReportPreviewSummary(
+                    preview_id="prev_demo",
+                    nickname_a="A",
+                    nickname_b="B",
+                    use_llm=True,
+                    narrative_source=REPORT.narrative_source,
+                    overall_score=REPORT.overall.score,
+                    grade=REPORT.overall.grade,
+                    grade_label=REPORT.overall.grade_label,
+                    headline=REPORT.overall.headline,
+                    created_at=REPORT.generated_at,
+                )
+            ]
 
     class FakeDb:
         async def commit(self):
@@ -108,19 +159,38 @@ def test_run_with_missing_persona_is_404_without_commit():
     res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
 
     assert res.status_code == 404
-    assert res.json()["detail"].startswith("partner: 저장된 페르소나가 없어요 (u2)")
+    assert res.json()["detail"].startswith("partner: 확정된 페르소나가 없어요 (u2)")
     assert ("commit",) not in calls
 
 
-def test_run_llm_failure_is_503_and_rolls_back():
-    client, calls = _client(run_error=SimulationFailed("timeout"))
+def test_run_llm_failure_is_503_with_reason_and_rolls_back():
+    client, calls = _client(run_error=SimulationFailed("timeout", reason="timeout"))
 
     res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
 
     assert res.status_code == 503
-    assert res.json()["detail"] == "simulation failed: timeout"
+    assert res.json()["detail"] == {"message": "simulation failed: timeout", "reason": "timeout"}
     assert calls[-1] == ("rollback",)
     assert ("commit",) not in calls
+
+
+def test_run_already_running_is_409():
+    client, calls = _client(run_error=SimulationAlreadyRunning(frozenset({"pa", "pb"})))
+
+    res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
+
+    assert res.status_code == 409
+    assert "이미 처리 중" in res.json()["detail"]
+    assert ("commit",) not in calls
+
+
+def test_list_with_no_ref_or_two_refs_has_query_specific_message():
+    client, _ = _client()
+
+    for params in ({}, {"user_id": "u1", "persona_id": "p1"}):
+        res = client.get("/v1/simulation", params=params)
+        assert res.status_code == 422
+        assert res.json()["detail"] == "user_id 또는 persona_id 중 하나만 지정하세요"
 
 
 def test_get_unknown_simulation_is_404():
@@ -148,11 +218,38 @@ def test_list_requires_exactly_one_of_user_or_persona():
     assert calls == [("list", "u1")]
 
 
-def test_preview_without_llm_uses_template_narrative():
-    client, _ = _client()
+def test_preview_passes_use_llm_to_service_and_returns_id_and_report():
+    client, calls = _client()
     persona = {"persona_id": "pa", "scores": {}}
 
-    res = client.post("/v1/simulation/report/preview?use_llm=false", json={"persona_a": persona, "persona_b": persona})
+    res = client.post(
+        "/v1/simulation/report/preview?use_llm=false",
+        json={"persona_a": persona, "persona_b": persona, "nickname_a": "가상A", "nickname_b": "가상B"},
+    )
 
     assert res.status_code == 200
-    assert res.json()["narrative_source"] == "template"
+    body = res.json()
+    assert body["preview_id"] == "prev_demo"
+    assert body["report"]["simulation_id"] == REPORT.simulation_id
+    assert calls == [("preview", "가상A", "가상B", False), ("commit",)]
+
+
+def test_get_report_preview_known_and_unknown():
+    client, _ = _client()
+
+    ok = client.get("/v1/simulation/report/preview/prev_demo")
+    missing = client.get("/v1/simulation/report/preview/nope")
+
+    assert ok.status_code == 200
+    assert ok.json()["preview_id"] == "prev_demo"
+    assert missing.status_code == 404
+
+
+def test_list_report_previews_passes_limit():
+    client, calls = _client()
+
+    res = client.get("/v1/simulation/report/preview", params={"limit": 5})
+
+    assert res.status_code == 200
+    assert res.json()[0]["preview_id"] == "prev_demo"
+    assert calls == [("list_previews", 5)]

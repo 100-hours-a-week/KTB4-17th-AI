@@ -209,8 +209,10 @@ class ReportNarrative(BaseModel):
     strengths: list[str] = Field(default_factory=list, max_length=5)
     cautions: list[str] = Field(default_factory=list, max_length=5)
     date_comment: str = Field(default="", max_length=300)
-    # ideal 영역만 LLM이 점수를 준다. {차원: 0~100}. 대화에서 근거를 못 찾으면 키 없음.
-    ideal_fit: dict[str, int] = Field(default_factory=dict)
+    # ideal 영역만 LLM이 점수를 준다. {차원: 0~100}. 대화에서 근거를 못 찾으면 키를 빼거나
+    # null — LLM이 가끔 키는 넣고 값만 null로 주는 경우가 있어 둘 다 받는다(score_dimensions가
+    # 둘 다 "판정 못함"으로 같이 취급한다).
+    ideal_fit: dict[str, int | None] = Field(default_factory=dict)
 
 
 class ScriptLine(BaseModel):
@@ -348,4 +350,45 @@ class SimulationSummary(BaseModel):
     grade: Grade
     grade_label: str
     headline: str
+    created_at: datetime
+
+
+# ══ /report/preview 기록 (내부 확인용) ══════════════════════
+# preview 는 실제 저장된 페르소나가 아니라 요청 본문을 그대로 쓰므로 me/partner(PersonaBrief) 대신
+# 요청받은 PersonaResponse·닉네임을 그대로 보여준다.
+
+
+class ReportPreviewResponse(BaseModel):
+    """POST /report/preview 응답. report 는 기존과 같은 MatchingReport, preview_id 로 나중에 다시 볼 수 있다."""
+
+    preview_id: str
+    report: MatchingReport
+
+
+class ReportPreviewSummary(BaseModel):
+    """목록용 한 줄."""
+
+    preview_id: str
+    nickname_a: str
+    nickname_b: str
+    use_llm: bool
+    narrative_source: Literal["llm", "template"]
+    overall_score: int
+    grade: Grade
+    grade_label: str
+    headline: str
+    created_at: datetime
+
+
+class ReportPreviewDetail(BaseModel):
+    """단건 조회 — 무엇을 넣었길래 이 리포트가 나왔는지 그대로 다시 본다."""
+
+    preview_id: str
+    persona_a: PersonaResponse
+    persona_b: PersonaResponse
+    nickname_a: str
+    nickname_b: str
+    transcript: Transcript
+    use_llm: bool
+    report: MatchingReport
     created_at: datetime

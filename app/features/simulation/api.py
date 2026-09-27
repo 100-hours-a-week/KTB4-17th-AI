@@ -1,10 +1,14 @@
 """라우터. 검증과 상태코드만 담당하고 로직은 service/report 로 넘긴다.
 
 POST /v1/simulation                 : 내 페르소나 × 상대 페르소나 → 10턴 대본 + 매칭 리포트 (LLM 1회). 저장됨
+                                       같은 페르소나 조합이 이미 처리 중이면 409, 실패하면 503(+reason)
 GET  /v1/simulation/{id}            : 저장된 시뮬레이션 (대본 + 리포트)
 GET  /v1/simulation/{id}/report     : 리포트만
 GET  /v1/simulation?user_id=…       : 내 시뮬레이션 목록
-POST /v1/simulation/report/preview  : 페르소나 둘 + 대화록을 직접 넣어 리포트만. 프론트·플레이그라운드용
+POST /v1/simulation/report/preview  : 페르소나 둘 + 대화록을 직접 넣어 리포트만. DB 조회 없음, 테스트/미리보기 전용
+                                       내부 확인용으로 항상 저장됨 (아래 두 라우트로 나중에 다시 볼 수 있음)
+GET  /v1/simulation/report/preview            : preview 기록 목록 (내부 확인용)
+GET  /v1/simulation/report/preview/{id}       : preview 기록 단건 (내부 확인용)
 """
 
 from __future__ import annotations
@@ -15,10 +19,24 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.db import get_db
 from app.features.persona.schemas import PersonaRef
 
-from .agents import ReportAgent, SimulationFailed
-from .report import build_report
-from .schemas import MatchingReport, ReportInput, SimulationRequest, SimulationResponse, SimulationSummary
-from .service import PersonaNotFound, SimulationNotFound, SimulationService
+from .agents import SimulationFailed
+from .schemas import (
+    MatchingReport,
+    ReportInput,
+    ReportPreviewDetail,
+    ReportPreviewResponse,
+    ReportPreviewSummary,
+    SimulationRequest,
+    SimulationResponse,
+    SimulationSummary,
+)
+from .service import (
+    PersonaNotFound,
+    ReportPreviewNotFound,
+    SimulationAlreadyRunning,
+    SimulationNotFound,
+    SimulationService,
+)
 
 router = APIRouter(prefix="/v1/simulation", tags=["simulation"])
 
@@ -38,11 +56,15 @@ async def run_simulation(
         result = await service.run(req)
     except PersonaNotFound as e:
         raise HTTPException(
-            404, f"{e.who}: 저장된 페르소나가 없어요 ({e.ref.describe()}). 온보딩 후 /build 를 먼저."
+            404, f"{e.who}: 확정된 페르소나가 없어요 ({e.ref.describe()}). 온보딩 → /build → /confirm 을 먼저."
+        ) from e
+    except SimulationAlreadyRunning as e:
+        raise HTTPException(
+            409, "같은 페르소나 조합의 시뮬레이션이 이미 처리 중이에요. 잠시 뒤 다시 시도하세요."
         ) from e
     except SimulationFailed as e:
         await db.rollback()
-        raise HTTPException(503, f"simulation failed: {e}") from e
+        raise HTTPException(503, {"message": f"simulation failed: {e}", "reason": e.reason}) from e
     await db.commit()
     return result
 
@@ -57,19 +79,59 @@ async def list_simulations(
     try:
         ref = PersonaRef(user_id=user_id, persona_id=persona_id)
     except ValueError as e:
-        raise HTTPException(422, str(e)) from e
+        # PersonaRef 자체 메시지는 session_id 까지 언급하는데, 이 쿼리는 user_id/persona_id 둘만 받는다
+        raise HTTPException(422, "user_id 또는 persona_id 중 하나만 지정하세요") from e
     try:
         return await service.list_for(ref)
     except PersonaNotFound as e:
-        raise HTTPException(404, f"저장된 페르소나가 없어요 ({e.ref.describe()})") from e
+        raise HTTPException(404, f"확정된 페르소나가 없어요 ({e.ref.describe()})") from e
 
 
-@router.post("/report/preview", response_model=MatchingReport)
+@router.post(
+    "/report/preview",
+    response_model=ReportPreviewResponse,
+    description="""
+페르소나 둘과 대화록을 요청 본문에 직접 넣어 리포트만 만듭니다. **저장된 페르소나를 조회하지 않습니다.**
+입력한 페르소나 데이터(확정 여부 포함)를 검증 없이 그대로 사용하는 테스트/미리보기 전용 엔드포인트입니다.
+실제 사용자의 확정 페르소나로 매칭 결과가 필요하면 `POST /v1/simulation`을 쓰세요.
+
+호출 내용은 **내부 확인용으로 항상 저장**됩니다(공개 API 아님). `GET /report/preview`(목록)와
+`GET /report/preview/{id}`(단건)로 나중에 다시 볼 수 있습니다.
+""",
+)
 async def preview_report(
     inp: ReportInput,
     use_llm: bool = Query(default=True, description="False 면 LLM 없이 템플릿 서술로"),
-) -> MatchingReport:
-    return await build_report(inp, ReportAgent() if use_llm else None)
+    service: SimulationService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
+) -> ReportPreviewResponse:
+    result = await service.preview_report(inp, use_llm)
+    await db.commit()
+    return result
+
+
+@router.get(
+    "/report/preview",
+    response_model=list[ReportPreviewSummary],
+    description="`/report/preview` 호출 기록 목록 (내부 확인용). 공개 문서화 대상이 아니라 팀 내부에서만 쓴다.",
+)
+async def list_report_previews(
+    limit: int = Query(default=20, ge=1, le=100),
+    service: SimulationService = Depends(get_service),
+) -> list[ReportPreviewSummary]:
+    return await service.list_previews(limit)
+
+
+@router.get(
+    "/report/preview/{preview_id}",
+    response_model=ReportPreviewDetail,
+    description="`/report/preview` 호출 기록 단건 (내부 확인용). 무엇을 넣어서 이 결과가 나왔는지 그대로 다시 본다.",
+)
+async def get_report_preview(preview_id: str, service: SimulationService = Depends(get_service)) -> ReportPreviewDetail:
+    try:
+        return await service.get_preview(preview_id)
+    except ReportPreviewNotFound as e:
+        raise HTTPException(404, "report preview not found") from e
 
 
 @router.get("/{simulation_id}", response_model=SimulationResponse)

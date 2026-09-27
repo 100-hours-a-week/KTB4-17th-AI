@@ -62,7 +62,7 @@ def _lower_confidence(a: str, b: str) -> str:
 
 
 def score_dimensions(
-    pa: PersonaResponse, pb: PersonaResponse, ideal_fit: dict[str, int] | None = None
+    pa: PersonaResponse, pb: PersonaResponse, ideal_fit: dict[str, int | None] | None = None
 ) -> list[DimensionFit]:
     ideal_fit = ideal_fit or {}
     out = []
@@ -171,7 +171,7 @@ def _confidence(pa: PersonaResponse, pb: PersonaResponse, dims: list[DimensionFi
 
 
 def score_layer(
-    pa: PersonaResponse, pb: PersonaResponse, ideal_fit: dict[str, int] | None = None
+    pa: PersonaResponse, pb: PersonaResponse, ideal_fit: dict[str, int | None] | None = None
 ) -> tuple[list[DimensionFit], dict[str, int | None], list[Risk]]:
     """규칙 점수 한 묶음. ideal_fit 이 없으면 ideal 차원은 None (LLM 판정 전)."""
     dims = score_dimensions(pa, pb, ideal_fit)
