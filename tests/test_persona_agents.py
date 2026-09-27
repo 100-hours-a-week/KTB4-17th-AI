@@ -1,3 +1,8 @@
+import asyncio
+
+import pytest
+
+from app.features.persona import agents
 from app.features.persona.agents import SYSTEM_PROMPT, ConversationAgent
 from app.features.persona.schemas import Topic
 
@@ -163,3 +168,44 @@ def test_segment_rejects_blank_text():
         with pytest.raises(ValidationError):
             Segment(type="message", text=text)
     assert Segment(type="message", text="  안녕  ").text == "안녕"
+
+
+def _parse_json(monkeypatch, raw):
+    """_call(LLM 호출 경계)만 가짜로 — JSON 추출은 진짜 _call_json 이 한다."""
+
+    async def fake_call(**kwargs):
+        return raw
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+    return asyncio.run(agents._call_json(system="", messages=[], max_tokens=1, timeout=1))
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"a": 1}',
+        '```json\n{"a": 1}\n```',
+        '```JSON\n{"a": 1}\n```',
+        '결과입니다:\n```json\n{"a": 1}\n```',
+        '다음과 같아요.\n{"a": 1}\n이상입니다.',
+    ],
+)
+def test_json_is_extracted_from_common_llm_wrappings(monkeypatch, raw):
+    assert _parse_json(monkeypatch, raw) == {"a": 1}
+
+
+def test_non_json_reply_is_llm_error(monkeypatch):
+    with pytest.raises(agents.LLMError):
+        _parse_json(monkeypatch, "죄송해요, 지금은 답할 수 없어요.")
+
+
+def test_tagging_keeps_tags_when_llm_wraps_json_in_uppercase_fence(monkeypatch):
+    async def fake_call(**kwargs):
+        return '```JSON\n{"primary": ["contact_rhythm", "made_up"], "secondary": [], "off_topic": false}\n```'
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+
+    tags = asyncio.run(agents.TaggingAgent().tag("연락은 자주 하는 편이세요?", "하루에 한두 번이면 충분해요"))
+
+    assert tags is not None
+    assert tags.primary == ["contact_rhythm"]

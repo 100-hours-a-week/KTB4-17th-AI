@@ -15,7 +15,6 @@ from __future__ import annotations
 import asyncio  # 비동기 작업 표준 라이브러리
 import json  # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
-import re  # 문자열에서 특정 패턴을 찾거나 변경하는 정규표현식 모듈
 from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 from functools import lru_cache
 
@@ -59,9 +58,6 @@ def _get_client() -> AsyncOpenAI:
 
 logger = logging.getLogger(__name__)
 # 현재 파일 전용 로거, __name__은 현재 모듈의 이름을 담고 있는 내장 변수, 로깅 메시지에 모듈 이름 포함시켜 구분
-
-_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-# JSON 마크다운 코드 블록 표시 제거하기 위한 정규표현식 패턴, re.MULTILINE → 여러 줄에 걸쳐 적용
 
 
 class LLMError(Exception):
@@ -109,7 +105,9 @@ async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: 
 # 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
 async def _call_json(**kwargs) -> dict:
     text = await _call(**kwargs)  # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
-    cleaned = _FENCE.sub("", text).strip()  # ```<< 코드 블록 표시 제거, .strip() << 앞뒤의 공백과 줄바꿈을 제거
+    # 코드펜스(```json, ```JSON)나 앞뒤 설명 문장이 붙어 와도 첫 { ~ 마지막 } 만 잘라 파싱한다
+    start, end = text.find("{"), text.rfind("}")
+    cleaned = text[start : end + 1] if start != -1 and end > start else text.strip()
     try:
         return json.loads(cleaned)  # json 문자열 파이썬 객체로 변환
     except json.JSONDecodeError as e:  # LLM이 올바르지 않은 JSON을 생성하면 실행
