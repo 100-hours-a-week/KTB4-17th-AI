@@ -435,6 +435,7 @@ class TurnResponse(BaseModel):
     answered: int = 0  # 실제로 답한 턴 수 (건너뛴 건 제외)
     can_skip: bool = False  # 이 질문 건너뛰기 가능
     can_finish: bool = False  # 여기서 대화 끝내고 바로 페르소나 만들기 가능
+    retry: bool = False  # true 면 답이 질문과 무관해서 같은 질문을 다시 물었다 (턴 소모 없음)
 
 
 # 신뢰도 — 주 근거 건수로. 사용자에게는 등급명이 아니라 CONFIDENCE_LABEL 로 보여준다.

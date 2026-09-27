@@ -166,7 +166,7 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 | 메서드 | 경로 | 역할 |
 | --- | --- | --- |
 | POST | `/v1/persona/onboarding/start` | 세션을 만들고 첫 질문을 반환합니다. `user_id` 를 주면 그 사용자의 페르소나로 저장됩니다. |
-| POST | `/v1/persona/onboarding/{session_id}/answer` | 답을 받고 다음 질문을 반환합니다. 답은 앞뒤 공백을 뺀 1~200자 — 벗어나면 422 + `detail.message`(화면에 띄울 안내 문구), 질문은 그대로 남습니다. |
+| POST | `/v1/persona/onboarding/{session_id}/answer` | 답을 받고 다음 질문을 반환합니다. 답은 앞뒤 공백을 뺀 1~200자 — 벗어나면 422 + `detail.message`(화면에 띄울 안내 문구), 질문은 그대로 남습니다. 질문과 무관한 답이면 한 번만 같은 질문을 다시 묻습니다(`retry: true`, 턴 소모 없음). 다시 물어도 무관하면 다음으로 넘어가되 `answered` 에는 세지 않습니다. |
 | POST | `/v1/persona/{session_id}/build` | 완료된 대화에서 미확정 가치관 초안을 생성·저장합니다. 추출 LLM 이 실패하면 규칙으로 만든 임시 초안(`source: "fallback"`)을 돌려주고, 다시 부르면 LLM 추출을 재시도합니다. |
 | POST | `/v1/persona/{persona_id}/confirm` | 가치관 초안을 확정하고 같은 페르소나 행에 MBTI를 저장합니다. |
 

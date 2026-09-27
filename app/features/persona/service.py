@@ -159,6 +159,10 @@ class PersonaAlreadyConfirmed(Exception):
     """같은 세션의 가치관이 이미 확정되어 새 build가 필요하지 않다."""
 
 
+# 질문과 무관한 답(태깅 off_topic)에 한 번 되물을 때 앞에 붙이는 말. 뒤에 그 주제의 기본 질문이 온다
+REASK_PREFIX = "ㅎㅎ 제가 질문을 좀 애매하게 했나 봐요. 다시 여쭤볼게요."
+
+
 # ══ 추출 폴백 ══════════════════════════════════════════════
 # 추출 LLM 이 죽어도 온보딩은 끝나야 한다. 자유 답변은 LLM 없이 읽을 수 없으니,
 # 선택지로 답한 질문만 점수로 옮기고 나머지 차원은 비워 둔다(→ 기본값 50, 신뢰도 LOW).
@@ -326,7 +330,8 @@ class OnboardingService:
 
     @staticmethod
     def _answered(session: OnboardingSession) -> int:
-        return sum(1 for t in session.turns if t.answer)
+        """실제로 답한 턴 수. 건너뛴 턴과, 되물어도 질문과 무관했던 답(off_topic)은 세지 않는다."""
+        return sum(1 for t in session.turns if t.answer and not (t.tags or {}).get("off_topic"))
 
     def _controls(self, session: OnboardingSession) -> dict:
         answered = self._answered(session)
@@ -366,6 +371,19 @@ class OnboardingService:
             **self._controls(session),
         )
 
+    def _reask(self, session: OnboardingSession, topic: Topic) -> TurnResponse:
+        """무관한 답에 대한 되묻기. LLM 없이 그 주제의 짧은 기본 질문으로."""
+        text = f"{REASK_PREFIX} {topic.seed}"
+        return TurnResponse(
+            session_id=session.id,
+            utterance=text,
+            segments=[Segment(type="message", text=text)],
+            choices=list(topic.choices) if topic.choices else None,
+            progress=f"{session.turn_index + 1}/{session.total_turns}",
+            retry=True,
+            **self._controls(session),
+        )
+
     # ── 공개 API ──────────────────────────────────────────
 
     async def start(self, nickname: str, user_id: str) -> TurnResponse:
@@ -377,6 +395,11 @@ class OnboardingService:
         question = session.turns[-1].question
 
         tags = await self.tagging.tag(question, answer)
+
+        # 질문과 무관한 답이면 한 번만 가볍게 되묻는다. 턴은 소모하지 않고 답도 저장하지 않는다
+        if tags is not None and tags.off_topic and not (session.turns[-1].tags or {}).get("reasked"):
+            await self.repo.mark_reasked(session)
+            return self._reask(session, topic)
 
         coverage = Coverage(session.coverage)
         if tags is None:
