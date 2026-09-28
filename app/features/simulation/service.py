@@ -12,21 +12,25 @@ agents 는 "어떻게 말할까"만, report 는 "점수는 어떻게 매길까"�
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.persona.lookup import LoadedPersona, load_persona
-from app.features.persona.schemas import PersonaBrief, PersonaRef
+from app.features.persona.schemas import PersonaBrief, PersonaRef, PersonaResponse
 
-from .agents import SimulationAgent, SimulationFailed
+from .agents import ReportAgent, SimulationAgent, SimulationFailed
 from .models import SimulationRecord
-from .report import assemble_report, score_layer
+from .report import assemble_report, build_report, score_layer
 from .repository import SimulationRepository
 from .schemas import (
     GRADE_LABEL,
     MatchingReport,
     ReportInput,
+    ReportPreviewDetail,
+    ReportPreviewResponse,
+    ReportPreviewSummary,
     ScriptLine,
     SimulationRequest,
     SimulationResponse,
@@ -48,6 +52,26 @@ class PersonaNotFound(Exception):
 
 class SimulationNotFound(Exception):
     pass
+
+
+class ReportPreviewNotFound(Exception):
+    pass
+
+
+class SimulationAlreadyRunning(Exception):
+    """같은 페르소나 조합의 시뮬레이션이 이미 처리 중이다.
+
+    더블클릭·네트워크 재시도로 똑같은 LLM 호출이 중복되는 걸 막는다. 프로세스 안에서만
+    유효하다 — 워커를 여러 개 띄우면 워커별로 따로 추적되어 완전히는 못 막는다."""
+
+    def __init__(self, pair: frozenset[str]) -> None:
+        self.pair = pair
+        super().__init__(f"simulation already running for {sorted(pair)}")
+
+
+# 진행 중인 (persona_a_id, persona_b_id) 조합. 순서 없는 쌍이라 frozenset.
+_IN_FLIGHT: set[frozenset[str]] = set()
+_IN_FLIGHT_LOCK = asyncio.Lock()
 
 
 # ══ 대본 정리 ══════════════════════════════════════════════
@@ -103,6 +127,26 @@ class SimulationService:
         partner = await self._load("partner", req.partner_ref())
         pa, pb = me.response, partner.response
 
+        # 같은 페르소나 조합이 이미 처리 중이면 더블클릭·재시도로 보고 LLM 을 또 부르지 않는다
+        pair = frozenset((me.record.id, partner.record.id))
+        async with _IN_FLIGHT_LOCK:
+            if pair in _IN_FLIGHT:
+                raise SimulationAlreadyRunning(pair)
+            _IN_FLIGHT.add(pair)
+        try:
+            return await self._run_locked(req, me, partner, pa, pb)
+        finally:
+            async with _IN_FLIGHT_LOCK:
+                _IN_FLIGHT.discard(pair)
+
+    async def _run_locked(
+        self,
+        req: SimulationRequest,
+        me: LoadedPersona,
+        partner: LoadedPersona,
+        pa: PersonaResponse,
+        pb: PersonaResponse,
+    ) -> SimulationResponse:
         # 규칙 점수를 먼저 — LLM 에게 "설명할 재료"로 준다. ideal 은 아직 None
         dims, area_scores, _ = score_layer(pa, pb)
 
@@ -118,7 +162,7 @@ class SimulationService:
         )
         turns = normalize_script(script.transcript, req.turns)
         if len(turns) < 2:
-            raise SimulationFailed("script too short after normalization")
+            raise SimulationFailed("script too short after normalization", reason="script_too_short")
 
         # 하이라이트가 잘려 나간 줄을 가리키면 버린다
         narrative = script.report
@@ -186,6 +230,60 @@ class SimulationService:
                     me=me,
                     partner=partner,
                     turns=r.turns,
+                    overall_score=score,
+                    grade=grade_of(score),
+                    grade_label=GRADE_LABEL[grade_of(score)],
+                    headline=overall.get("headline", ""),
+                    created_at=r.created_at,
+                )
+            )
+        return out
+
+    # ── /report/preview 기록 (내부 확인용) ──────────────────
+    # DB 조회 없이 요청 본문을 그대로 쓰는 테스트/미리보기라 항상 저장한다 — 확정 여부 검사 없음은 의도된 설계.
+
+    async def preview_report(self, inp: ReportInput, use_llm: bool) -> ReportPreviewResponse:
+        report = await build_report(inp, ReportAgent() if use_llm else None)
+        record = await self.repo.save_preview(
+            persona_a=inp.persona_a.model_dump(mode="json"),
+            persona_b=inp.persona_b.model_dump(mode="json"),
+            nickname_a=inp.nickname_a,
+            nickname_b=inp.nickname_b,
+            transcript=[t.model_dump() for t in inp.transcript.turns],
+            use_llm=use_llm,
+            report=report.model_dump(mode="json"),
+            narrative_source=report.narrative_source,
+        )
+        return ReportPreviewResponse(preview_id=record.id, report=report)
+
+    async def get_preview(self, preview_id: str) -> ReportPreviewDetail:
+        record = await self.repo.get_preview(preview_id)
+        if record is None:
+            raise ReportPreviewNotFound(preview_id)
+        return ReportPreviewDetail(
+            preview_id=record.id,
+            persona_a=PersonaResponse.model_validate(record.persona_a),
+            persona_b=PersonaResponse.model_validate(record.persona_b),
+            nickname_a=record.nickname_a,
+            nickname_b=record.nickname_b,
+            transcript=Transcript(turns=[Turn.model_validate(t) for t in record.transcript]),
+            use_llm=record.use_llm,
+            report=MatchingReport.model_validate(record.report),
+            created_at=record.created_at,
+        )
+
+    async def list_previews(self, limit: int) -> list[ReportPreviewSummary]:
+        out = []
+        for r in await self.repo.list_previews(limit):
+            overall = r.report.get("overall", {})
+            score = int(overall.get("score", 0))
+            out.append(
+                ReportPreviewSummary(
+                    preview_id=r.id,
+                    nickname_a=r.nickname_a,
+                    nickname_b=r.nickname_b,
+                    use_llm=r.use_llm,
+                    narrative_source=r.narrative_source,
                     overall_score=score,
                     grade=grade_of(score),
                     grade_label=GRADE_LABEL[grade_of(score)],

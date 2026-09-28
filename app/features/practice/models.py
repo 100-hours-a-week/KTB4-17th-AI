@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -57,6 +57,8 @@ class PracticeSession(Base):
 # 세션에 속한 메시지 한 건 (유저 발화 또는 페르소나 답변)
 class PracticeMessage(Base):
     __tablename__ = "practice_messages"
+    # 같은 세션에서 index 가 겹치면(동시 요청) 늦게 커밋한 쪽이 실패해야 대화 순서가 안 꼬인다
+    __table_args__ = (UniqueConstraint("session_id", "index", name="uq_practice_messages_session_index"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("practice_sessions.id", ondelete="CASCADE"), index=True)

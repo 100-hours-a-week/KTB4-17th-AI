@@ -9,8 +9,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import IntEnum
+from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 # ══ 차원 정의 ══════════════════════════════════════════════
 
@@ -128,6 +129,9 @@ TEXTUAL: dict[str, str] = {
 DEFAULT_SCORE = 50
 
 ALL_DIMENSIONS: list[str] = [*SCORED.keys(), *TEXTUAL.keys()]
+
+# 차원의 area 를 등장 순서대로 중복 없이. summaries 카드의 category 값 후보.
+AREAS: list[str] = list(dict.fromkeys(d.area for d in SCORED.values()))
 
 
 # ══ 주제 정의 ══════════════════════════════════════════════
@@ -337,6 +341,20 @@ class Narrative(BaseModel):
     traits: list[str] = Field(default_factory=list, max_length=6)  # 한 줄짜리 특징 3~5개
 
 
+class Summary(BaseModel):
+    """area 하나를 한 장으로 요약한 카드. narrative와 같은 호출에서 LLM이 쓴다.
+
+    category는 AREAS(차원의 area) 중 하나여야 하며, service가 그 밖의 값과
+    중복 category는 걸러낸다 — LLM이 지어낸 카테고리를 그대로 보여주지 않기 위해.
+    """
+
+    model_config = {"extra": "ignore"}
+
+    category: str
+    title: str = Field(max_length=40)
+    content: str = Field(max_length=200)
+
+
 class RawExtraction(BaseModel):
     """추출 LLM의 원본 출력. 근거를 못 찾은 차원은 키가 없다."""
 
@@ -364,6 +382,23 @@ class RawExtraction(BaseModel):
     date_avoid: list[str] = Field(default_factory=list)
 
     narrative: Narrative | None = None
+    summaries: list[Summary] = Field(default_factory=list)
+
+    @field_validator("summaries", mode="before")
+    @classmethod
+    def _keep_valid_cards(cls, value: object) -> list:
+        """카드는 부가 정보다. 형식을 어긴 카드(길이 초과·필드 누락)는 그 카드만 버린다 —
+        여기서 ValidationError 가 나면 점수·서술까지 추출 전체가 실패해 폴백 초안으로 떨어진다.
+        area 밖·중복 category 정리는 service.valid_summaries 몫."""
+        if not isinstance(value, list):
+            return []
+        kept = []
+        for item in value:
+            try:
+                kept.append(Summary.model_validate(item))
+            except ValidationError:
+                continue
+        return kept
 
 
 class Tags(BaseModel):
@@ -378,30 +413,78 @@ class Tags(BaseModel):
 
 
 class StartRequest(BaseModel):
+    # total_turns 같은 알 수 없는 필드는 조용히 무시하지 않고 422로 거절한다
+    model_config = ConfigDict(extra="forbid")
+
     nickname: str = Field(min_length=1, max_length=20)
-    total_turns: int = Field(default=10, ge=5, le=15)
     # 앱 사용자 식별자. 시뮬레이션·연습대화가 "이 사용자의 페르소나"를 찾을 때 쓴다. 로그인 필수라 항상 있어야 한다.
     user_id: str = Field(min_length=1, max_length=64)
+    # 시작할 때 받아 세션에 둔다 — /confirm 이 오류로 MBTI 없이 와도 확정 페르소나에 옮겨 적기 위해
+    mbti: str | None = Field(default=None, description="16가지 MBTI 중 하나. 대소문자·앞뒤 공백 무관")
+
+    @field_validator("mbti", mode="before")
+    @classmethod
+    def _check_mbti(cls, value: object) -> object:
+        return normalize_mbti(value)
+
+
+MAX_ANSWER_LEN = 200
+RETRY_ANSWER_EMPTY = "조금 더 길게 입력해 주시면 페르소나를 더 정확하게 만들 수 있어요. 다시 답해 주세요."
+RETRY_ANSWER_TOO_LONG = f"답변은 {MAX_ANSWER_LEN}자 이내로 입력해 주세요. 다시 답해 주세요."
+REQUEST_IN_PROGRESS = {"code": "request_in_progress", "message": "이전 요청을 처리하고 있어요. 잠시만 기다려 주세요."}
+TURN_MISMATCH = {"code": "turn_mismatch", "message": "대화 상태가 맞지 않아요. 화면을 새로고침해 주세요."}
 
 
 class AnswerRequest(BaseModel):
-    # 문서 §6: 1~200자, 최소 2자
-    answer: str = Field(min_length=2, max_length=200)
+    # 앞뒤 공백을 자른 뒤 1~200자. "네" 같은 한 글자 답도 받는다 — 성의 없는 답은 태깅의 off_topic 으로 따로 대응.
+    # 길이는 여기서 막지 않고 api 가 answer_problem 으로 검사한다 — 422 에 화면에 띄울 안내 문구를 싣기 위해
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    answer: str = Field(description=f"앞뒤 공백을 뺀 1~{MAX_ANSWER_LEN}자. 벗어나면 422 + 안내 문구(detail.message)")
+    # 받은 질문의 turn_index 를 그대로. 이미 지난 턴이면 재전송으로 보고 저장 없이 지금 질문을 돌려준다
+    turn_index: int | None = Field(
+        default=None, ge=0, description="답하는 질문의 turn_index (TurnResponse 에서 받은 값)"
+    )
+
+
+def answer_problem(answer: str) -> dict | None:
+    """답변을 받을 수 없으면 422 detail 로 쓸 {code, message}. 받을 수 있으면 None."""
+    if not answer:
+        return {"code": "answer_empty", "message": RETRY_ANSWER_EMPTY}
+    if len(answer) > MAX_ANSWER_LEN:
+        return {"code": "answer_too_long", "message": RETRY_ANSWER_TOO_LONG}
+    return None
 
 
 # 이 수 이상 답하면 건너뛰기·끝내기가 열린다. 그 밑이면 페르소나가 너무 비어서 의미가 없다.
 MIN_ANSWERS_TO_FINISH = 3
 
 
+# 발화 조각의 종류. 첫 턴은 intro → reason → question → self_disclosure → answer_prompt 고정 순서.
+# 이후 턴은 LLM 자유 발화라 구조를 추측하지 않고 message 하나로, 폴백 질문은 question, 종료는 closing.
+SegmentType = Literal["intro", "reason", "question", "self_disclosure", "answer_prompt", "message", "closing"]
+
+
+class Segment(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)  # 공백만 있는 text 는 min_length 로 거부
+
+    type: SegmentType
+    text: str = Field(min_length=1)
+
+
 class TurnResponse(BaseModel):
     session_id: str
-    utterance: str
+    utterance: str  # segments 텍스트를 공백으로 이은 전체 발화. 기존 소비자는 이것만 써도 된다
+    segments: list[Segment] = Field(default_factory=list)
     choices: list[str] | None = None
     progress: str
     done: bool = False
     answered: int = 0  # 실제로 답한 턴 수 (건너뛴 건 제외)
     can_skip: bool = False  # 이 질문 건너뛰기 가능
     can_finish: bool = False  # 여기서 대화 끝내고 바로 페르소나 만들기 가능
+    retry: bool = False  # true 면 답이 질문과 무관해서 같은 질문을 다시 물었다 (턴 소모 없음)
+    # 이 질문의 턴 번호. /answer 요청에 그대로 돌려보내면 재전송된 답이 다음 질문에 잘못 저장되지 않는다
+    turn_index: int = 0
 
 
 # 신뢰도 — 주 근거 건수로. 사용자에게는 등급명이 아니라 CONFIDENCE_LABEL 로 보여준다.
@@ -439,6 +522,10 @@ class Change(BaseModel):
 class PersonaResponse(BaseModel):
     persona_id: str
     version: int = 1
+    is_confirmed: bool = False
+    confirmed_at: datetime | None = None
+    mbti: str | None = None
+    source: Literal["llm", "fallback"] = "llm"  # fallback 이면 LLM 없이 규칙으로 만든 임시 초안
     scores: dict[str, int]
     interests: list[str] = Field(default_factory=list)
     routine: list[str] = Field(default_factory=list)
@@ -446,10 +533,74 @@ class PersonaResponse(BaseModel):
     date_avoid: list[str] = Field(default_factory=list)
     confidence: dict[str, str] = Field(default_factory=dict)  # {차원: LOW|MEDIUM|HIGH}
     narrative: Narrative | None = None  # 점수와 모순되면 service 가 None 으로 떨어뜨림
+    summaries: list[Summary] = Field(default_factory=list)  # area별 요약 카드. 최대 len(AREAS)개
     accuracy: int = 0  # 0~100. confidence 가중 평균
     gaps: list[Gap] = Field(default_factory=list)  # LOW 먼저, 그다음 MEDIUM
     changes: list[Change] = Field(default_factory=list)  # 이전 버전 대비
     generated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+VALID_MBTI = {
+    "ENFJ",
+    "ENFP",
+    "ENTJ",
+    "ENTP",
+    "ESFJ",
+    "ESFP",
+    "ESTJ",
+    "ESTP",
+    "INFJ",
+    "INFP",
+    "INTJ",
+    "INTP",
+    "ISFJ",
+    "ISFP",
+    "ISTJ",
+    "ISTP",
+}
+
+
+def normalize_mbti(value: object) -> object:
+    """대소문자·앞뒤 공백을 정리하고 16가지 유형인지 검사한다. None 은 그대로 (선택 필드)."""
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = value.strip().upper()
+        if value in VALID_MBTI:
+            return value
+    raise ValueError("mbti must be one of the 16 MBTI types")
+
+
+class ConfirmPersonaRequest(BaseModel):
+    """`/build`가 만든 미확정 가치관을 사용자가 승인할 때 받는 값."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    persona_id: str = Field(min_length=1, max_length=32)
+    is_confirmed: Literal[True]
+    # 생략 가능. 없으면 온보딩 시작 때 받은 MBTI 를 쓰고, 그것도 없으면 MBTI 없이 확정한다
+    mbti: str | None = None
+    confirmed_at: datetime
+
+    @field_validator("mbti", mode="before")
+    @classmethod
+    def _check_mbti(cls, value: object) -> object:
+        return normalize_mbti(value)
+
+    @field_validator("confirmed_at")
+    @classmethod
+    def _require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("confirmed_at must include a timezone")
+        return value
+
+
+class ConfirmPersonaResponse(BaseModel):
+    persona_id: str
+    user_id: str
+    is_confirmed: Literal[True]
+    mbti: str | None  # 시작·확정 어디에도 MBTI 가 없었으면 null
+    confirmed_at: datetime
 
 
 class SupplementRequest(BaseModel):

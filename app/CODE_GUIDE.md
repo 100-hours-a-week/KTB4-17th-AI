@@ -380,7 +380,7 @@ class Base(DeclarativeBase):
 
 모든 DB 테이블 모델이 상속하는 공통 기반 클래스이다.
 
-예를 들어 `OnboardingSession`, `ConversationTurn`, `PersonaRecord`가 이 `Base`를 상속한다.
+예를 들어 `OnboardingSession`, `OnboardingTurn`, `PersonaRecord`가 이 `Base`를 상속한다.
 
 기능마다 별도의 `Base`를 만들지 않는 이유는 다음과 같다.
 
@@ -1456,15 +1456,15 @@ class OnboardingSession(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
-    turns: Mapped[list[ConversationTurn]] = relationship(
+    turns: Mapped[list[OnboardingTurn]] = relationship(
         back_populates="session",
-        order_by="ConversationTurn.turn_index",
+        order_by="OnboardingTurn.turn_index",
         cascade="all, delete-orphan",
     )
 
 
-class ConversationTurn(Base):
-    __tablename__ = "conversation_turns"
+class OnboardingTurn(Base):
+    __tablename__ = "onboarding_turns"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     session_id: Mapped[str] = mapped_column(ForeignKey("onboarding_sessions.id", ondelete="CASCADE"), index=True)
@@ -1516,7 +1516,7 @@ class PersonaRecord(Base):
 | 클래스 | DB 테이블 | 저장하는 내용 |
 |---|---|---|
 | `OnboardingSession` | `onboarding_sessions` | 온보딩 한 번의 전체 진행 상태 |
-| `ConversationTurn` | `conversation_turns` | 질문과 답변 한 턴 |
+| `OnboardingTurn` | `onboarding_turns` | 질문과 답변 한 턴 |
 | `PersonaRecord` | `personas` | 대화에서 만든 페르소나 한 버전 |
 
 ## 2. 보조 함수
@@ -1585,16 +1585,16 @@ coverage: Mapped[dict]
 ### `turns` 관계
 
 ```python
-turns: Mapped[list[ConversationTurn]] = relationship(...)
+turns: Mapped[list[OnboardingTurn]] = relationship(...)
 ```
 
-이 세션에 속한 모든 `ConversationTurn`을 연결한다.
+이 세션에 속한 모든 `OnboardingTurn`을 연결한다.
 
 - `order_by`: 턴 번호 순으로 정렬한다.
 - `back_populates`: 턴에서도 원래 세션을 찾을 수 있게 양방향 연결한다.
 - `cascade="all, delete-orphan"`: 세션이 삭제되면 소속 턴도 함께 삭제한다.
 
-## 4. `ConversationTurn`
+## 4. `OnboardingTurn`
 
 질문 하나와 그에 대한 답변 하나를 저장한다.
 
@@ -1683,11 +1683,11 @@ session: Mapped[OnboardingSession] = relationship(back_populates="turns")
 
 ```text
 OnboardingSession 1개
-├─ ConversationTurn 여러 개
+├─ OnboardingTurn 여러 개
 └─ PersonaRecord 여러 버전
 ```
 
-`ConversationTurn.session_id`는 세션 삭제 시 함께 삭제되도록 `ondelete="CASCADE"`가 설정되어 있다. `PersonaRecord`는 세션을 참조하지만 별도의 버전 기록으로 관리된다.
+`OnboardingTurn.session_id`는 세션 삭제 시 함께 삭제되도록 `ondelete="CASCADE"`가 설정되어 있다. `PersonaRecord`는 세션을 참조하지만 별도의 버전 기록으로 관리된다.
 
 ## 7. 주의할 점
 
@@ -1722,7 +1722,6 @@ import asyncio  # 비동기 작업 표준 라이브러리
 import json  # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
 import os
-import re  # 문자열에서 특정 패턴을 찾거나 변경하는 정규표현식 모듈
 from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 
 from openai import AsyncOpenAI
@@ -1759,9 +1758,6 @@ _client = AsyncOpenAI(
 
 logger = logging.getLogger(__name__)
 # 현재 파일 전용 로거, __name__은 현재 모듈의 이름을 담고 있는 내장 변수, 로깅 메시지에 모듈 이름 포함시켜 구분
-
-_FENCE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
-# JSON 마크다운 코드 블록 표시 제거하기 위한 정규표현식 패턴, re.MULTILINE → 여러 줄에 걸쳐 적용
 
 
 class LLMError(Exception):
@@ -1818,7 +1814,9 @@ async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: 
 # 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
 async def _call_json(**kwargs) -> dict:
     text = await _call(**kwargs)  # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
-    cleaned = _FENCE.sub("", text).strip()  # ```<< 코드 블록 표시 제거, .strip() << 앞뒤의 공백과 줄바꿈을 제거
+    # 코드펜스(```json, ```JSON)나 앞뒤 설명 문장이 붙어 와도 첫 { ~ 마지막 } 만 잘라 파싱한다
+    start, end = text.find("{"), text.rfind("}")
+    cleaned = text[start : end + 1] if start != -1 and end > start else text.strip()
     try:
         return json.loads(cleaned)  # json 문자열 파이썬 객체로 변환
     except json.JSONDecodeError as e:  # LLM이 올바르지 않은 JSON을 생성하면 실행
@@ -2182,25 +2180,6 @@ OpenAI 호환 형식으로 OpenRouter를 호출하는 비동기 클라이언트�
 
 현재 모듈 이름을 가진 로거이다. JSON 변환 실패, 태깅 실패, 추출 실패 같은 상황을 기록한다.
 
-### `_FENCE`
-
-```python
-_FENCE = re.compile(
-    r"^```(?:json)?\s*|\s*```$",
-    re.MULTILINE,
-)
-```
-
-LLM이 JSON을 마크다운 코드 블록으로 감쌌을 때 앞뒤 표시를 제거하기 위한 정규표현식이다.
-
-````text
-```json
-{"primary": ["contact_rhythm"]}
-```
-````
-
-위 응답에서 시작의 `json` 코드펜스와 마지막 코드펜스를 제거한다.
-
 ## 3. `LLMError`
 
 ```python
@@ -2330,13 +2309,27 @@ async def _call_json(**kwargs) -> dict:
 ### 처리 순서
 
 1. `_call()`로 LLM 텍스트 응답을 받는다.
-2. `_FENCE.sub()`로 마크다운 코드펜스를 제거한다.
-3. `.strip()`으로 앞뒤 공백과 줄바꿈을 제거한다.
-4. `json.loads()`로 JSON 문자열을 파이썬 객체로 바꾼다.
-5. JSON 문법이 틀렸으면 응답 앞 200자를 경고 로그로 남긴다.
-6. `JSONDecodeError`를 `LLMError`로 바꿔 발생시킨다.
+2. 응답에서 첫 `{`부터 마지막 `}`까지만 잘라낸다. `{`가 없으면 앞뒤 공백만 제거한다.
+3. `json.loads()`로 JSON 문자열을 파이썬 객체로 바꾼다.
+4. JSON 문법이 틀렸으면 응답 앞 200자를 경고 로그로 남긴다.
+5. `JSONDecodeError`를 `LLMError`로 바꿔 발생시킨다.
 
-`cleaned`는 “코드펜스와 공백을 정리한 문자열”이라는 뜻의 일반 변수명이다.
+LLM은 "JSON만 출력하라"고 해도 아래처럼 감싸서 답할 때가 있다.
+
+````text
+```JSON
+{"primary": ["contact_rhythm"]}
+```
+````
+
+```text
+결과입니다:
+{"primary": ["contact_rhythm"]}
+```
+
+예전에는 정규식(`_FENCE`)으로 소문자 ```` ```json ```` 코드펜스만 지웠다. 그래서 대문자 `JSON`이나 앞에 붙은 설명 문장이 남아 파싱이 실패했다(태깅은 조용히 빠지고, `/build`는 503). 중괄호 범위로 잘라내면 이런 경우가 모두 처리된다. `tests/test_persona_agents.py`가 이 동작을 검증한다.
+
+`cleaned`는 “JSON 부분만 잘라낸 문자열”이라는 뜻의 일반 변수명이다.
 
 주의할 점은 `json.loads()`가 딕셔너리뿐 아니라 리스트나 숫자도 반환할 수 있다는 것이다. 현재 함수는 반환 타입을 `dict`라고 표시했지만 실제 딕셔너리인지 별도로 검사하지는 않는다.
 
@@ -2658,7 +2651,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from .models import ConversationTurn, OnboardingSession, PersonaRecord, _now
+from .models import OnboardingTurn, OnboardingSession, PersonaRecord, _now
 
 
 class PersonaRepository:
@@ -2698,8 +2691,8 @@ class PersonaRepository:
         topic_id: str,
         question: str,
         source: str,
-    ) -> ConversationTurn:
-        turn = ConversationTurn(
+    ) -> OnboardingTurn:
+        turn = OnboardingTurn(
             session_id=session.id,
             turn_index=session.turn_index,
             topic_id=topic_id,
@@ -2722,9 +2715,9 @@ class PersonaRepository:
         tags: dict | None,
         coverage: dict,
     ) -> None:
-        stmt = select(ConversationTurn).where(
-            ConversationTurn.session_id == session.id,
-            ConversationTurn.turn_index == session.turn_index,
+        stmt = select(OnboardingTurn).where(
+            OnboardingTurn.session_id == session.id,
+            OnboardingTurn.turn_index == session.turn_index,
         )
         turn = (await self.db.execute(stmt)).scalar_one()
         turn.answer = answer
@@ -2738,9 +2731,9 @@ class PersonaRepository:
 
     async def skip_question(self, session: OnboardingSession) -> None:
         """대기 중인 질문을 답 없이 넘긴다. 턴은 소비되고 커버리지는 그대로."""
-        stmt = select(ConversationTurn).where(
-            ConversationTurn.session_id == session.id,
-            ConversationTurn.turn_index == session.turn_index,
+        stmt = select(OnboardingTurn).where(
+            OnboardingTurn.session_id == session.id,
+            OnboardingTurn.turn_index == session.turn_index,
         )
         turn = (await self.db.execute(stmt)).scalar_one()
         turn.skipped = True
@@ -2764,9 +2757,9 @@ class PersonaRepository:
         question: str,
         answer: str,
         coverage: dict,
-    ) -> ConversationTurn:
+    ) -> OnboardingTurn:
         """보강 문답 한 건. 온보딩 턴 뒤에 이어 붙고, 진행 카운터는 건드리지 않는다."""
-        turn = ConversationTurn(
+        turn = OnboardingTurn(
             session_id=session.id,
             turn_index=len(session.turns),
             topic_id=f"supplement:{dimension}",
@@ -2935,7 +2928,7 @@ LLM 또는 기본 질문으로 만든 다음 질문을 DB에 추가한다.
 
 #### 처리 순서
 
-1. 현재 `session.turn_index`로 `ConversationTurn`을 만든다.
+1. 현재 `session.turn_index`로 `OnboardingTurn`을 만든다.
 2. 질문 내용, 주제 ID, 질문 출처를 저장한다.
 3. 세션의 `pending_topic_id`를 현재 주제로 설정한다.
 4. 현재 주제를 `used_topic_ids`의 새 리스트에 추가한다.
@@ -2955,7 +2948,7 @@ JSON 컬럼의 변경을 SQLAlchemy가 확실하게 알아차리도록 하기 �
 
 #### 처리 순서
 
-1. 현재 세션 ID와 턴 번호에 해당하는 `ConversationTurn`을 찾는다.
+1. 현재 세션 ID와 턴 번호에 해당하는 `OnboardingTurn`을 찾는다.
 2. `turn.answer`에 사용자 답변을 저장한다.
 3. `turn.tags`에 태깅 결과를 저장한다.
 4. 세션의 `turn_index`를 1 증가시킨다.
@@ -3884,7 +3877,7 @@ self.extraction = ExtractionAgent()
 
 ### `_history()`
 
-DB의 `ConversationTurn` 목록을 OpenAI 메시지 형식으로 바꾼다.
+DB의 `OnboardingTurn` 목록을 OpenAI 메시지 형식으로 바꾼다.
 
 답변이 없는 턴은 질문까지 통째로 제외한다.
 

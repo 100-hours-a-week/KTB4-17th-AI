@@ -7,8 +7,10 @@ agents는 "어떻게 말할까"만 맡는다.
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 from .agents import (
+    BuildFailed,
     ConversationAgent,
     ExtractionAgent,
     TaggingAgent,
@@ -17,6 +19,7 @@ from .models import OnboardingSession, PersonaRecord
 from .repository import PersonaRepository
 from .schemas import (
     ALL_DIMENSIONS,
+    AREAS,
     CONFIDENCE_HIGH,
     CONFIDENCE_LABEL,
     CONFIDENCE_LOW,
@@ -30,15 +33,22 @@ from .schemas import (
     TOPICS,
     TOPICS_BY_ID,
     Change,
+    ConfirmPersonaResponse,
     Gap,
     Narrative,
     PersonaResponse,
+    RawExtraction,
+    Segment,
+    Summary,
     Topic,
     TurnResponse,
     Weight,
 )
 
 logger = logging.getLogger(__name__)
+
+# 온보딩 전체 질문 수. 나중에 질문 수를 바꿀 때는 이 값만 수정하면 된다.
+ONBOARDING_TOTAL_TURNS = 10
 
 
 # ══ 커버리지 ═══════════════════════════════════════════════
@@ -135,6 +145,54 @@ class TooFewAnswers(Exception):
         super().__init__(f"{answered} answered, need {MIN_ANSWERS_TO_FINISH}")
 
 
+class TurnMismatch(Exception):
+    """아직 묻지 않은 턴에 대한 답이 왔다. 클라이언트 상태가 서버와 어긋났다."""
+
+
+class OnboardingNotFinished(Exception):
+    """대기 중인 질문이 있거나 약속한 문답 수를 아직 채우지 못했다."""
+
+
+class PersonaDraftNotFound(Exception):
+    """확정할 가치관 초안을 찾을 수 없다."""
+
+
+class PersonaConfirmationConflict(Exception):
+    """이미 확정된 페르소나에 서로 다른 MBTI로 다시 확정을 요청했다."""
+
+
+class PersonaAlreadyConfirmed(Exception):
+    """같은 세션의 가치관이 이미 확정되어 새 build가 필요하지 않다."""
+
+
+# 질문과 무관한 답(태깅 off_topic)에 한 번 되물을 때 앞에 붙이는 말. 뒤에 그 주제의 기본 질문이 온다
+REASK_PREFIX = "ㅎㅎ 제가 질문을 좀 애매하게 했나 봐요. 다시 여쭤볼게요."
+
+
+# ══ 추출 폴백 ══════════════════════════════════════════════
+# 추출 LLM 이 죽어도 온보딩은 끝나야 한다. 자유 답변은 LLM 없이 읽을 수 없으니,
+# 선택지로 답한 질문만 점수로 옮기고 나머지 차원은 비워 둔다(→ 기본값 50, 신뢰도 LOW).
+# {주제 id: (차원, {선택지: 점수})}. "아직 잘 모르겠어요" 처럼 표에 없는 답은 근거 없음으로 둔다.
+
+CHOICE_SCORES: dict[str, tuple[str, dict[str, int]]] = {
+    "orientation": ("seriousness", {"진지하게 만날 사람": 80, "편하게 알아가기": 25}),
+}
+
+
+def fallback_extraction(session: OnboardingSession) -> RawExtraction:
+    """LLM 없이 규칙으로 만든 추출 결과. 서술·텍스트 항목은 비어 있다."""
+    scores: dict[str, int] = {}
+    for turn in session.turns:
+        rule = CHOICE_SCORES.get(turn.topic_id)
+        if rule is None or not turn.answer:
+            continue
+        dimension, by_choice = rule
+        for choice, score in by_choice.items():
+            if choice in turn.answer:
+                scores[dimension] = score
+    return RawExtraction(**scores)
+
+
 # ══ 서술 검증 ══════════════════════════════════════════════
 # 서술이 점수와 정면으로 모순되는 흔한 경우만 잡는다. 걸리면 서술만 버리고 점수는 살린다 —
 # 재생성은 호출이 하나 더 들어가므로. (차원, 점수 조건, 서술에 있으면 안 되는 표현)
@@ -158,6 +216,20 @@ def narrative_contradiction(scores: dict[str, int], narrative: Narrative) -> str
                 if ph in text:
                     return f"{dim}={scores[dim]} vs '{ph}'"
     return None
+
+
+def valid_summaries(summaries: list[Summary]) -> list[dict]:
+    """AREAS 밖 category·중복 category는 버린다. category당 첫 항목만 남긴다.
+
+    LLM이 area 이름을 지어내거나 같은 area를 두 번 낼 수 있어 여기서 걸러낸다."""
+    seen: set[str] = set()
+    out: list[dict] = []
+    for s in summaries:
+        if s.category not in AREAS or s.category in seen:
+            continue
+        seen.add(s.category)
+        out.append(s.model_dump())
+    return out
 
 
 # ══ 신뢰도 · 정확도 · 갭 · 변화 ═══════════════════════════
@@ -237,9 +309,14 @@ def persona_response(
     return PersonaResponse(
         persona_id=record.id,
         version=record.version,
+        is_confirmed=record.is_confirmed,
+        confirmed_at=record.confirmed_at,
+        mbti=record.mbti,
+        source=record.source,
         scores=record.scores,
         confidence=record.confidence,
         narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
+        summaries=[Summary.model_validate(s) for s in record.summaries] if record.summaries else [],
         accuracy=accuracy_of(record.confidence),
         gaps=gaps or [],
         changes=changes or [],
@@ -274,7 +351,8 @@ class OnboardingService:
 
     @staticmethod
     def _answered(session: OnboardingSession) -> int:
-        return sum(1 for t in session.turns if t.answer)
+        """실제로 답한 턴 수. 건너뛴 턴과, 되물어도 질문과 무관했던 답(off_topic)은 세지 않는다."""
+        return sum(1 for t in session.turns if t.answer and not (t.tags or {}).get("off_topic"))
 
     def _controls(self, session: OnboardingSession) -> dict:
         answered = self._answered(session)
@@ -286,13 +364,7 @@ class OnboardingService:
         topic = next_topic(coverage, session.turn_index, session.total_turns, session.used_topic_ids)
 
         if topic is None or session.turn_index >= session.total_turns:
-            return TurnResponse(
-                session_id=session.id,
-                utterance="오늘 얘기 재밌었어요. 지금 대화로 페르소나를 만들고 있어요.",
-                progress=f"{session.total_turns}/{session.total_turns}",
-                done=True,
-                answered=self._answered(session),
-            )
+            return self._closing(session)
 
         utterance = await self.conversation.generate(
             history=self._history(session),
@@ -306,22 +378,80 @@ class OnboardingService:
         return TurnResponse(
             session_id=session.id,
             utterance=utterance.text,
+            segments=list(utterance.segments),
             choices=list(topic.choices) if topic.choices else None,
             progress=f"{session.turn_index + 1}/{session.total_turns}",
+            turn_index=session.turn_index,
+            **self._controls(session),
+        )
+
+    def _closing(self, session: OnboardingSession) -> TurnResponse:
+        closing = "오늘 얘기 재밌었어요. 지금 대화로 페르소나를 만들고 있어요."
+        return TurnResponse(
+            session_id=session.id,
+            utterance=closing,
+            segments=[Segment(type="closing", text=closing)],
+            progress=f"{session.total_turns}/{session.total_turns}",
+            done=True,
+            answered=self._answered(session),
+            turn_index=session.turn_index,
+        )
+
+    def _current(self, session: OnboardingSession) -> TurnResponse:
+        """지금 대기 중인 질문(없으면 마무리)을 다시 만든다. LLM 없이 저장된 질문 문장으로."""
+        if session.pending_topic_id is None:
+            return self._closing(session)
+        topic = TOPICS_BY_ID[session.pending_topic_id]
+        question = session.turns[-1].question
+        return TurnResponse(
+            session_id=session.id,
+            utterance=question,
+            segments=[Segment(type="message", text=question)],
+            choices=list(topic.choices) if topic.choices else None,
+            progress=f"{session.turn_index + 1}/{session.total_turns}",
+            turn_index=session.turn_index,
+            **self._controls(session),
+        )
+
+    def _reask(self, session: OnboardingSession, topic: Topic) -> TurnResponse:
+        """무관한 답에 대한 되묻기. LLM 없이 그 주제의 짧은 기본 질문으로."""
+        text = f"{REASK_PREFIX} {topic.seed}"
+        return TurnResponse(
+            session_id=session.id,
+            utterance=text,
+            segments=[Segment(type="message", text=text)],
+            choices=list(topic.choices) if topic.choices else None,
+            progress=f"{session.turn_index + 1}/{session.total_turns}",
+            retry=True,
+            turn_index=session.turn_index,
             **self._controls(session),
         )
 
     # ── 공개 API ──────────────────────────────────────────
 
-    async def start(self, nickname: str, total_turns: int, user_id: str) -> TurnResponse:
-        session = await self.repo.create_session(nickname, total_turns, user_id)
+    async def start(self, nickname: str, user_id: str, mbti: str | None = None) -> TurnResponse:
+        session = await self.repo.create_session(nickname, ONBOARDING_TOTAL_TURNS, user_id, mbti)
         return await self._ask_next(session)
 
-    async def submit_answer(self, session: OnboardingSession, answer: str) -> TurnResponse:
+    async def submit_answer(
+        self, session: OnboardingSession, answer: str, *, turn_index: int | None = None
+    ) -> TurnResponse:
+        """turn_index 는 클라이언트가 받은 질문의 턴 번호. 이미 지난 턴이면 재전송이므로
+        저장하지 않고 지금 질문을 그대로 돌려준다 (첫 요청이 받았어야 할 응답). 없으면 검사하지 않는다."""
+        if turn_index is not None and turn_index < session.turn_index:
+            return self._current(session)
+        if turn_index is not None and turn_index > session.turn_index:
+            raise TurnMismatch
+
         topic = TOPICS_BY_ID[session.pending_topic_id]
         question = session.turns[-1].question
 
         tags = await self.tagging.tag(question, answer)
+
+        # 질문과 무관한 답이면 한 번만 가볍게 되묻는다. 턴은 소모하지 않고 답도 저장하지 않는다
+        if tags is not None and tags.off_topic and not (session.turns[-1].tags or {}).get("reasked"):
+            await self.repo.mark_reasked(session)
+            return self._reask(session, topic)
 
         coverage = Coverage(session.coverage)
         if tags is None:
@@ -352,9 +482,44 @@ class OnboardingService:
         await self.repo.finish_early(session)
         return await self._ask_next(session)  # is_done → 마무리 발화
 
-    async def build_persona(self, session: OnboardingSession) -> PersonaResponse:
-        """대화 전체 → 새 페르소나 버전. 재빌드(보강 문답 뒤)도 이 함수."""
-        raw = await self.extraction.extract(self._history(session))
+    async def build_draft(self, session: OnboardingSession) -> PersonaResponse:
+        """API용 build. 기존 초안은 재사용해 네트워크 재시도를 멱등하게 처리한다.
+
+        단, 규칙으로 만든 폴백 초안이면 LLM 추출을 다시 시도한다."""
+        if session.pending_topic_id is not None or session.turn_index < session.total_turns:
+            raise OnboardingNotFinished
+
+        latest = await self.repo.latest_persona(session.id)
+        if latest is not None:
+            if latest.is_confirmed:
+                raise PersonaAlreadyConfirmed(session.id)
+            if latest.source == "fallback":
+                try:
+                    return await self.build_persona(session)
+                except BuildFailed as e:
+                    # 아직도 LLM 이 안 된다 — 폴백 초안을 새 버전으로 또 쌓지 않고 있는 것을 돌려준다
+                    logger.warning("extraction retry failed (%s), keeping fallback draft", e)
+            previous = await self.repo.latest_before(latest) if latest.previous_id else None
+            return self._to_response(session, latest, previous)
+
+        return await self.build_persona(session, allow_fallback=True)
+
+    async def build_persona(self, session: OnboardingSession, *, allow_fallback: bool = False) -> PersonaResponse:
+        """완료된 대화 전체 → 미확정 가치관 초안. 재빌드(보강 문답 뒤)도 이 함수.
+
+        allow_fallback 이면 추출 LLM 이 실패해도 규칙 초안(source="fallback")으로 끝낸다.
+        보강 재빌드는 폴백하지 않는다 — LLM 으로 만든 기존 초안을 기본값투성이로 덮으면 안 되므로."""
+        if session.pending_topic_id is not None or session.turn_index < session.total_turns:
+            raise OnboardingNotFinished
+
+        source = "llm"
+        try:
+            raw = await self.extraction.extract(self._history(session))
+        except BuildFailed as e:
+            if not allow_fallback:
+                raise
+            logger.warning("extraction failed (%s), using rule-based fallback draft", e)
+            raw, source = fallback_extraction(session), "fallback"
         coverage = Coverage(session.coverage)
 
         scores: dict[str, int] = {}
@@ -373,10 +538,61 @@ class OnboardingService:
                 logger.warning("narrative contradicts scores (%s) — dropped", why)
                 narrative = None
 
+        summaries = valid_summaries(raw.summaries)
+
         record, previous = await self.repo.save_persona(
-            session, scores, texts, confidence, narrative.model_dump() if narrative else None
+            session,
+            scores,
+            texts,
+            confidence,
+            narrative=narrative.model_dump() if narrative else None,
+            summaries=summaries or None,
+            source=source,
         )
         return self._to_response(session, record, previous)
+
+    async def confirm_persona(
+        self,
+        persona_id: str,
+        mbti: str | None,
+        confirmed_at: datetime,
+    ) -> ConfirmPersonaResponse:
+        """기존 초안을 확정하고 같은 페르소나 행에 MBTI를 저장한다.
+
+        mbti 가 없으면 온보딩 시작 때 받아 둔 세션의 MBTI 를 쓴다."""
+        record = await self.repo.get_persona_for_update(persona_id)
+        if record is None:
+            raise PersonaDraftNotFound(persona_id)
+        session = await self.repo.get_session_brief(record.session_id)
+        start_mbti = session.mbti if session else None
+        if mbti is not None and start_mbti is not None and mbti != start_mbti:
+            raise PersonaConfirmationConflict(persona_id)
+        mbti = mbti or start_mbti  # 둘 다 없으면 MBTI 없이 확정한다 — MBTI 때문에 확정이 막히지 않게
+
+        if record.is_confirmed:
+            if mbti is not None and record.mbti not in (None, mbti):
+                raise PersonaConfirmationConflict(persona_id)
+
+            # 기존 데이터처럼 확정값은 있지만 MBTI가 없는 경우 한 번만 보강한다.
+            if record.mbti is None and mbti is not None:
+                stored_at = record.confirmed_at or confirmed_at
+                record = await self.repo.save_confirmation(record, mbti, stored_at)
+            return ConfirmPersonaResponse(
+                persona_id=record.id,
+                user_id=record.user_id,
+                is_confirmed=True,
+                mbti=record.mbti or mbti,
+                confirmed_at=record.confirmed_at or confirmed_at,
+            )
+
+        record = await self.repo.save_confirmation(record, mbti, confirmed_at)
+        return ConfirmPersonaResponse(
+            persona_id=record.id,
+            user_id=record.user_id,
+            is_confirmed=True,
+            mbti=record.mbti or mbti,
+            confirmed_at=record.confirmed_at or confirmed_at,
+        )
 
     def _to_response(
         self, session: OnboardingSession, record: PersonaRecord, previous: PersonaRecord | None

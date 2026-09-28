@@ -165,11 +165,13 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 
 | 메서드 | 경로 | 역할 |
 | --- | --- | --- |
-| POST | `/v1/persona/onboarding/start` | 세션을 만들고 첫 질문을 반환합니다. `user_id` 를 주면 그 사용자의 페르소나로 저장됩니다. |
-| POST | `/v1/persona/onboarding/{session_id}/answer` | 답을 받고 다음 질문을 반환합니다. |
-| POST | `/v1/persona/{session_id}/build` | 대화 전체에서 페르소나를 추출합니다. |
+| POST | `/v1/persona/onboarding/start` | 세션을 만들고 첫 질문을 반환합니다. `user_id` 를 주면 그 사용자의 페르소나로 저장됩니다. `mbti`(선택, 16가지 유형·대소문자 무관)를 함께 보내면 세션에 저장해 두었다가 확정 때 페르소나에 옮겨 적습니다. |
+| POST | `/v1/persona/onboarding/{session_id}/answer` | 답을 받고 다음 질문을 반환합니다. 답은 앞뒤 공백을 뺀 1~200자 — 벗어나면 422 + `detail.message`(화면에 띄울 안내 문구), 질문은 그대로 남습니다. 질문과 무관한 답이면 한 번만 같은 질문을 다시 묻습니다(`retry: true`, 턴 소모 없음). 다시 물어도 무관하면 다음으로 넘어가되 `answered` 에는 세지 않습니다. **중복 방지**: 응답의 `turn_index` 를 요청에 그대로 보내면, 이미 지난 턴의 답(재전송)은 저장 없이 지금 질문을 다시 돌려줍니다. 같은 세션의 요청(답변·건너뛰기·끝내기)을 처리 중이면 기다리지 않고 409 `request_in_progress`. |
+| POST | `/v1/persona/{session_id}/build` | 완료된 대화에서 미확정 가치관 초안을 생성·저장합니다. 추출 LLM 이 실패하면 규칙으로 만든 임시 초안(`source: "fallback"`)을 돌려주고, 다시 부르면 LLM 추출을 재시도합니다. |
+| POST | `/v1/persona/{persona_id}/confirm` | 가치관 초안을 확정하고 같은 페르소나 행에 MBTI를 저장합니다. `mbti` 는 생략 가능 — 없으면 시작 때 받은 MBTI 를 쓰고, 그것도 없으면 MBTI 없이 확정합니다. 시작 때 값과 다르면 409. |
 
 기본 턴 수는 10회(5~15)입니다. 플레이그라운드 UI는 10으로 고정합니다.
+시뮬레이션과 연습대화에서는 확정된 페르소나만 사용할 수 있습니다.
 
 시뮬레이션 API:
 
@@ -185,13 +187,17 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 
 | 메서드 | 경로 | 역할 |
 | --- | --- | --- |
-| POST | `/v1/practice/start` | `{partner, me?, nickname?}` → 세션. |
+| POST | `/v1/practice/start` | `{partner_user_id, me_user_id?, nickname?}` → 세션. |
 | POST | `/v1/practice/{id}/opening` | 상대가 먼저 인사 (SSE). |
 | POST | `/v1/practice/{id}/messages` | `{message}` → 상대 답변 (SSE: `start` → `delta`… → `done` / `error`). |
+| POST | `/v1/practice/{id}/retry` | 답변이 도중에 끊긴 내 마지막 메시지에 답변만 다시 받기 (SSE). 내 메시지는 이미 저장돼 있어 다시 보내지 않습니다. 다시 받을 게 없으면 409. |
 | GET | `/v1/practice/{id}` | 세션 + 전체 메시지. |
+| GET | `/v1/practice?user_id=&limit=` | 내 연습대화 목록 (`me_user_id`로 시작한 세션, 최신순). |
+| POST | `/v1/practice/{id}/opening` · `/messages` · `/retry` | 상대 인사 / 내 메시지 → 답변 / 답변만 다시. 답변을 **모아서 JSON 한 번에**. |
+| POST | `/v1/practice/{id}/opening/stream` · `/messages/stream` · `/retry/stream` | 위 세 개의 **스트리밍(SSE)** 버전. |
 | POST | `/v1/practice/{id}/end` | 세션 닫기. |
 
-`me` / `partner` 는 `{"persona_id"}` · `{"user_id"}` · `{"session_id"}` 중 하나로 저장된 페르소나를 가리킵니다.
+연습대화는 `partner_user_id` / `me_user_id` 로, 그 사용자의 최신 확정 페르소나를 가리킵니다.
 상세 설계와 변경 내역은 [docs/simulation-practice.md](docs/simulation-practice.md).
 
 ## 개발 도구

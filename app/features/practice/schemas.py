@@ -13,7 +13,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.features.persona.schemas import PersonaBrief, PersonaRef
 
@@ -22,11 +22,24 @@ MAX_MESSAGE_LEN = 500
 HISTORY_WINDOW = 40
 
 
-# POST /start 요청 바디 — 상대 페르소나(필수)와 내 페르소나(선택)를 지정
+# POST /start 요청 바디 — 상대(필수)와 나(선택)를 user_id 로 지정. 둘 다 확정된 페르소나가 있어야 한다.
 class PracticeStartRequest(BaseModel):
-    partner: PersonaRef  # 상대 — 저장된 페르소나
-    me: PersonaRef | None = None  # 내 페르소나. 있으면 상대가 나를 조금 "안다"
-    nickname: str | None = Field(default=None, min_length=1, max_length=20)  # me 가 없을 때 내 이름
+    # 예전 partner/me(PersonaRef) 필드는 조용히 무시하지 않고 422로 거절한다
+    model_config = ConfigDict(
+        extra="forbid",
+        json_schema_extra={"examples": [{"partner_user_id": "user-123", "me_user_id": "user-456"}]},
+    )
+
+    partner_user_id: str = Field(min_length=1, max_length=64)  # 상대 사용자
+    me_user_id: str | None = Field(default=None, min_length=1, max_length=64)  # 있으면 상대가 나를 조금 "안다"
+    # me_user_id 가 없을 때만 쓰는 내 이름. me_user_id 가 있으면 내 온보딩 닉네임이 우선한다
+    nickname: str | None = Field(default=None, min_length=1, max_length=20)
+
+    def partner_ref(self) -> PersonaRef:
+        return PersonaRef(user_id=self.partner_user_id)
+
+    def me_ref(self) -> PersonaRef | None:
+        return PersonaRef(user_id=self.me_user_id) if self.me_user_id else None
 
 
 # POST /start 응답 — 새로 만든 세션 정보
@@ -41,6 +54,9 @@ class PracticeStartResponse(BaseModel):
 # POST /{id}/messages 요청 바디 — 내가 보내는 메시지 한 줄.
 # session_id 는 미리 만들어져 있어야 한다(지금은 /start) — 없으면 404.
 class PracticeMessageRequest(BaseModel):
+    # 공백만 보낸 메시지는 앞뒤를 잘라 빈 문자열로 만든 뒤 min_length 에서 422 로 막는다
+    model_config = {"str_strip_whitespace": True}
+
     message: str = Field(
         min_length=1,
         max_length=MAX_MESSAGE_LEN,
@@ -57,6 +73,17 @@ class PracticeMessageItem(BaseModel):
     created_at: datetime
 
 
+# GET / 응답의 한 줄 — 내 연습대화 목록용
+class PracticeSessionSummary(BaseModel):
+    session_id: str
+    partner: PersonaBrief
+    my_nickname: str
+    status: str
+    message_count: int
+    created_at: datetime
+    updated_at: datetime
+
+
 # GET /{id}, POST /{id}/end 응답 — 세션 + 전체 메시지 이력
 class PracticeSessionResponse(BaseModel):
     session_id: str
@@ -65,6 +92,14 @@ class PracticeSessionResponse(BaseModel):
     status: str
     messages: list[PracticeMessageItem]
     created_at: datetime
+
+
+# POST /{id}/opening · /messages · /retry 응답 — 답변을 모아서 한 번에. SSE 의 done 이벤트와 같은 모양
+class PracticeReplyResponse(BaseModel):
+    session_id: str
+    message_index: int
+    content: str
+    source: Literal["llm", "fallback"]
 
 
 # ── SSE 이벤트 data ────────────────────────────────────────
