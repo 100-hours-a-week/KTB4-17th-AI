@@ -32,8 +32,12 @@ htmlcov/
 .idea/
 .vscode/
 
-#docs
-docs/
+# docs는 기본적으로 로컬 산출물로 두되, 운영 문서 두 개는 버전 관리한다.
+docs/*
+!docs/v1docs/
+docs/v1docs/*
+!docs/v1docs/langfuse-adoption-plan.md
+!docs/v1docs/langfuse-metadata-guide.md
 .memsearch
 .claude/
 trouble

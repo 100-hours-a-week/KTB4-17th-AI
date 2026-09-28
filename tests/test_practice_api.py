@@ -11,6 +11,7 @@ from app.features.practice.schemas import (
     DeltaEvent,
     DoneEvent,
     ErrorEvent,
+    PracticeSessionResponse,
     PracticeSessionSummary,
     PracticeStartResponse,
     StartEvent,
@@ -55,6 +56,28 @@ def _client(sessions=None, start_error=None, stream_error=None, listed=None, err
         async def list_for_user(self, user_id, limit):
             calls.append(("list", user_id, limit))
             return listed or []
+
+        async def get(self, session):
+            calls.append(("get", session.id))
+            return PracticeSessionResponse(
+                session_id=session.id,
+                partner=PersonaBrief(persona_id="p1", nickname="지수"),
+                my_nickname="회원",
+                status=session.status,
+                messages=[],
+                created_at=NOW,
+            )
+
+        async def end(self, session):
+            calls.append(("end", session.id))
+            return PracticeSessionResponse(
+                session_id=session.id,
+                partner=PersonaBrief(persona_id="p1", nickname="지수"),
+                my_nickname="회원",
+                status="ended",
+                messages=[],
+                created_at=NOW,
+            )
 
         async def stream_retry(self, session):
             calls.append(("retry",))
@@ -275,6 +298,26 @@ def test_list_sessions_requires_user_id_and_valid_limit():
     assert client.get("/v1/practice", params={"user_id": ""}).status_code == 422
     assert client.get("/v1/practice", params={"user_id": "u1", "limit": 101}).status_code == 422
     assert calls == []
+
+
+def test_get_session_returns_full_session():
+    client, calls = _client({"s1": ACTIVE})
+
+    res = client.get("/v1/practice/s1")
+
+    assert res.status_code == 200
+    assert res.json()["session_id"] == "s1"
+    assert calls == [("get", "s1")]
+
+
+def test_end_session_returns_ended_session_and_commits():
+    client, calls = _client({"s1": ACTIVE})
+
+    res = client.post("/v1/practice/s1/end")
+
+    assert res.status_code == 200
+    assert res.json()["status"] == "ended"
+    assert calls == [("end", "s1"), ("commit",)]
 
 
 def test_start_request_swagger_example_is_user_id_only():

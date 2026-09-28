@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
+
+# 로컬 .env가 있어도 테스트 trace를 실제 Langfuse 프로젝트로 전송하지 않는다.
+os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 

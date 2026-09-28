@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
+from app.core.observability import LangfuseMetadata
 from app.features.persona.schemas import CONFIDENCE_LOW, SCORED, PersonaResponse
 
 from .agents import LLMError, ReportAgent
@@ -239,7 +240,12 @@ def assemble_report(
     )
 
 
-async def build_report(inp: ReportInput, agent: ReportAgent | None = None) -> MatchingReport:
+async def build_report(
+    inp: ReportInput,
+    agent: ReportAgent | None = None,
+    *,
+    trace_metadata: LangfuseMetadata | None = None,
+) -> MatchingReport:
     """서술을 ReportAgent 로 받아서 조립. 대화록을 밖에서 줄 때(/report/preview) 쓴다."""
     pa, pb = inp.persona_a, inp.persona_b
     if agent is None:
@@ -255,6 +261,7 @@ async def build_report(inp: ReportInput, agent: ReportAgent | None = None) -> Ma
             name_b=inp.nickname_b,
             area_scores=area_scores,
             dim_scores={d.dimension: d.score for d in dims},
+            trace_metadata=trace_metadata,
         )
     except LLMError as e:
         logger.warning("report narrative fallback: %s", e)

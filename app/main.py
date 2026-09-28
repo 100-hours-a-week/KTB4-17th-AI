@@ -2,7 +2,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+from contextlib import asynccontextmanager
+
 from fastapi import APIRouter, FastAPI
+from langfuse import get_client
 
 from app.features.persona.api import router as persona_router
 from app.features.practice.api import router as practice_router
@@ -21,6 +24,16 @@ TAGS_METADATA = [
     {"name": "practice", "description": "페르소나와의 연습 대화 메시지를 처리합니다."},
     {"name": "simulation", "description": "두 페르소나 간의 대화를 시뮬레이션하고 결과를 반환합니다."},
 ]
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """프로세스 종료 전에 버퍼에 남은 Langfuse 이벤트를 전송한다."""
+
+    yield
+    get_client().shutdown()
+
+
 app = FastAPI(
     title="별이삼샵 AI API",
     description=description,
@@ -30,6 +43,7 @@ app = FastAPI(
         "url": "https://github.com/100-hours-a-week/KTB4-17th-AI",
     },
     openapi_tags=TAGS_METADATA,
+    lifespan=lifespan,
     # Nginx 프록시 경로에 따라서
     # root_path="/ai", prefix="/api" 수정
 )

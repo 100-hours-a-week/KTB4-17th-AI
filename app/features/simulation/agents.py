@@ -20,10 +20,12 @@ import json
 import logging
 from functools import lru_cache
 
-from openai import AsyncOpenAI
+from langfuse import observe
+from langfuse.openai import AsyncOpenAI
 from pydantic import ValidationError
 
 from app.core.config import get_settings
+from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.profile import describe
 from app.features.persona.schemas import SCORED, PersonaResponse
 
@@ -60,16 +62,26 @@ def _semaphore() -> asyncio.Semaphore:
     return asyncio.Semaphore(get_settings().simulation_max_inflight)
 
 
-async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
+async def _call(
+    *,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    timeout: float,
+    name: str = "simulation-llm-call",
+    metadata: LangfuseMetadata | None = None,
+) -> str:
     settings = get_settings()
     client = _get_client()
     payload = [{"role": "system", "content": system}, *messages]
     try:
         async with _semaphore(), asyncio.timeout(timeout):
             resp = await client.chat.completions.create(
+                name=name,
                 model=settings.llm_model,
                 messages=payload,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
+                metadata=metadata,
             )
     except TimeoutError as e:
         raise LLMError(f"timeout after {timeout}s", reason="timeout") from e
@@ -236,6 +248,7 @@ def _normalize_speaker_labels(data: dict, name_a: str, name_b: str) -> dict:
 
 
 class SimulationAgent:
+    @observe(name="simulation-run-workflow", capture_input=False, capture_output=False)
     async def run(
         self,
         *,
@@ -246,6 +259,7 @@ class SimulationAgent:
         turns: int,
         area_scores: dict[str, int | None],
         dim_scores: dict[str, int | None],
+        trace_metadata: LangfuseMetadata | None = None,
     ) -> ScriptOutput:
         """호출 1회. 실패하면 SimulationFailed."""
         user = "\n\n".join(
@@ -258,16 +272,19 @@ class SimulationAgent:
                 "# 계산된 점수 (다시 매기지 말 것)\n" + _scores_section(area_scores, dim_scores),
             ]
         )
-        try:
-            data = await _call_json(
-                system=SIMULATION_SYSTEM,
-                messages=[{"role": "user", "content": user}],
-                # 발화 한 줄 ≈ 60~90 토큰 × 2×turns + 리포트 ≈ 1500. 15턴이어도 남게.
-                max_tokens=2200 + 180 * turns,
-                timeout=get_settings().simulation_script_timeout_s,
-            )
-        except LLMError as e:
-            raise SimulationFailed(str(e), reason=e.reason) from e
+        with propagate_langfuse_metadata(trace_metadata):
+            try:
+                data = await _call_json(
+                    system=SIMULATION_SYSTEM,
+                    messages=[{"role": "user", "content": user}],
+                    # 발화 한 줄 ≈ 60~90 토큰 × 2×turns + 리포트 ≈ 1500. 15턴이어도 남게.
+                    max_tokens=2200 + 180 * turns,
+                    timeout=get_settings().simulation_script_timeout_s,
+                    name="simulation-run",
+                    metadata=trace_metadata,
+                )
+            except LLMError as e:
+                raise SimulationFailed(str(e), reason=e.reason) from e
         data = _normalize_speaker_labels(data, name_a, name_b)
         try:
             return ScriptOutput.model_validate(data)
@@ -289,6 +306,7 @@ SYSTEM = f"""당신은 소개팅 매칭 리포트를 쓰는 작가입니다.
 
 
 class ReportAgent:
+    @observe(name="simulation-report-preview-workflow", capture_input=False, capture_output=False)
     async def write(
         self,
         *,
@@ -299,6 +317,7 @@ class ReportAgent:
         name_b: str,
         area_scores: dict[str, int | None],
         dim_scores: dict[str, int | None],
+        trace_metadata: LangfuseMetadata | None = None,
     ) -> ReportNarrative:
         """실패하면 LLMError. 호출부(report.build_report)가 템플릿으로 폴백한다."""
         user = "\n\n".join(
@@ -310,12 +329,15 @@ class ReportAgent:
                 "# 대화록\n" + _transcript_section(transcript, name_a, name_b),
             ]
         )
-        data = await _call_json(
-            system=SYSTEM,
-            messages=[{"role": "user", "content": user}],
-            max_tokens=1800,
-            timeout=get_settings().simulation_narrative_timeout_s,
-        )
+        with propagate_langfuse_metadata(trace_metadata):
+            data = await _call_json(
+                system=SYSTEM,
+                messages=[{"role": "user", "content": user}],
+                max_tokens=1800,
+                timeout=get_settings().simulation_narrative_timeout_s,
+                name="simulation-report-preview",
+                metadata=trace_metadata,
+            )
         try:
             return ReportNarrative.model_validate(data)
         except ValidationError as e:

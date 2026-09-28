@@ -13,8 +13,15 @@ def _llm_returns(monkeypatch, text):
     """_call(LLM 호출 경계)만 가짜로 — 그 뒤의 JSON 추출·스키마 검증은 진짜 코드가 돈다."""
     seen = {}
 
-    async def fake_call(*, system, messages, max_tokens, timeout):
-        seen.update(system=system, messages=messages, max_tokens=max_tokens, timeout=timeout)
+    async def fake_call(*, system, messages, max_tokens, timeout, name="simulation-llm-call", metadata=None):
+        seen.update(
+            system=system,
+            messages=messages,
+            max_tokens=max_tokens,
+            timeout=timeout,
+            name=name,
+            metadata=metadata,
+        )
         if isinstance(text, Exception):
             raise text
         return text
@@ -145,6 +152,7 @@ def test_simulation_asks_for_requested_turns_with_token_budget(monkeypatch):
     assert "턴 수: 5 왕복" in user
     assert "총 10줄" in user
     assert seen["max_tokens"] == 2200 + 180 * 5
+    assert seen["name"] == "simulation-run"
 
 
 def test_simulation_timeout_comes_from_settings(monkeypatch):

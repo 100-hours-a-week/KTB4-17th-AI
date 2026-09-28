@@ -17,6 +17,7 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.observability import build_langfuse_metadata
 from app.features.persona.lookup import LoadedPersona, load_persona
 from app.features.persona.schemas import PersonaRef
 
@@ -228,7 +229,20 @@ class PracticeService:
         parts: list[str] = []
         source = "llm"
         try:
-            async for chunk in self.agent.reply(system=system, history=history, opening=opening):
+            async for chunk in self.agent.reply(
+                system=system,
+                history=history,
+                opening=opening,
+                trace_metadata=build_langfuse_metadata(
+                    feature="practice",
+                    operation="reply",
+                    user_id=session.user_id,
+                    session_id=session.id,
+                    tags=("streaming",),
+                    messageIndex=index,
+                    opening=opening,
+                ),
+            ):
                 parts.append(chunk)
                 yield "delta", DeltaEvent(text=chunk)
         except LLMError as e:
