@@ -16,9 +16,11 @@ import logging
 from collections.abc import AsyncIterator
 from functools import lru_cache
 
-from openai import AsyncOpenAI
+from langfuse import get_client
+from langfuse.openai import AsyncOpenAI
 
 from app.core.config import get_settings
+from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.profile import describe
 from app.features.persona.schemas import PersonaResponse
 
@@ -45,7 +47,12 @@ class LLMError(Exception):
 # OpenAI 호환(OpenRouter 및 로컬 vLLM/Ollama 등) 스트리밍 호출 함수.
 # Anthropic의 messages.stream 대신 OpenAI 규격의 chat.completions.create(stream=True)를 사용합니다.
 async def _stream(
-    *, system: str, messages: list[dict], max_tokens: int, timeout: float | None = None
+    *,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    timeout: float | None = None,
+    metadata: LangfuseMetadata | None = None,
 ) -> AsyncIterator[str]:
     """텍스트 조각을 비동기 스트림으로 낸다. timeout 은 첫 조각이 아니라 전체 스트림 완료 기준."""
     settings = get_settings()
@@ -61,10 +68,13 @@ async def _stream(
         async with asyncio.timeout(stream_timeout):
             # OpenRouter 및 로컬 서버로 스트리밍 요청 전송
             stream = await client.chat.completions.create(
+                name="practice-reply",
                 model=settings.llm_model,  # .env 의 LLM_MODEL (e.g. anthropic/claude-3.5-sonnet 또는 local-model)
                 messages=payload_messages,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
                 stream=True,
+                stream_options={"include_usage": True},
+                metadata=metadata,
             )
             # 스트림에서 청크를 받아 텍스트 조각을 yield
             async for chunk in stream:
@@ -156,18 +166,28 @@ class PartnerAgent:
         system: str,
         history: list[dict],
         opening: bool = False,
+        trace_metadata: LangfuseMetadata | None = None,
     ) -> AsyncIterator[str]:
         """텍스트 조각 스트림. 실패는 LLMError — 호출부(service)가 폴백을 낸다.
 
         history 는 assistant(페르소나)/user 교대 메시지. opening 이면 history 가 비어 있고
         지시문을 user 메시지로 넣는다 (Anthropic 은 첫 메시지가 user 여야 한다)."""
-        messages = list(history)
-        if opening or not messages:
-            messages.append({"role": "user", "content": OPENING_INSTRUCTION})
-        async for chunk in _stream(
-            system=system,
-            messages=messages,
-            max_tokens=300,  # 1~3문장. 넉넉히
-            timeout=None,
+        # @observe의 async-generator 래퍼는 asyncio.timeout의 task 문맥을 바꿀 수 있다.
+        # 스트림 전체를 명시적 observation으로 감싸 기존 타임아웃 동작을 보존한다.
+        langfuse = get_client()
+        with langfuse.start_as_current_observation(
+            as_type="span",
+            name="practice-reply-workflow",
         ):
-            yield chunk
+            with propagate_langfuse_metadata(trace_metadata):
+                messages = list(history)
+                if opening or not messages:
+                    messages.append({"role": "user", "content": OPENING_INSTRUCTION})
+                async for chunk in _stream(
+                    system=system,
+                    messages=messages,
+                    max_tokens=300,  # 1~3문장. 넉넉히
+                    timeout=None,
+                    metadata=trace_metadata,
+                ):
+                    yield chunk

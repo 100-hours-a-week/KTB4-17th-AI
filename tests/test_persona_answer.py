@@ -95,7 +95,7 @@ class FakeTagging(TaggingAgent):
     def __init__(self, *results):
         self.results = list(results)
 
-    async def tag(self, question, answer):
+    async def tag(self, question, answer, *, trace_metadata=None):
         off_topic = self.results.pop(0)
         if off_topic is None:
             return None

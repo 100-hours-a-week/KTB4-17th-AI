@@ -18,10 +18,12 @@ import logging
 from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 from functools import lru_cache
 
-from openai import AsyncOpenAI
+from langfuse import get_client, observe
+from langfuse.openai import AsyncOpenAI
 from pydantic import ValidationError  # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
 
 from app.core.config import get_settings
+from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 
 from .schemas import (
     ALL_DIMENSIONS,
@@ -64,16 +66,26 @@ class LLMError(Exception):
     """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다."""
 
 
-async def _call(*, system: str, messages: list[dict], max_tokens: int, timeout: float) -> str:
+async def _call(
+    *,
+    system: str,
+    messages: list[dict],
+    max_tokens: int,
+    timeout: float,
+    name: str = "persona-llm-call",
+    metadata: LangfuseMetadata | None = None,
+) -> str:
     settings = get_settings()
     client = _get_client()
     payload = [{"role": "system", "content": system}, *messages]
     try:
         async with asyncio.timeout(timeout):
             resp = await client.chat.completions.create(
+                name=name,
                 model=settings.llm_model,
                 messages=payload,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
+                metadata=metadata,
             )
     except TimeoutError as e:
         raise LLMError(f"timeout after {timeout}s") from e
@@ -306,6 +318,7 @@ class ConversationAgent:  # 대화 생성 담당
         집에서 쉬기 / 밖에서 활동하기 / 친구 만나기 -> 최종
     """
 
+    @observe(name="persona-conversation-workflow", capture_input=False, capture_output=False)
     async def generate(
         self,
         *,
@@ -314,24 +327,43 @@ class ConversationAgent:  # 대화 생성 담당
         turn_index: int,
         total_turns: int,
         nickname: str,
+        trace_metadata: LangfuseMetadata | None = None,
     ) -> Utterance:
-        instruction = self._instruction(topic, turn_index, total_turns, nickname)
-        if turn_index == 0:
-            return await self._generate_first(instruction, history, topic, nickname)
-        try:
-            text = await _call(
-                system=SYSTEM_PROMPT,
-                messages=[*history, {"role": "user", "content": instruction}],
-                max_tokens=220,  # 리액션 + 내 얘기 + 넘어가기, 3문장
-                timeout=get_settings().onboarding_phrase_timeout_s,
-            )
-            return Utterance(text=text, source="llm", segments=(Segment(type="message", text=text),))
-        except LLMError as e:
-            # 폴백 — 시드 질문 사용. API 호출 실패 시 사용
-            logger.warning("turn generation failed (%s), using seed", e)
-            return Utterance(text=topic.seed, source="seed", segments=(Segment(type="question", text=topic.seed),))
+        with propagate_langfuse_metadata(trace_metadata):
+            instruction = self._instruction(topic, turn_index, total_turns, nickname)
+            if turn_index == 0:
+                return await self._generate_first(instruction, history, topic, nickname, trace_metadata)
+            try:
+                text = await _call(
+                    system=SYSTEM_PROMPT,
+                    messages=[*history, {"role": "user", "content": instruction}],
+                    max_tokens=220,  # 리액션 + 내 얘기 + 넘어가기, 3문장
+                    timeout=get_settings().onboarding_phrase_timeout_s,
+                    name="persona-conversation",
+                    metadata=trace_metadata,
+                )
+                return Utterance(text=text, source="llm", segments=(Segment(type="message", text=text),))
+            except LLMError as e:
+                # 폴백 — 시드 질문 사용. API 호출 실패 시 사용
+                logger.warning("turn generation failed (%s), using seed", e)
+                get_client().update_current_span(
+                    level="WARNING",
+                    status_message="persona conversation fell back to seed",
+                )
+                return Utterance(
+                    text=topic.seed,
+                    source="seed",
+                    segments=(Segment(type="question", text=topic.seed),),
+                )
 
-    async def _generate_first(self, instruction: str, history: list[dict], topic: Topic, nickname: str) -> Utterance:
+    async def _generate_first(
+        self,
+        instruction: str,
+        history: list[dict],
+        topic: Topic,
+        nickname: str,
+        trace_metadata: LangfuseMetadata | None,
+    ) -> Utterance:
         """첫 턴은 단계별 JSON으로 받아 segment 경계를 LLM 출력 구조가 보장하게 한다."""
         try:
             raw = await _call_json(
@@ -339,11 +371,17 @@ class ConversationAgent:  # 대화 생성 담당
                 messages=[*history, {"role": "user", "content": instruction}],
                 max_tokens=450,
                 timeout=get_settings().onboarding_phrase_timeout_s,
+                name="persona-conversation",
+                metadata=trace_metadata,
             )
             segments = _parse_first_turn(raw if isinstance(raw, dict) else {}, nickname)
             return Utterance(text=_join(segments), source="llm", segments=tuple(segments))
         except (LLMError, ValueError) as e:  # pydantic ValidationError 도 ValueError
             logger.warning("first turn generation failed (%s), using template", e)
+            get_client().update_current_span(
+                level="WARNING",
+                status_message="persona first turn fell back to template",
+            )
             segments = _first_turn_fallback(topic, nickname)
             return Utterance(text=_join(segments), source="seed", segments=tuple(segments))
 
@@ -367,30 +405,44 @@ JSON만 출력하세요. 설명·마크다운 금지.
 
 
 class TaggingAgent:
-    async def tag(self, question: str, answer: str) -> Tags | None:
+    @observe(name="persona-tagging-workflow", capture_input=False, capture_output=False)
+    async def tag(
+        self,
+        question: str,
+        answer: str,
+        *,
+        trace_metadata: LangfuseMetadata | None = None,
+    ) -> Tags | None:
         """실패 시 None. service가 topic.covers를 대신 쓴다.
 
         태깅 실패로 커버리지가 영영 안 차면 같은 주제를 맴돌게 되므로
         여기서 예외를 올리지 않는다.
         """
-        try:
-            raw = await _call_json(
-                system=TAG_PROMPT,
-                messages=[{"role": "user", "content": f"질문: {question}\n답변: {answer}"}],
-                max_tokens=120,
-                timeout=get_settings().onboarding_tag_timeout_s,
-            )
-        except LLMError as e:
-            logger.warning("tagging failed: %s", e)
-            return None
+        with propagate_langfuse_metadata(trace_metadata):
+            try:
+                raw = await _call_json(
+                    system=TAG_PROMPT,
+                    messages=[{"role": "user", "content": f"질문: {question}\n답변: {answer}"}],
+                    max_tokens=120,
+                    timeout=get_settings().onboarding_tag_timeout_s,
+                    name="persona-tagging",
+                    metadata=trace_metadata,
+                )
+            except LLMError as e:
+                logger.warning("tagging failed: %s", e)
+                get_client().update_current_span(
+                    level="WARNING",
+                    status_message="persona tagging failed and used topic coverage",
+                )
+                return None
 
-        valid = set(ALL_DIMENSIONS)
-        return Tags(
-            # 모델이 없는 차원명을 지어냈을 수 있으므로 걸러낸다
-            primary=[d for d in raw.get("primary", []) if d in valid],
-            secondary=[d for d in raw.get("secondary", []) if d in valid],
-            off_topic=bool(raw.get("off_topic", False)),
-        )
+            valid = set(ALL_DIMENSIONS)
+            return Tags(
+                # 모델이 없는 차원명을 지어냈을 수 있으므로 걸러낸다
+                primary=[d for d in raw.get("primary", []) if d in valid],
+                secondary=[d for d in raw.get("secondary", []) if d in valid],
+                off_topic=bool(raw.get("off_topic", False)),
+            )
 
 
 # ══ 추출 ════════════════════════════════════════════════
@@ -505,20 +557,29 @@ class ExtractionAgent:
     def _transcript(history: list[dict]) -> str:
         return "\n".join(f"{'사용자' if m['role'] == 'user' else '하루'}: {m['content']}" for m in history)
 
-    async def extract(self, history: list[dict]) -> RawExtraction:
-        try:
-            data = await _call_json(
-                system=RUBRIC,
-                messages=[{"role": "user", "content": self._transcript(history)}],
-                max_tokens=1500,  # 점수 + 서술
-                timeout=get_settings().persona_extract_timeout_s,
-            )
-        except LLMError as e:
-            raise BuildFailed(f"LLM call failed: {e}") from e
+    @observe(name="persona-extraction-workflow", capture_input=False, capture_output=False)
+    async def extract(
+        self,
+        history: list[dict],
+        *,
+        trace_metadata: LangfuseMetadata | None = None,
+    ) -> RawExtraction:
+        with propagate_langfuse_metadata(trace_metadata):
+            try:
+                data = await _call_json(
+                    system=RUBRIC,
+                    messages=[{"role": "user", "content": self._transcript(history)}],
+                    max_tokens=1500,  # 점수 + 서술
+                    timeout=get_settings().persona_extract_timeout_s,
+                    name="persona-extraction",
+                    metadata=trace_metadata,
+                )
+            except LLMError as e:
+                raise BuildFailed(f"LLM call failed: {e}") from e
 
-        try:
-            return RawExtraction.model_validate(data)
-        except ValidationError as e:
-            # 범위 위반·타입 오류. 재시도로 해결될 수 있으므로 BuildFailed로.
-            logger.warning("extraction validation failed: %s", e)
-            raise BuildFailed(f"invalid extraction: {e}") from e
+            try:
+                return RawExtraction.model_validate(data)
+            except ValidationError as e:
+                # 범위 위반·타입 오류. 재시도로 해결될 수 있으므로 BuildFailed로.
+                logger.warning("extraction validation failed: %s", e)
+                raise BuildFailed(f"invalid extraction: {e}") from e

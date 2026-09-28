@@ -24,9 +24,11 @@ class FakePartner(PartnerAgent):
         self.chunks = chunks
         self.fail_after = fail_after
         self.calls = []
+        self.trace_metadata = []
 
-    async def reply(self, *, system, history, opening=False):
+    async def reply(self, *, system, history, opening=False, trace_metadata=None):
         self.calls.append({"history": history, "opening": opening})
+        self.trace_metadata.append(trace_metadata)
         for i, chunk in enumerate(self.chunks):
             if i == self.fail_after:
                 raise LLMError("connection reset")
@@ -131,6 +133,23 @@ def test_reply_streams_and_saves_both_messages():
         ("done", {"session_id": sid, "message_index": 1, "content": "안녕하세요", "source": "llm"}),
     ]
     assert history == [(0, "user", "주말에 뭐 해요?"), (1, "persona", "안녕하세요")]
+
+
+def test_reply_passes_user_session_and_message_metadata_to_langfuse():
+    async def scenario(factory):
+        sid = (await _start(factory, me_user_id="u-me")).session_id
+        agent = FakePartner(chunks=("반가워요",))
+        await _stream(factory, sid, agent, message="안녕하세요")
+        return sid, agent.trace_metadata[0]
+
+    sid, metadata = _run(scenario)
+
+    assert metadata["feature"] == "practice"
+    assert metadata["operation"] == "reply"
+    assert metadata["langfuse_user_id"] == "u-me"
+    assert metadata["langfuse_session_id"] == sid
+    assert metadata["messageIndex"] == 1
+    assert metadata["opening"] is False
 
 
 def test_llm_failure_before_first_chunk_uses_fallback_and_keeps_conversation():

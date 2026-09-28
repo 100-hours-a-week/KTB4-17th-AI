@@ -17,6 +17,7 @@ import logging
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.observability import build_langfuse_metadata
 from app.features.persona.lookup import LoadedPersona, load_persona
 from app.features.persona.schemas import PersonaBrief, PersonaRef, PersonaResponse
 
@@ -159,6 +160,12 @@ class SimulationService:
             turns=req.turns,
             area_scores=area_scores,
             dim_scores={d.dimension: d.score for d in dims},
+            trace_metadata=build_langfuse_metadata(
+                feature="simulation",
+                operation="run",
+                user_id=me.record.user_id,
+                requestedTurns=req.turns,
+            ),
         )
         turns = normalize_script(script.transcript, req.turns)
         if len(turns) < 2:
@@ -243,7 +250,17 @@ class SimulationService:
     # DB 조회 없이 요청 본문을 그대로 쓰는 테스트/미리보기라 항상 저장한다 — 확정 여부 검사 없음은 의도된 설계.
 
     async def preview_report(self, inp: ReportInput, use_llm: bool) -> ReportPreviewResponse:
-        report = await build_report(inp, ReportAgent() if use_llm else None)
+        report = await build_report(
+            inp,
+            ReportAgent() if use_llm else None,
+            trace_metadata=build_langfuse_metadata(
+                feature="simulation",
+                operation="reportPreview",
+                session_id=inp.transcript.simulation_id,
+                useLlm=use_llm,
+                transcriptTurns=len(inp.transcript.turns),
+            ),
+        )
         record = await self.repo.save_preview(
             persona_a=inp.persona_a.model_dump(mode="json"),
             persona_b=inp.persona_b.model_dump(mode="json"),
