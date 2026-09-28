@@ -29,7 +29,16 @@ def _service(utterance):
 
 
 def _session(**kw):
-    base = dict(id="s1", coverage={}, turn_index=0, total_turns=5, used_topic_ids=[], nickname="민수", turns=[])
+    base = dict(
+        id="s1",
+        user_id="user-1",
+        coverage={},
+        turn_index=0,
+        total_turns=5,
+        used_topic_ids=[],
+        nickname="민수",
+        turns=[],
+    )
     base.update(kw)
     return SimpleNamespace(**base)
 

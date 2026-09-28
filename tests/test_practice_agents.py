@@ -54,7 +54,9 @@ def test_system_prompt_goes_first_then_history(monkeypatch):
 
     assert seen["messages"] == [{"role": "system", "content": "SYS"}, *history]
     assert seen["stream"] is True
+    assert seen["stream_options"] == {"include_usage": True}
     assert seen["max_tokens"] == 300
+    assert seen["name"] == "practice-reply"
 
 
 def test_opening_appends_instruction_as_user_message(monkeypatch):

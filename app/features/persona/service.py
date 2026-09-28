@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from app.core.observability import build_langfuse_metadata
+
 from .agents import (
     BuildFailed,
     ConversationAgent,
@@ -372,6 +374,14 @@ class OnboardingService:
             turn_index=session.turn_index,
             total_turns=session.total_turns,
             nickname=session.nickname,
+            trace_metadata=build_langfuse_metadata(
+                feature="persona",
+                operation="conversation",
+                user_id=session.user_id,
+                session_id=session.id,
+                turnIndex=session.turn_index,
+                topicId=topic.id,
+            ),
         )
         await self.repo.add_question(session, topic.id, utterance.text, utterance.source)
 
@@ -446,7 +456,18 @@ class OnboardingService:
         topic = TOPICS_BY_ID[session.pending_topic_id]
         question = session.turns[-1].question
 
-        tags = await self.tagging.tag(question, answer)
+        tags = await self.tagging.tag(
+            question,
+            answer,
+            trace_metadata=build_langfuse_metadata(
+                feature="persona",
+                operation="tagging",
+                user_id=session.user_id,
+                session_id=session.id,
+                turnIndex=session.turn_index,
+                topicId=topic.id,
+            ),
+        )
 
         # 질문과 무관한 답이면 한 번만 가볍게 되묻는다. 턴은 소모하지 않고 답도 저장하지 않는다
         if tags is not None and tags.off_topic and not (session.turns[-1].tags or {}).get("reasked"):
@@ -514,7 +535,16 @@ class OnboardingService:
 
         source = "llm"
         try:
-            raw = await self.extraction.extract(self._history(session))
+            raw = await self.extraction.extract(
+                self._history(session),
+                trace_metadata=build_langfuse_metadata(
+                    feature="persona",
+                    operation="extraction",
+                    user_id=session.user_id,
+                    session_id=session.id,
+                    answeredTurns=self._answered(session),
+                ),
+            )
         except BuildFailed as e:
             if not allow_fallback:
                 raise

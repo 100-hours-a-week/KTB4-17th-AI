@@ -27,7 +27,7 @@ class FakeExtraction(ExtractionAgent):
         self.results = list(results)
         self.calls = 0
 
-    async def extract(self, history):
+    async def extract(self, history, *, trace_metadata=None):
         self.calls += 1
         result = self.results.pop(0)
         if isinstance(result, Exception):

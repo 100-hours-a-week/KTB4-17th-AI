@@ -186,8 +186,10 @@ class FakeSimulationAgent(SimulationAgent):
     def __init__(self, script=None, error=None):
         self.script = script
         self.error = error
+        self.calls = []
 
     async def run(self, **kwargs):
+        self.calls.append(kwargs)
         if self.error:
             raise self.error
         return self.script
@@ -240,6 +242,20 @@ def test_run_saves_normalized_transcript_and_report():
     assert result.report.simulation_id == result.simulation_id
     assert [s.simulation_id for s in listed] == [result.simulation_id]
     assert fetched.transcript == result.transcript
+
+
+def test_run_passes_user_and_request_metadata_to_langfuse():
+    lines = [("a", "안녕하세요"), ("b", "반가워요")]
+    agent = FakeSimulationAgent(_script(lines))
+
+    result, _, _ = _run(agent, partner_user_id="u-partner")
+
+    assert not isinstance(result, Exception)
+    metadata = agent.calls[0]["trace_metadata"]
+    assert metadata["feature"] == "simulation"
+    assert metadata["operation"] == "run"
+    assert metadata["langfuse_user_id"] == "u-me"
+    assert metadata["requestedTurns"] == 3
 
 
 def test_run_drops_highlights_pointing_past_the_transcript():
