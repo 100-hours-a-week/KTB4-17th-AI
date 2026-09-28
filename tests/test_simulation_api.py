@@ -200,6 +200,15 @@ def test_get_unknown_simulation_is_404():
     assert client.get("/v1/simulation/nope/report").status_code == 404
 
 
+def test_get_simulation_returns_stored_result():
+    client, _ = _client()
+
+    res = client.get("/v1/simulation/sim_demo")
+
+    assert res.status_code == 200
+    assert res.json()["simulation_id"] == "sim_demo"
+
+
 def test_get_report_returns_stored_report():
     client, _ = _client()
 
