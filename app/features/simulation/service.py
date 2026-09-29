@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -127,18 +128,41 @@ class SimulationService:
         me = await self._load("me", req.me_ref())
         partner = await self._load("partner", req.partner_ref())
         pa, pb = me.response, partner.response
+        # 읽기만 한 트랜잭션을 닫아 커넥션을 풀에 돌려준다. 안 그러면 LLM 을 기다리는 최대 120초 동안
+        # 커넥션을 붙잡고 있어서, 동시 요청이 풀 크기(기본 15)를 넘으면 다른 요청까지 막힌다.
+        # 저장은 아래에서 새 트랜잭션으로 하고 커밋은 여전히 라우트가 한다.
+        await self.db.commit()
 
         # 같은 페르소나 조합이 이미 처리 중이면 더블클릭·재시도로 보고 LLM 을 또 부르지 않는다
         pair = frozenset((me.record.id, partner.record.id))
         async with _IN_FLIGHT_LOCK:
             if pair in _IN_FLIGHT:
+                logger.info("simulation refused: pair already running %s", sorted(pair))
                 raise SimulationAlreadyRunning(pair)
             _IN_FLIGHT.add(pair)
+        started = time.monotonic()
         try:
-            return await self._run_locked(req, me, partner, pa, pb)
+            result = await self._run_locked(req, me, partner, pa, pb)
+        except SimulationFailed as e:
+            logger.warning(
+                "simulation failed: reason=%s turns=%d elapsed=%.1fs error=%s",
+                e.reason,
+                req.turns,
+                time.monotonic() - started,
+                e,
+            )
+            raise
         finally:
             async with _IN_FLIGHT_LOCK:
                 _IN_FLIGHT.discard(pair)
+        logger.info(
+            "simulation ok: id=%s turns=%d lines=%d elapsed=%.1fs",
+            result.simulation_id,
+            req.turns,
+            len(result.transcript),
+            time.monotonic() - started,
+        )
+        return result
 
     async def _run_locked(
         self,
