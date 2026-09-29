@@ -239,8 +239,8 @@ class ScriptOutput(BaseModel):
 class DimensionFit(BaseModel):
     dimension: str
     label: str
-    a: int
-    b: int
+    a: int | None  # null 이면 그 사람이 이 차원을 답하지 않았다 (모름)
+    b: int | None
     fit: Fit
     score: int | None  # JUDGED 인데 LLM 근거도 없으면 None
     why: str

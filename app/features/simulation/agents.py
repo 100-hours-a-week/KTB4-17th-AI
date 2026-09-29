@@ -160,10 +160,11 @@ def _rules_section() -> str:
 
 
 def _persona_section(name: str, p: PersonaResponse) -> str:
-    scored = ", ".join(f"{d}={p.scores.get(d, '?')}" for d in SCORED)
+    scored = ", ".join(f"{d}={'?' if p.scores.get(d) is None else p.scores[d]}" for d in SCORED)
     head = p.narrative.headline if p.narrative else "(서술 없음)"
     return (
         f"## {name}\n"
+        f"MBTI: {p.mbti or '-'} (참고만. 점수·대화록이 우선)\n"
         f"한 줄: {head}\n"
         f"점수: {scored}\n"
         f"관심사: {', '.join(p.interests) or '-'}\n"

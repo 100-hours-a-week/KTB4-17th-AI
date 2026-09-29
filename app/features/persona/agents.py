@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio  # 비동기 작업 표준 라이브러리
 import json  # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
+import re
 from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 from functools import lru_cache
 
@@ -136,7 +137,8 @@ SYSTEM_PROMPT = """\
 목표는 사용자가 "설문에 답한다"가 아니라 "괜찮은 사람이랑 편하게 얘기했다"고 느끼는 것입니다.
 
 ## 하루라는 사람
-- 궁금한 게 많지만 캐묻지 않음. 상대가 말한 걸 잘 기억했다가 나중에 꺼냄
+- 궁금한 게 많지만 캐묻지 않음. 오늘 대화에서 상대가 말한 건 잘 기억함
+- 사용자와는 오늘 처음 대화합니다. 예전에 만난 적도, 이전 대화도 없습니다
 - 존댓말, 편안한 구어체. 문장은 짧게. 가끔 "ㅎㅎ". 이모지 금지
 
 ## 말하는 방식 - 중요
@@ -150,7 +152,8 @@ SYSTEM_PROMPT = """\
 
 ## 소개팅 상대처럼 대하고 말하기
 - 질문지를 들고 있는 사람처럼 굴지 않기. 한 턴에 묻는 건 하나. 답변의 "이유"를 따로 캐묻지 않기
-- 앞에서 들은 걸 자연스럽게 다시 꺼내기 ("아까 러닝 얘기 하셨잖아요")
+- 다시 꺼내는 건 위 대화 기록에 사용자가 실제로 쓴 내용만. 기록에 없는 취미·사실을 "하셨잖아요"로 꺼내지 않기
+  ("아까 ○○ 얘기 하셨잖아요"의 ○○ 는 반드시 대화 기록 속 사용자의 말이어야 합니다)
 - 무거운 주제(갈등)로 갈 땐 한마디로 완충 ("소개팅에서 이런 거 물어보면 이상한데, 그래서 더 궁금해요")
 - 마지막 턴은 소개팅 끝날 때처럼 — 아쉬운 듯 가볍게
 
@@ -159,7 +162,12 @@ SYSTEM_PROMPT = """\
 - 되묻기 — 한 주제는 한 번만. 답이 짧아도 그냥 받고 넘어가기
 - 지시된 주제 밖으로 나가기 · 다음 주제를 스스로 고르기
 - 사람인 척하기 — 물어보면 AI라고 답합니다. 역할은 소개팅 상대, 정체는 AI
+- "저번에", "지난번에"처럼 이전 만남·이전 대화가 있었던 것처럼 말하기
 """
+
+# 오늘이 첫 대화인데 "저번에 ~라고 하셨잖아요"처럼 이전 대화를 전제하는 표현. 새면 시드 질문으로 대신한다.
+# "저번 주말엔 뭐 하셨어요?" 같은 정상 질문은 살려야 해서, 과거 시점 + "그렇게 말했다"가 한 문장에 있을 때만 잡는다
+_PAST_MEETING = re.compile(r"(저번|지난\s?번)[^.?!\n]*(말씀|얘기|이야기|하셨잖|하신|뵀)")
 
 
 @dataclass  # 데이터를 담는 클래스를 간단하게 만들어줌
@@ -342,6 +350,8 @@ class ConversationAgent:  # 대화 생성 담당
                     name="persona-conversation",
                     metadata=trace_metadata,
                 )
+                if _PAST_MEETING.search(text):
+                    raise LLMError(f"references a past meeting: {text[:80]!r}")
                 return Utterance(text=text, source="llm", segments=(Segment(type="message", text=text),))
             except LLMError as e:
                 # 폴백 — 시드 질문 사용. API 호출 실패 시 사용
@@ -557,18 +567,34 @@ class ExtractionAgent:
     def _transcript(history: list[dict]) -> str:
         return "\n".join(f"{'사용자' if m['role'] == 'user' else '하루'}: {m['content']}" for m in history)
 
+    @staticmethod
+    def _answered_section(answered: set[str]) -> str:
+        """사용자가 직접 답한 차원만 쓰라는 제한. 서술·특징·카드는 코드로 거를 수 없어 프롬프트로 막는다."""
+        labels = {**{k: d.label for k, d in SCORED.items()}, **TEXTUAL}
+        allowed = [f"{k} ({labels[k]})" for k in labels if k in answered]
+        return (
+            "\n\n# 사용자가 직접 답한 항목\n"
+            + ("\n".join(f"- {a}" for a in allowed) or "- (없음)")
+            + "\n위 목록에 없는 차원·항목은 키를 생략하고, narrative·traits·summaries 에도 쓰지 마세요."
+            " 건너뛴 질문이나 묻지 않은 주제를 다른 답에서 미루어 짐작하지 마세요."
+        )
+
     @observe(name="persona-extraction-workflow", capture_input=False, capture_output=False)
     async def extract(
         self,
         history: list[dict],
         *,
+        answered: set[str] | None = None,
         trace_metadata: LangfuseMetadata | None = None,
     ) -> RawExtraction:
+        content = self._transcript(history)
+        if answered is not None:
+            content += self._answered_section(answered)
         with propagate_langfuse_metadata(trace_metadata):
             try:
                 data = await _call_json(
                     system=RUBRIC,
-                    messages=[{"role": "user", "content": self._transcript(history)}],
+                    messages=[{"role": "user", "content": content}],
                     max_tokens=1500,  # 점수 + 서술
                     timeout=get_settings().persona_extract_timeout_s,
                     name="persona-extraction",
