@@ -416,3 +416,46 @@ def test_report_agent_invalid_narrative_is_llm_error(monkeypatch):
 
     with pytest.raises(LLMError):
         _write_report()
+
+
+# ── 화자 뒤바뀜 ─────────────────────────────────────────
+
+
+def _script(*lines):
+    return json.dumps(
+        {"transcript": [{"speaker": s, "text": t} for s, t in lines], "report": NARRATIVE}, ensure_ascii=False
+    )
+
+
+MIXED_UP = _script(
+    ("a", "안녕하세요 민수예요"), ("b", "반가워요. 지수님은 주말에 뭐 하세요?")
+)  # b=지수가 자기 이름으로 상대를 부름
+
+
+def test_script_where_a_speaker_calls_the_partner_by_own_name_is_generated_again(monkeypatch):
+    """a=민수, b=지수. 지수가 '지수님은~'이라고 부르면 화자가 섞인 대본이다 — 한 번 다시 받는다."""
+    calls = _llm_returns_sequence(monkeypatch, [MIXED_UP, GOOD_SCRIPT])
+
+    out = _run_simulation()
+
+    assert len(calls) == 2
+    assert [line.text for line in out.transcript] == ["안녕하세요", "반가워요"]
+
+
+def test_script_still_mixed_up_after_retry_is_used_rather_than_failing(monkeypatch):
+    """두 번째도 섞였으면 그대로 쓴다 — 품질 문제로 시뮬레이션 전체를 503 으로 실패시키지 않는다."""
+    calls = _llm_returns_sequence(monkeypatch, [MIXED_UP, MIXED_UP])
+
+    out = _run_simulation()
+
+    assert len(calls) == 2
+    assert out.transcript[1].text == "반가워요. 지수님은 주말에 뭐 하세요?"
+
+
+def test_partner_called_by_their_own_name_is_not_a_mixup(monkeypatch):
+    """a=민수가 '지수님'이라고 부르는 건 정상."""
+    calls = _llm_returns_sequence(monkeypatch, [_script(("a", "지수님 반가워요"), ("b", "민수님도요"))])
+
+    _run_simulation()
+
+    assert len(calls) == 1

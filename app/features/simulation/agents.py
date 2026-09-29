@@ -224,6 +224,10 @@ SIMULATION_SYSTEM = f"""당신은 소개팅 시뮬레이터이자 매칭 리포�
 - 각 인물은 자기 프로필의 성향대로 말합니다. 연락 빈도가 높은 사람은 답이 빠르고 길며, 거리 두기가 높은 사람은
   자기 시간 얘기를 먼저 꺼내고, 표현이 적은 사람은 짧게 답하고, 긍정적 상호작용이 높은 사람은 "ㅎㅎ" 가 잦습니다.
 - 프로필에 없는 사실(직업·나이·거주지 등)을 지어내지 마세요. 관심사·일상·데이트 취향은 프로필 것만 씁니다.
+- **각 인물은 자기 프로필에 있는 것만 자기 얘기로 말합니다.** 상대 프로필의 관심사·일상·이상형·성향을 자기 것처럼 말하지 마세요.
+  (예: b 프로필에만 "얼굴을 먼저 본다"가 있으면 a 는 그 말을 하지 않습니다)
+- 상대를 부를 땐 **상대의** 닉네임을 씁니다. a 는 b 를, b 는 a 를 부르고, 자기 닉네임으로 상대를 부르지 않습니다.
+- "~라고 하셨잖아요"처럼 인용하는 건 **이 대본에서 상대가 실제로 한 줄**만. 프로필의 설명·특징 문장은 상대가 한 말이 아닙니다.
 - 대화는 가볍게 시작해 서로의 주말·관심사·연애 스타일(연락, 거리감, 데이트)로 자연스럽게 흘러갑니다.
   성향이 부딪치는 지점이 있으면 억지로 감추지 말고 대화에 드러나게 하세요 — 리포트가 그 장면을 인용합니다.
 - 존댓말, 편안한 구어체, 한 줄 1~3문장. 이모지 금지. "ㅎㅎ" 정도만.
@@ -232,6 +236,7 @@ SIMULATION_SYSTEM = f"""당신은 소개팅 시뮬레이터이자 매칭 리포�
 # ② 리포트 규칙
 {_REPORT_RULES}
 - highlights 의 turn_index 는 위 대본에서 그 줄의 순번(0부터, a 의 첫 줄이 0)입니다.
+- 누가 어떤 성향·이상형인지는 **프로필 기준**으로 씁니다. a 의 특성을 b 의 것으로, b 의 특성을 a 의 것으로 바꿔 쓰지 마세요.
 
 # 출력
 JSON 객체 하나만. 설명·마크다운·코드펜스 금지.
@@ -308,8 +313,9 @@ class SimulationAgent:
             [
                 f"# 요청\n- 턴 수: {turns} 왕복 (a 발화 {turns}줄 + b 발화 {turns}줄 = 총 {turns * 2}줄)\n"
                 f"- a = {name_a}, b = {name_b}. a 가 먼저 말합니다.",
-                "# 두 사람의 프로필\n" + describe(f"a · {name_a}", persona_a),
-                describe(f"b · {name_b}", persona_b),
+                "# 두 사람의 프로필 (각 블록은 그 사람만의 것 — 서로 섞지 말 것)\n"
+                + describe(f"a · {name_a} (a 의 대사에만 반영)", persona_a),
+                describe(f"b · {name_b} (b 의 대사에만 반영)", persona_b),
                 "# 궁합 규칙\n" + _rules_section(),
                 "# 계산된 점수 (다시 매기지 말 것)\n" + _scores_section(area_scores, dim_scores),
             ]
@@ -330,7 +336,6 @@ class SimulationAgent:
                         name="simulation-run",
                         metadata=trace_metadata,
                     )
-                    break
                 except LLMError as e:
                     # 출력이 깨지거나 잘린 건 운이다 — 같은 요청을 한 번만 더. 전체 시간은 처음 timeout 안에서.
                     # 남은 시간이 1/3 도 안 되면 재시도해도 또 타임아웃이라 바로 실패시킨다.
@@ -341,12 +346,33 @@ class SimulationAgent:
                             max_tokens = int(max_tokens * 1.5)
                         continue
                     raise SimulationFailed(str(e), reason=e.reason) from e
-        data = _normalize_speaker_labels(data, name_a, name_b)
-        try:
-            return ScriptOutput.model_validate(data)
-        except ValidationError as e:
-            logger.warning("script validation failed: %s", e)
-            raise SimulationFailed(f"invalid script: {e}", reason="invalid_script") from e
+
+                script = _validate_script(data, name_a, name_b)
+                mixed = _self_addressed_lines(script, name_a, name_b)
+                remaining = deadline - time.monotonic()
+                if mixed and attempt == 1 and remaining > total / 3:
+                    # 화자가 섞인 대본 — 리포트도 뒤바뀐 대본을 인용하게 된다. 한 번만 다시 받는다
+                    logger.warning(
+                        "simulation-run retry: reason=speaker_mixup lines=%s remaining=%.1fs", mixed, remaining
+                    )
+                    continue
+                return script
+        raise AssertionError("unreachable")  # 두 번째 시도는 반드시 return 또는 raise
+
+
+def _validate_script(data: dict, name_a: str, name_b: str) -> ScriptOutput:
+    data = _normalize_speaker_labels(data, name_a, name_b)
+    try:
+        return ScriptOutput.model_validate(data)
+    except ValidationError as e:
+        logger.warning("script validation failed: %s", e)
+        raise SimulationFailed(f"invalid script: {e}", reason="invalid_script") from e
+
+
+def _self_addressed_lines(script: ScriptOutput, name_a: str, name_b: str) -> list[int]:
+    """자기 닉네임에 '님'을 붙여 부르는 줄 — "지수님은요?"를 지수가 말하면 화자가 섞였다는 뚜렷한 신호."""
+    own = {"a": f"{name_a}님", "b": f"{name_b}님"}
+    return [i for i, line in enumerate(script.transcript) if own[line.speaker] in line.text]
 
 
 # ══ 2. 리포트만 — 대화록을 밖에서 줄 때 (/report/preview) ═══
