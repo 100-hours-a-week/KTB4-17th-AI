@@ -151,7 +151,7 @@ def test_simulation_asks_for_requested_turns_with_token_budget(monkeypatch):
     user = seen["messages"][0]["content"]
     assert "턴 수: 5 왕복" in user
     assert "총 10줄" in user
-    assert seen["max_tokens"] == 2200 + 180 * 5
+    assert seen["max_tokens"] == 3000 + 300 * 5
     assert seen["name"] == "simulation-run"
 
 
@@ -224,6 +224,114 @@ def test_call_limits_concurrency_to_simulation_max_inflight(monkeypatch):
     finally:
         get_settings.cache_clear()
         agents._semaphore.cache_clear()
+
+
+def _fake_client(monkeypatch, *, content="{}", finish_reason="stop", error=None, seen=None):
+    from types import SimpleNamespace
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            if seen is not None:
+                seen.update(kwargs)
+            if error is not None:
+                raise error
+            msg = SimpleNamespace(content=content)
+            return SimpleNamespace(choices=[SimpleNamespace(message=msg, finish_reason=finish_reason)], usage=None)
+
+    monkeypatch.setattr(
+        agents, "_get_client", lambda: SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    )
+
+
+def test_call_truncated_output_is_truncated_reason(monkeypatch):
+    """max_tokens 에서 잘린 응답 — 실제로 invalid_json 503 으로 보였던 사례. 원인을 구분해서 올린다."""
+    _fake_client(monkeypatch, content='{"transcript": [{"speaker": "a", "tex', finish_reason="length")
+
+    with pytest.raises(LLMError) as exc:
+        asyncio.run(agents._call(system="s", messages=[], max_tokens=10, timeout=5))
+
+    assert exc.value.reason == "truncated"
+
+
+def test_call_upstream_status_error_is_upstream_error(monkeypatch):
+    import httpx
+    from openai import APIStatusError
+
+    req = httpx.Request("POST", "https://llm.test/v1/chat/completions")
+    err = APIStatusError("bad gateway", response=httpx.Response(502, request=req), body=None)
+    _fake_client(monkeypatch, error=err)
+
+    with pytest.raises(LLMError) as exc:
+        asyncio.run(agents._call(system="s", messages=[], max_tokens=10, timeout=5))
+
+    assert exc.value.reason == "upstream_error"
+    assert "502" in str(exc.value)
+
+
+def test_call_requests_json_mode_by_default(monkeypatch):
+    seen = {}
+    _fake_client(monkeypatch, content='{"a": 1}', seen=seen)
+
+    asyncio.run(agents._call(system="s", messages=[], max_tokens=10, timeout=5))
+
+    assert seen["response_format"] == {"type": "json_object"}
+
+
+def _llm_returns_sequence(monkeypatch, replies):
+    calls = []
+
+    async def fake_call(*, system, messages, max_tokens, timeout, name="simulation-llm-call", metadata=None):
+        calls.append({"max_tokens": max_tokens, "timeout": timeout})
+        reply = replies[len(calls) - 1]
+        if isinstance(reply, Exception):
+            raise reply
+        return reply
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+    return calls
+
+
+GOOD_SCRIPT = json.dumps(
+    {"transcript": [{"speaker": "a", "text": "안녕하세요"}, {"speaker": "b", "text": "반가워요"}], "report": NARRATIVE},
+    ensure_ascii=False,
+)
+
+
+def test_simulation_retries_once_on_broken_json(monkeypatch):
+    calls = _llm_returns_sequence(monkeypatch, ['{"transcript": [', GOOD_SCRIPT])
+
+    out = _run_simulation()
+
+    assert len(calls) == 2
+    assert out.report.headline == NARRATIVE["headline"]
+
+
+def test_simulation_retries_truncated_with_bigger_budget(monkeypatch):
+    calls = _llm_returns_sequence(monkeypatch, [LLMError("cut", reason="truncated"), GOOD_SCRIPT])
+
+    _run_simulation(turns=5)
+
+    assert calls[1]["max_tokens"] > calls[0]["max_tokens"]
+    assert calls[1]["timeout"] <= calls[0]["timeout"]
+
+
+def test_simulation_gives_up_after_second_broken_json(monkeypatch):
+    calls = _llm_returns_sequence(monkeypatch, ["깨짐", "또 깨짐"])
+
+    with pytest.raises(SimulationFailed) as exc:
+        _run_simulation()
+
+    assert len(calls) == 2
+    assert exc.value.reason == "invalid_json"
+
+
+def test_simulation_does_not_retry_timeout(monkeypatch):
+    calls = _llm_returns_sequence(monkeypatch, [LLMError("slow", reason="timeout"), GOOD_SCRIPT])
+
+    with pytest.raises(SimulationFailed):
+        _run_simulation()
+
+    assert len(calls) == 1
 
 
 def test_call_timeout_reason_is_timeout(monkeypatch):

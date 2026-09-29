@@ -14,4 +14,4 @@ COPY ./alembic.ini ./alembic.ini
 
 EXPOSE 8000
 
-ENTRYPOINT ["/code/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+ENTRYPOINT ["/code/.venv/bin/uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--timeout-keep-alive", "75"]
