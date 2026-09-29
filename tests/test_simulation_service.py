@@ -378,3 +378,15 @@ def test_unknown_dimensions_do_not_count_as_a_perfect_match():
     assert areas["intimacy"] is None
     assert areas["communication"] == 95
     assert report.overall.score == 95
+
+
+def test_report_a_b_stay_integers_for_backend_even_when_unknown():
+    """백엔드 검증기는 dimensions[].a/b 를 0~100 정수로만 받는다(null 이면 502 AI_SERVER_RESPONSE_INVALID).
+    백엔드가 null 을 받기 전까지 a/b 는 50 으로 내보내고, 궁합 점수는 계속 모름(null) 기준."""
+    report = _template_report({"contact_rhythm": 80, "avoidance": None}, {"contact_rhythm": 75})
+
+    dims = {d.dimension: d for a in report.areas for d in a.dimensions}
+    assert all(isinstance(d.a, int) and isinstance(d.b, int) for d in dims.values())
+    assert (dims["avoidance"].a, dims["avoidance"].b, dims["avoidance"].score) == (50, 50, None)
+    assert (dims["contact_rhythm"].a, dims["contact_rhythm"].b, dims["contact_rhythm"].score) == (80, 75, 95)
+    assert report.overall.score == 95
