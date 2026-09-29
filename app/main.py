@@ -2,7 +2,12 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import logging
 from contextlib import asynccontextmanager
+
+# 앱 로거(logging.getLogger(__name__))에 핸들러가 없으면 WARNING 이상만, 시각도 없이 찍힌다.
+# uvicorn 로거는 자기 핸들러가 있고 propagate=False 라 중복되지 않는다.
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 from fastapi import APIRouter, FastAPI
 from langfuse import get_client

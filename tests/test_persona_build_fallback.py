@@ -4,6 +4,7 @@ LLM 없이 규칙으로 만든 초안(source="fallback")을 돌려주고, 다음
 """
 
 import asyncio
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -13,10 +14,10 @@ from fastapi.testclient import TestClient
 
 from app.core.db import get_db
 from app.features.persona import api
-from app.features.persona.agents import BuildFailed, ExtractionAgent
+from app.features.persona.agents import BuildFailed, ExtractionAgent, TaggingAgent
 from app.features.persona.models import OnboardingSession, OnboardingTurn
 from app.features.persona.repository import PersonaRepository
-from app.features.persona.schemas import PersonaResponse, RawExtraction, Summary
+from app.features.persona.schemas import PersonaResponse, RawExtraction, Summary, Tags
 from app.features.persona.service import OnboardingService, valid_summaries
 
 
@@ -27,7 +28,7 @@ class FakeExtraction(ExtractionAgent):
         self.results = list(results)
         self.calls = 0
 
-    async def extract(self, history, *, trace_metadata=None):
+    async def extract(self, history, *, answered=None, trace_metadata=None):
         self.calls += 1
         result = self.results.pop(0)
         if isinstance(result, Exception):
@@ -35,47 +36,99 @@ class FakeExtraction(ExtractionAgent):
         return result
 
 
+class FakeTagging(TaggingAgent):
+    """태깅 LLM 자리. results 를 차례로 쓴다 — None 이면 태깅 실패."""
+
+    def __init__(self, *results):
+        self.results = list(results)
+        self.seen = []
+
+    async def tag(self, question, answer, *, trace_metadata=None):
+        self.seen.append(answer)
+        return self.results.pop(0)
+
+
 DOWN = BuildFailed("LLM call failed: timeout")
 GOOD = RawExtraction(avoidance=78, seriousness=90, interests=["러닝"])
 
 
-def _session(orientation_answer="진지하게 만날 사람") -> OnboardingSession:
-    """10턴을 다 마친 온보딩. 마지막 턴은 선택지로 답하는 관계 진지도 질문."""
+def _tags(*primary):
+    return {"primary": list(primary), "secondary": [], "off_topic": False}
+
+
+def _session(orientation_answer="진지하게 만날 사람", mbti=None, weekend=None) -> OnboardingSession:
+    """10턴을 다 마친 온보딩. 답한 건 관심사·각자 생활·관계 진지도, 주말 질문은 기본으로 건너뜀.
+
+    weekend 를 주면 주말 질문에 그 턴 필드(answer·tags)로 답한 것으로 만든다."""
+    weekend_turn = {"answer": None, "skipped": True, **(weekend or {})}
+    if weekend:
+        weekend_turn["skipped"] = False
     turns = [
-        OnboardingTurn(turn_index=0, topic_id="interests", question="요즘 뭐 하면서 지내요?", answer="러닝해요"),
-        OnboardingTurn(turn_index=9, topic_id="orientation", question="어떤 연애?", answer=orientation_answer),
+        OnboardingTurn(
+            turn_index=0,
+            topic_id="interests",
+            question="요즘 뭐 하면서 지내요?",
+            answer="러닝해요",
+            tags=_tags("interests"),
+        ),
+        OnboardingTurn(turn_index=1, topic_id="weekend", question="주말엔 뭐 해요?", **weekend_turn),
+        OnboardingTurn(
+            turn_index=2,
+            topic_id="share_vs_separate",
+            question="각자 생활?",
+            answer="각자 시간이 있어야 해요",
+            tags=_tags("avoidance"),
+        ),
+        OnboardingTurn(
+            turn_index=9,
+            topic_id="orientation",
+            question="어떤 연애?",
+            answer=orientation_answer,
+            tags=_tags("seriousness"),
+        ),
     ]
     return OnboardingSession(
         id="session-1",
         user_id="user-1",
         nickname="민수",
+        mbti=mbti,
         total_turns=10,
         turn_index=10,
         pending_topic_id=None,
-        used_topic_ids=["interests", "orientation"],
-        coverage={"primary": {"interests": 1, "seriousness": 1}, "secondary": {}},
+        used_topic_ids=["interests", "weekend", "share_vs_separate", "orientation"],
+        coverage={"primary": {"interests": 1, "avoidance": 1, "seriousness": 1}, "secondary": {}},
         status="completed",
         turns=turns,
     )
 
 
-def _build(*extraction_results, orientation_answer="진지하게 만날 사람", builds=1):
+def _build(
+    *extraction_results,
+    orientation_answer="진지하게 만날 사람",
+    builds=1,
+    mbti=None,
+    agent=None,
+    weekend=None,
+    tagger=None,
+):
     """/build 를 builds 번 부른다. 요청마다 새 DB 세션."""
 
     async def scenario(factory):
         async with factory() as db:
-            db.add(_session(orientation_answer))
+            db.add(_session(orientation_answer, mbti, weekend))
             await db.commit()
-        agent = FakeExtraction(*extraction_results)
+        extractor = agent or FakeExtraction(*extraction_results)
         responses = []
         for _ in range(builds):
             async with factory() as db:
                 repo = PersonaRepository(db)
                 service = OnboardingService(repo)
-                service.extraction = agent
+                service.extraction = extractor
+                if tagger is not None:
+                    service.tagging = tagger
                 responses.append(await service.build_draft(await repo.get_session("session-1")))
                 await db.commit()
-        return responses, agent.calls
+        return responses, getattr(extractor, "calls", None)
 
     return asyncio.run(with_db(scenario))
 
@@ -86,7 +139,7 @@ def test_build_finishes_with_rule_based_draft_when_llm_is_down():
     assert draft.source == "fallback"
     assert draft.is_confirmed is False
     assert draft.scores["seriousness"] == 80  # 선택지 "진지하게 만날 사람"
-    assert draft.scores["avoidance"] == 50  # 근거를 못 읽었으니 기본값
+    assert draft.scores["avoidance"] is None  # 근거를 못 읽었으니 모름(null)
     assert draft.confidence["avoidance"] == "LOW"
     assert draft.narrative is None
 
@@ -126,6 +179,127 @@ def test_build_summaries_default_to_empty_list_when_llm_omits_them():
     assert draft.summaries == []
 
 
+# ── 직접 답한 차원만 ───────────────────────────────────
+
+
+def test_build_drops_scores_for_skipped_or_unasked_questions():
+    """LLM 이 건너뛴 주말 질문(date_prefer)·묻지 않은 차원(anxiety·problem_solving)까지 추측해 채워도 버린다."""
+    raw = RawExtraction(
+        avoidance=78,
+        seriousness=90,
+        anxiety=20,  # 묻지 않음
+        problem_solving=85,  # 묻지 않음
+        interests=["러닝"],
+        routine=["늦잠"],  # 건너뛴 주말 질문
+        date_prefer=["각자 시간 챙기기"],  # 건너뛴 주말 질문
+    )
+
+    (draft,), _ = _build(raw)
+
+    assert (draft.scores["avoidance"], draft.scores["seriousness"]) == (78, 90)
+    assert (draft.scores["anxiety"], draft.confidence["anxiety"]) == (None, "LOW")
+    assert (draft.scores["problem_solving"], draft.confidence["problem_solving"]) == (None, "LOW")
+    assert draft.interests == ["러닝"]
+    assert (draft.routine, draft.date_prefer) == ([], [])
+
+
+def test_build_keeps_only_what_the_answer_itself_revealed():
+    """주말 질문은 일상·선호 데이트·피하는 것을 겨누지만, 답에 일상만 있으면 일상만 남는다."""
+    raw = RawExtraction(routine=["집에서 쉬기"], date_prefer=["각자 시간 챙기기"], date_avoid=["만나자마자 깊어지기"])
+
+    (draft,), _ = _build(raw, weekend={"answer": "그냥 집에서 쉬어요", "tags": _tags("routine")})
+
+    assert draft.routine == ["집에서 쉬기"]
+    assert (draft.date_prefer, draft.date_avoid) == ([], [])
+
+
+def test_answer_whose_tagging_failed_is_tagged_again_at_build():
+    """온보딩 중 태깅이 실패한 답(tags 없음)은 /build 때 다시 태깅해 그 답의 근거만 인정한다."""
+    raw = RawExtraction(routine=["집에서 쉬기"], date_prefer=["각자 시간 챙기기"])
+    tagger = FakeTagging(Tags(primary=["routine"]))
+
+    (draft,), _ = _build(raw, weekend={"answer": "그냥 집에서 쉬어요", "tags": None}, tagger=tagger)
+
+    assert tagger.seen == ["그냥 집에서 쉬어요"]
+    assert (draft.routine, draft.date_prefer) == (["집에서 쉬기"], [])
+
+
+def test_answer_that_cannot_be_tagged_even_at_build_counts_for_nothing():
+    """다시 태깅해도 실패하면 그 답에서 무엇이 드러났는지 확인할 수 없다 — 아무 차원도 인정하지 않는다."""
+    raw = RawExtraction(routine=["집에서 쉬기"], date_prefer=["각자 시간 챙기기"])
+
+    (draft,), _ = _build(raw, weekend={"answer": "그냥 집에서 쉬어요", "tags": None}, tagger=FakeTagging(None))
+
+    assert (draft.routine, draft.date_prefer) == ([], [])
+
+
+def test_build_drops_summary_cards_for_areas_without_answers():
+    raw = RawExtraction(
+        avoidance=78,
+        problem_solving=85,  # 묻지 않음 → conflict 카드도 추측
+        summaries=[
+            Summary(category="intimacy", title="각자 시간 챙기는 편", content="혼자 시간이 필요해요"),
+            Summary(category="conflict", title="중간 지점 찾는 편", content="묻지도 않은 갈등 얘기"),
+        ],
+    )
+
+    (draft,), _ = _build(raw)
+
+    assert [s.category for s in draft.summaries] == ["intimacy"]
+
+
+def test_build_asks_llm_only_about_answered_items(monkeypatch):
+    """실제 추출 에이전트를 통과시키고 LLM 호출만 가짜로 — LLM 에 '직접 답한 항목'만 알려준다."""
+    from app.features.persona import agents
+
+    sent = {}
+
+    async def fake_call(**kwargs):
+        sent["prompt"] = kwargs["messages"][-1]["content"]
+        return json.dumps({"avoidance": 78, "anxiety": 20})
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+
+    (draft,), _ = _build(agent=ExtractionAgent())
+
+    assert "avoidance (거리 두기)" in sent["prompt"]
+    assert "interests (관심사)" in sent["prompt"]
+    assert "anxiety (관계 불안)" not in sent["prompt"]  # 묻지 않음
+    assert "date_prefer (선호 데이트)" not in sent["prompt"]  # 건너뛴 주말 질문
+    assert (draft.scores["avoidance"], draft.scores["anxiety"]) == (78, None)
+
+
+# ── MBTI ───────────────────────────────────────────────
+
+
+def test_draft_shows_mbti_given_at_start_before_confirm():
+    (draft,), _ = _build(GOOD, mbti="ENFP")
+
+    assert draft.is_confirmed is False
+    assert draft.mbti == "ENFP"
+
+
+def test_mbti_does_not_change_the_onboarding_result():
+    """온보딩 결과는 답변으로만 — MBTI 가 있어도 답하지 않은 차원은 근거 없음(50·LOW) 그대로."""
+    (with_mbti,), _ = _build(GOOD, mbti="ENFP")
+    (without,), _ = _build(GOOD)
+
+    assert with_mbti.scores == without.scores
+    assert with_mbti.confidence == without.confidence
+    assert "mbti_estimates" not in with_mbti.model_dump()
+
+
+def test_answer_confirmed_only_by_retagging_is_not_low_confidence():
+    """온보딩 중 태깅이 실패해 커버리지에 안 잡힌 답도, /build 때 다시 태깅해 확인되면 근거로 친다."""
+    raw = RawExtraction(**GOOD.model_dump(exclude_unset=True), contact_rhythm=20)
+    tagger = FakeTagging(Tags(primary=["contact_rhythm"]))
+
+    (draft,), _ = _build(raw, weekend={"answer": "주말엔 톡 거의 안 해요", "tags": None}, tagger=tagger)
+
+    assert draft.scores["contact_rhythm"] == 20
+    assert draft.confidence["contact_rhythm"] != "LOW"
+
+
 def test_valid_summaries_keeps_first_occurrence_per_known_area():
     summaries = [
         Summary(category="conflict", title="a", content="a"),
@@ -156,7 +330,7 @@ def test_retry_while_llm_still_down_returns_same_fallback_draft():
     [
         ("진지하게 만날 사람", 80, "MEDIUM"),
         ("편하게 알아가기", 25, "MEDIUM"),
-        ("아직 잘 모르겠어요", 50, "LOW"),  # 방향이 없는 답은 근거로 치지 않는다
+        ("아직 잘 모르겠어요", None, "LOW"),  # 방향이 없는 답은 근거로 치지 않는다
     ],
 )
 def test_fallback_scores_seriousness_from_orientation_choice(answer, score, confidence):

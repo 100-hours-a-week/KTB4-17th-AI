@@ -56,7 +56,7 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - LLM 응답에서 JSON 추출: 맨 JSON, ` ```json `, ` ```JSON `, 앞말 + 펜스, 앞뒤 설명문 🐞
 - JSON 아닌 응답 → `LLMError`
 - 대본 + 리포트 파싱, 모르는 키는 무시
-- 요청 턴 수·토큰 예산(`2200 + 180×turns`)이 프롬프트에 반영
+- 요청 턴 수·토큰 예산(`3000 + 300×turns`)이 프롬프트에 반영
 - LLM 에러 / JSON 아님 / 한 줄짜리 대본 / 모르는 화자 / 리포트 없음 → 모두 `SimulationFailed`
 - ReportAgent: 서술 파싱, 대화록 없을 때 안내 문구, 헤드라인 60자 초과 → `LLMError`
 
@@ -155,7 +155,7 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 
 - **바뀐 동작**: `/build` 에서 추출 LLM 이 실패하면 503 대신 규칙 초안을 만든다 (`source: "fallback"`).
   - 자유 답변은 LLM 없이 못 읽으므로, 선택지로 답한 질문만 점수로 옮긴다: 관계 진지도 "진지하게 만날 사람" 80 · "편하게 알아가기" 25
-    (`CHOICE_SCORES`, `app/features/persona/service.py`). 나머지 차원은 기본값 50 · 신뢰도 LOW, 서술·관심사는 비어 있다.
+    (`CHOICE_SCORES`, `app/features/persona/service.py`). 나머지 차원은 기본값 50 · 신뢰도 LOW, 서술·관심사는 비어 있다. (이후 `null` 로 바뀜 — 아래 "답변에 근거한 특성만" 절)
   - 다음 `/build` 호출은 LLM 추출을 다시 시도한다. 성공하면 새 버전(`source: "llm"`), 또 실패하면 같은 폴백 초안을 그대로 돌려준다(버전을 쌓지 않음).
   - 보강 문답 재빌드는 폴백하지 않는다 — LLM 초안을 기본값투성이로 덮지 않도록, 기존처럼 503 + 롤백.
 - DB: `personas.source` 컬럼 추가 — 마이그레이션 `f6a7b8c9d0e1` (기존 행은 `llm`). upgrade/downgrade 로컬 확인함.
@@ -202,3 +202,21 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
   - Postgres 오류 코드(55P03) → `SessionBusy` 변환은 가짜 DB 오류로 테스트
 - **마지막 안전장치**: `onboarding_turns (session_id, turn_index)` 유니크 제약 (마이그레이션 `i9d0e1f2a3b4`). 걸리면 롤백 + 409 `request_in_progress`
 - mutation 점검 11개 모두 잡힘
+
+## 온보딩 — 답변에 근거한 특성만 · MBTI 말투 · 모름은 null (red → green)
+
+합의한 seam 네 곳에서만 테스트한다: `/build` 결과(`build_draft`), 페르소나 불러오기(`load_persona`),
+프로필 문장(`describe`), 궁합 계산(`build_report`). 가짜는 LLM 경계(`_call`, 추출·태깅 에이전트)에만 둔다.
+
+- **답변에 근거한 차원만** (`tests/test_persona_build_fallback.py`)
+  - 질문이 겨눈 차원(`topic.covers`)이 아니라 태깅이 **그 답변**에서 짚은 차원(`tags.primary`)만 인정
+  - 온보딩 중 태깅이 실패한 답은 `/build` 때 다시 태깅, 또 실패하면 근거로 치지 않음
+  - 목록 밖 점수는 `null`, 텍스트 항목은 빈 목록, 근거 없는 영역의 요약 카드는 버림. 추출 LLM 에도 "직접 답한 항목"을 알려줌
+  - 다시 태깅해서 확인된 답은 신뢰도 계산에서 근거 1건으로 친다 (🐞 LOW 로 남던 것)
+- **MBTI** — 온보딩 결과·궁합 점수엔 영향 없음, `describe` 에 말투 힌트(E/I·F/T·J/P)만. 초안·옛 확정 행은 세션 MBTI 로 채움
+- **모름은 null** — `DEFAULT_SCORE` 제거. 옛 행의 "신뢰도 LOW 인 50"은 읽을 때 `null`.
+  궁합에서 한쪽이라도 `null` 인 차원은 빠진다 (🐞 50 대 50 이 '완전 일치 100'으로 계산되던 것)
+- **없는 과거 언급** (`tests/test_persona_agents.py`) — 대화 프롬프트의 "아까 러닝 얘기" 예시 제거.
+  "저번에/지난번에 + 말씀·얘기·하셨잖·하신·뵀" 발화는 시드 질문으로 대체. "저번 주말엔 뭐 하셨어요?"·"예전에 봤던 영화" 는 통과
+- 구현이 먼저 있던 조각은 코드를 잠깐 망가뜨려 테스트가 빨개지는지 확인하고 되돌렸다 (mutation 점검).
+  구현 문구에 묶인 테스트(프롬프트에 "러닝"이 없는지)와, 되돌려도 실패하지 않은 테스트(모름으로 위험 조합이 안 걸리는지)는 지웠다

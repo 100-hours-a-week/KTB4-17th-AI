@@ -67,6 +67,13 @@ class Settings(BaseSettings):
         description="호출할 기본 LLM 모델명",
     )
 
+    # response_format={"type": "json_object"} 를 붙일지. 지원 안 하는 로컬 모델이면 0 으로 끈다
+    llm_json_mode: bool = Field(
+        default=True,
+        validation_alias="LLM_JSON_MODE",
+        description="시뮬레이션 LLM 호출에 JSON 모드(response_format)를 켤지 여부",
+    )
+
     # 시뮬레이션 동시 실행 최대 수 (과도한 부하 방지용 세마포어 한도)
     simulation_max_inflight: int = Field(
         default=20,

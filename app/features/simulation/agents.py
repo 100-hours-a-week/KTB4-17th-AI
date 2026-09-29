@@ -18,10 +18,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from functools import lru_cache
 
 from langfuse import observe
 from langfuse.openai import AsyncOpenAI
+from openai import APIStatusError
 from pydantic import ValidationError
 
 from app.core.config import get_settings
@@ -48,7 +50,10 @@ class LLMError(Exception):
     """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다.
 
     reason 은 SimulationFailed 가 그대로 물려받아 API 503 응답에 실린다 —
-    클라이언트가 "그냥 재시도"(timeout)와 "다른 조치가 필요"(그 외)를 구분할 수 있게."""
+    클라이언트가 "그냥 재시도"(timeout)와 "다른 조치가 필요"(그 외)를 구분할 수 있게.
+
+    reason: timeout · upstream_error(LLM 서버 4xx/5xx) · truncated(max_tokens 에서 잘림)
+            · invalid_json · llm_error(그 외)"""
 
     def __init__(self, message: str, *, reason: str = "llm_error") -> None:
         super().__init__(message)
@@ -74,6 +79,9 @@ async def _call(
     settings = get_settings()
     client = _get_client()
     payload = [{"role": "system", "content": system}, *messages]
+    # 두 호출 모두 JSON 만 받는다. 지원하는 모델이면 따옴표·쉼표 같은 문법 오류가 크게 준다
+    extra = {"response_format": {"type": "json_object"}} if settings.llm_json_mode else {}
+    started = time.monotonic()
     try:
         async with _semaphore(), asyncio.timeout(timeout):
             resp = await client.chat.completions.create(
@@ -82,15 +90,36 @@ async def _call(
                 messages=payload,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
                 metadata=metadata,
+                **extra,
             )
     except TimeoutError as e:
+        logger.warning("llm %s: timeout after %.1fs", name, time.monotonic() - started)
         raise LLMError(f"timeout after {timeout}s", reason="timeout") from e
+    except APIStatusError as e:
+        # OpenRouter 는 뒤의 모델 공급자가 죽으면 502 를 준다. SDK 재시도까지 다 실패한 경우다
+        logger.warning("llm %s: upstream status=%s after %.1fs: %s", name, e.status_code, time.monotonic() - started, e)
+        raise LLMError(f"upstream error {e.status_code}: {e}", reason="upstream_error") from e
     except Exception as e:
+        logger.warning("llm %s: %s after %.1fs: %s", name, type(e).__name__, time.monotonic() - started, e)
         raise LLMError(str(e)) from e
 
-    text = ""
-    if resp.choices:
-        text = (resp.choices[0].message.content or "").strip()
+    choice = resp.choices[0] if resp.choices else None
+    text = (choice.message.content or "").strip() if choice else ""
+    finish_reason = getattr(choice, "finish_reason", None)
+    usage = getattr(resp, "usage", None)
+    logger.info(
+        "llm %s: finish_reason=%s completion_tokens=%s/%d chars=%d elapsed=%.1fs",
+        name,
+        finish_reason,
+        getattr(usage, "completion_tokens", None),
+        max_tokens,
+        len(text),
+        time.monotonic() - started,
+    )
+    if finish_reason == "length":
+        # 잘린 JSON 은 파싱이 안 된다. invalid_json 과 구분해야 max_tokens 를 늘릴지 판단할 수 있다
+        logger.warning("llm %s: output truncated at max_tokens=%d, tail=%r", name, max_tokens, text[-200:])
+        raise LLMError(f"output truncated at max_tokens={max_tokens}", reason="truncated")
     if not text:
         raise LLMError("empty response")
     return text
@@ -104,7 +133,15 @@ async def _call_json(**kwargs) -> dict:
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError as e:
-        logger.warning("JSON parse failed: %s", cleaned[:200])
+        # 앞만 찍으면 원인을 못 본다. 깨진 위치 주변과 끝부분을 같이 남긴다
+        logger.warning(
+            "JSON parse failed: %s (chars=%d) near=%r head=%r tail=%r",
+            e,
+            len(cleaned),
+            cleaned[max(0, e.pos - 100) : e.pos + 100],
+            cleaned[:200],
+            cleaned[-200:],
+        )
         raise LLMError(f"invalid JSON: {e}", reason="invalid_json") from e
 
 
@@ -123,10 +160,11 @@ def _rules_section() -> str:
 
 
 def _persona_section(name: str, p: PersonaResponse) -> str:
-    scored = ", ".join(f"{d}={p.scores.get(d, '?')}" for d in SCORED)
+    scored = ", ".join(f"{d}={'?' if p.scores.get(d) is None else p.scores[d]}" for d in SCORED)
     head = p.narrative.headline if p.narrative else "(서술 없음)"
     return (
         f"## {name}\n"
+        f"MBTI: {p.mbti or '-'} (참고만. 점수·대화록이 우선)\n"
         f"한 줄: {head}\n"
         f"점수: {scored}\n"
         f"관심사: {', '.join(p.interests) or '-'}\n"
@@ -247,6 +285,10 @@ def _normalize_speaker_labels(data: dict, name_a: str, name_b: str) -> dict:
     return {**data, "transcript": fixed}
 
 
+# 한 번 더 부르면 나을 수 있는 실패. timeout·upstream_error 는 SDK 재시도/클라이언트 재시도에 맡긴다
+_RETRYABLE = {"invalid_json", "truncated"}
+
+
 class SimulationAgent:
     @observe(name="simulation-run-workflow", capture_input=False, capture_output=False)
     async def run(
@@ -272,19 +314,33 @@ class SimulationAgent:
                 "# 계산된 점수 (다시 매기지 말 것)\n" + _scores_section(area_scores, dim_scores),
             ]
         )
+        # 한국어는 토큰을 많이 먹는다. 발화 한 줄 ≈ 100~150 토큰 × 2×turns + 리포트 ≈ 2000.
+        # 예전 값(2200 + 180×turns)에서 10턴 출력이 잘려 invalid_json 503 이 실제로 났다.
+        max_tokens = 3000 + 300 * turns
+        total = get_settings().simulation_script_timeout_s
+        deadline = time.monotonic() + total
         with propagate_langfuse_metadata(trace_metadata):
-            try:
-                data = await _call_json(
-                    system=SIMULATION_SYSTEM,
-                    messages=[{"role": "user", "content": user}],
-                    # 발화 한 줄 ≈ 60~90 토큰 × 2×turns + 리포트 ≈ 1500. 15턴이어도 남게.
-                    max_tokens=2200 + 180 * turns,
-                    timeout=get_settings().simulation_script_timeout_s,
-                    name="simulation-run",
-                    metadata=trace_metadata,
-                )
-            except LLMError as e:
-                raise SimulationFailed(str(e), reason=e.reason) from e
+            for attempt in (1, 2):
+                try:
+                    data = await _call_json(
+                        system=SIMULATION_SYSTEM,
+                        messages=[{"role": "user", "content": user}],
+                        max_tokens=max_tokens,
+                        timeout=total if attempt == 1 else deadline - time.monotonic(),
+                        name="simulation-run",
+                        metadata=trace_metadata,
+                    )
+                    break
+                except LLMError as e:
+                    # 출력이 깨지거나 잘린 건 운이다 — 같은 요청을 한 번만 더. 전체 시간은 처음 timeout 안에서.
+                    # 남은 시간이 1/3 도 안 되면 재시도해도 또 타임아웃이라 바로 실패시킨다.
+                    remaining = deadline - time.monotonic()
+                    if attempt == 1 and e.reason in _RETRYABLE and remaining > total / 3:
+                        logger.warning("simulation-run retry: reason=%s remaining=%.1fs", e.reason, remaining)
+                        if e.reason == "truncated":
+                            max_tokens = int(max_tokens * 1.5)
+                        continue
+                    raise SimulationFailed(str(e), reason=e.reason) from e
         data = _normalize_speaker_labels(data, name_a, name_b)
         try:
             return ScriptOutput.model_validate(data)

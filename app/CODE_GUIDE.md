@@ -608,10 +608,6 @@ TEXTUAL: dict[str, str] = {
     "date_avoid": "피하고 싶은 것",
 }
 
-# 근거 부족 시 기본값. 0이나 None이 아닌 이유는
-# 매칭 계산이 "모름"을 극단값으로 오해하지 않게 하기 위함.
-DEFAULT_SCORE = 50
-
 ALL_DIMENSIONS: list[str] = [*SCORED.keys(), *TEXTUAL.keys()]
 
 
@@ -925,7 +921,8 @@ class Change(BaseModel):
 class PersonaResponse(BaseModel):
     persona_id: str
     version: int = 1
-    scores: dict[str, int]
+    # 근거 없는(직접 답하지 않은) 차원은 null — "모름". 50 으로 채우면 궁합 계산이 "중간"으로 오해한다
+    scores: dict[str, int | None]
     interests: list[str] = Field(default_factory=list)
     routine: list[str] = Field(default_factory=list)
     date_prefer: list[str] = Field(default_factory=list)
@@ -1083,13 +1080,11 @@ SCORED: dict[str, Dimension]
 
 ## 5. 공통 차원 상수
 
-### `DEFAULT_SCORE`
+### 근거 없는 차원은 `null`
 
-```python
-DEFAULT_SCORE = 50
-```
+예전에는 근거를 찾지 못한 차원에 기본 점수 `DEFAULT_SCORE = 50`을 넣었다. 그러면 두 사람 모두 답하지 않은 차원이 궁합 계산에서 50 대 50, 즉 "완전 일치(100점)"로 계산되는 문제가 있어 상수를 없앴다.
 
-LLM이 어떤 성향에 대한 근거를 찾지 못했을 때 넣는 기본 점수이다. `0`을 사용하면 “근거 없음”이 “매우 낮은 성향”으로 잘못 해석될 수 있어 중간값 50을 사용한다.
+지금은 사용자가 직접 답하지 않은 차원의 점수를 `null`("모름")로 저장한다. `PersonaResponse.scores`의 타입도 `dict[str, int | None]`이다. null 도입 전에 저장된 행의 "신뢰도 LOW인 50"은 `service.known_scores()`가 읽을 때 `null`로 바꾼다.
 
 ### `ALL_DIMENSIONS`
 
@@ -1846,7 +1841,8 @@ SYSTEM_PROMPT = """\
 
 ## 소개팅 상대처럼 대하고 말하기
 - 질문지를 들고 있는 사람처럼 굴지 않기. 한 턴에 묻는 건 하나. 답변의 "이유"를 따로 캐묻지 않기
-- 앞에서 들은 걸 자연스럽게 다시 꺼내기 ("아까 러닝 얘기 하셨잖아요")
+- 다시 꺼내는 건 위 대화 기록에 사용자가 실제로 쓴 내용만. 기록에 없는 취미·사실을 "하셨잖아요"로 꺼내지 않기
+  ("아까 ○○ 얘기 하셨잖아요"의 ○○ 는 반드시 대화 기록 속 사용자의 말이어야 합니다)
 - 무거운 주제(갈등)로 갈 땐 한마디로 완충 ("소개팅에서 이런 거 물어보면 이상한데, 그래서 더 궁금해요")
 - 마지막 턴은 소개팅 끝날 때처럼 — 아쉬운 듯 가볍게
 
@@ -2108,7 +2104,7 @@ class ExtractionAgent:
     def _transcript(history: list[dict]) -> str:
         return "\n".join(f"{'사용자' if m['role'] == 'user' else '하루'}: {m['content']}" for m in history)
 
-    async def extract(self, history: list[dict]) -> RawExtraction:
+    async def extract(self, history: list[dict], *, answered: set[str] | None = None) -> RawExtraction:
         try:
             data = await _call_json(
                 system=RUBRIC,
@@ -2576,14 +2572,18 @@ assistant 역할은 `하루:`로 표시한다.
 ```python
 async def extract(
     history: list[dict],
+    *,
+    answered: set[str] | None = None,
 ) -> RawExtraction:
 ```
 
 전체 대화를 분석해 검증된 페르소나 원본을 반환한다.
 
+`answered`는 사용자가 **답변으로 근거를 드러낸 차원**의 목록이다. 주면 대화 기록 뒤에 "사용자가 직접 답한 항목" 목록을 덧붙여, 목록 밖의 차원은 점수·서술·카드 어디에도 쓰지 말라고 지시한다. 점수·텍스트·카드는 service가 코드로 한 번 더 거르지만, 서술 문장은 코드로 거를 수 없어 이 지시에 기댄다.
+
 #### 처리 순서
 
-1. `_transcript()`로 대화 기록을 하나의 문자열로 바꾼다.
+1. `_transcript()`로 대화 기록을 하나의 문자열로 바꾸고, `answered`가 있으면 `_answered_section()`을 덧붙인다.
 2. `RUBRIC`을 시스템 프롬프트로 사용한다.
 3. `_call_json()`으로 JSON 결과를 요청한다.
 4. 점수와 서술이 길 수 있어 최대 1500토큰을 허용한다.
@@ -3122,7 +3122,6 @@ from .schemas import (
     CONFIDENCE_LOW,
     CONFIDENCE_MEDIUM,
     CONFIDENCE_WEIGHT,
-    DEFAULT_SCORE,
     MIN_ANSWERS_TO_FINISH,
     SCORED,
     SUPPLEMENTS,
@@ -3254,7 +3253,7 @@ _CONTRADICTIONS = [
 def narrative_contradiction(scores: dict[str, int], narrative: Narrative) -> str | None:
     text = " ".join([narrative.headline, narrative.body, *narrative.traits])
     for dim, cond, phrases in _CONTRADICTIONS:
-        if cond(scores.get(dim, DEFAULT_SCORE)):
+        if scores.get(dim) is not None and cond(scores[dim]):
             for ph in phrases:
                 if ph in text:
                     return f"{dim}={scores[dim]} vs '{ph}'"
@@ -3310,7 +3309,7 @@ def changes_between(previous: PersonaRecord | None, current: PersonaRecord) -> l
         return []
     out: list[Change] = []
     for k, d in SCORED.items():
-        a, b = previous.scores.get(k, DEFAULT_SCORE), current.scores.get(k, DEFAULT_SCORE)
+        a, b = previous.scores.get(k), current.scores.get(k)
         if abs(b - a) >= 10:
             out.append(Change(dimension=k, label=d.label, kind="score", before=str(a), after=str(b)))
         ca, cb = previous.confidence.get(k, CONFIDENCE_LOW), current.confidence.get(k, CONFIDENCE_LOW)
@@ -3456,14 +3455,15 @@ class OnboardingService:
 
     async def build_persona(self, session: OnboardingSession) -> PersonaResponse:
         """대화 전체 → 새 페르소나 버전. 재빌드(보강 문답 뒤)도 이 함수."""
-        raw = await self.extraction.extract(self._history(session))
+        answered = await self._dimensions_from_answers(session)
+        raw = await self.extraction.extract(self._history(session), answered=answered)
         coverage = Coverage(session.coverage)
 
         scores: dict[str, int] = {}
         confidence: dict[str, str] = {}
         for key in SCORED:
             value = getattr(raw, key, None)
-            scores[key] = value if value is not None else DEFAULT_SCORE
+            scores[key] = value  # 근거 없으면 None — "모름"
             confidence[key] = confidence_of(value is not None, coverage.primary.get(key, 0))
 
         texts = {key: getattr(raw, key, []) for key in TEXTUAL}
@@ -3980,7 +3980,20 @@ async def start(
 #### 1단계: LLM 추출
 
 ```python
-raw = await self.extraction.extract(self._history(session))
+answered = await self._dimensions_from_answers(session)
+raw = await self.extraction.extract(self._history(session), answered=answered)
+```
+
+`_dimensions_from_answers()`는 **질문이 무엇을 겨눴는지가 아니라 답변에서 무엇이 드러났는지**로 차원을 고른다.
+
+- 태깅이 그 답변에서 주 근거(`primary`)로 짚은 차원만 인정한다. "주말엔 그냥 쉬어요"는 일상의 근거일 뿐, 선호 데이트의 근거가 아니다.
+- 건너뛴 턴, 대기 중인 턴, 되물어도 질문과 무관했던 답은 제외한다.
+- 온보딩 중 태깅이 실패한 답(`tags` 없음)은 여기서 다시 태깅한다. 또 실패하면 그 답은 근거로 치지 않는다.
+- 보강 질문은 그 차원만 겨눈 질문이라, 답했으면 그 차원으로 인정한다.
+
+추출 결과 중 이 목록 밖의 점수는 `null`로, 텍스트 항목은 빈 목록으로 되돌리고, 근거 있는 점수 차원이 하나도 없는 영역의 요약 카드는 버린다. 신뢰도를 계산할 때는 답변으로 확인된 근거를 최소 1건으로 친다.
+
+```python
 ```
 
 답변이 있는 전체 대화를 `ExtractionAgent`에 전달한다.
@@ -3990,7 +4003,7 @@ raw = await self.extraction.extract(self._history(session))
 각 `SCORED` 항목에 대해:
 
 - LLM 값이 있으면 그 점수 사용
-- 값이 없으면 `DEFAULT_SCORE=50` 사용
+- 값이 없거나 답변에 근거가 없으면 `null`(모름)
 - 추출 여부와 주 근거 수로 신뢰도 계산
 
 #### 3단계: 텍스트 항목 만들기
@@ -4590,7 +4603,8 @@ async def load_persona(db: AsyncSession, ref: PersonaRef) -> LoadedPersona | Non
     # 닉네임은 온보딩 세션에만 있다. 세션이 지워졌으면(없을 리 없지만) 페르소나 id 앞자리로.
     session = await repo.get_session_brief(record.session_id)
     nickname = session.nickname if session else record.id[:6]
-    return LoadedPersona(record=record, nickname=nickname, response=persona_response(record))
+    response = persona_response(record, session_mbti=session.mbti if session else None)
+    return LoadedPersona(record=record, nickname=nickname, response=response)
 ```
 
 ## 1. 파일의 역할
@@ -4697,7 +4711,7 @@ nickname = session.nickname if session else record.id[:6]
 return LoadedPersona(
     record=record,
     nickname=nickname,
-    response=persona_response(record),
+    response=persona_response(record, session_mbti=session.mbti if session else None),
 )
 ```
 
@@ -4742,10 +4756,21 @@ from __future__ import annotations
 
 from .schemas import CONFIDENCE_LOW, SCORED, PersonaResponse
 
-# 이 밖이면 "뚜렷한 성향"으로 서술한다. 안쪽(36~64)은 중간이라 굳이 말하지 않는다 —
-# 근거 부족 기본값 50 이 "중간 성향"으로 연기되는 걸 막기 위해서다.
+# 이 밖이면 "뚜렷한 성향"으로 서술한다. 안쪽(36~64)은 중간이라 굳이 말하지 않는다.
+# 답하지 않은 차원은 null(모름)이라 아예 빠진다.
 HIGH_FROM = 65
 LOW_TO = 35
+
+# MBTI 는 성향 점수가 아니라 말투로만 약하게 가져간다 — 온보딩 결과·궁합 점수는 답변으로만 정해진다.
+# J/P 는 관계 진지도 같은 성향으로 보기 어려워 말투로만 쓴다. S/N 은 쓰지 않는다.
+MBTI_TONE: dict[str, str] = {
+    "E": "먼저 말을 거는 편이고 리액션이 조금 큰 편",
+    "I": "말수가 조금 적고 차분하게 답하는 편",
+    "F": "공감이나 감정 표현이 조금 섞인 말투",
+    "T": "담백하고 사실 위주로 말하는 편",
+    "J": "약속이나 계획 얘기를 구체적으로 꺼내는 편",
+    "P": "즉흥적인 제안이 섞인 말투",
+}
 
 
 def trait_lines(p: PersonaResponse) -> list[str]:
@@ -4767,8 +4792,13 @@ def trait_lines(p: PersonaResponse) -> list[str]:
 
 
 def describe(name: str, p: PersonaResponse) -> str:
-    """프롬프트에 그대로 붙이는 블록. 이름 · 한 줄 · 성향 · 관심사 · 일상 · 데이트."""
+    """프롬프트에 그대로 붙이는 블록. 이름 · MBTI · 한 줄 · 성향 · 관심사 · 일상 · 데이트."""
     parts = [f"### {name}"]
+    if p.mbti:
+        # 본인이 고른 유형이라 말투를 잡는 데만 쓴다. 온보딩에서 직접 답한 성향이 늘 우선이고,
+        # MBTI 로 없는 성향·사실을 지어내면 안 된다 (답하지 않은 건 추출하지 않는다는 원칙과 같은 이유)
+        tone = [f"- {MBTI_TONE[c]} ({c})" for c in p.mbti if c in MBTI_TONE]
+        parts.append(f"MBTI: {p.mbti} — 말투 힌트 (아주 약하게만, 아래 성향과 다르면 성향이 우선):\n" + "\n".join(tone))
     if p.narrative:
         parts.append(f"한 줄: {p.narrative.headline}")
         parts.append(f"설명: {p.narrative.body}")
@@ -4805,7 +4835,22 @@ LOW_TO = 35
 | 35 이하 | 해당 성향의 `low` 설명 사용 |
 | 36~64 | 중간 범위이므로 설명에서 생략 |
 
-근거가 없을 때 사용하는 기본 점수 50이 실제 성향처럼 소개되는 것을 막기 위한 기준이다.
+중간 범위의 점수가 뚜렷한 성향처럼 연기되는 것을 막기 위한 기준이다. 사용자가 답하지 않은 차원은 점수가 `null`이라 `trait_lines()`에서 아예 빠진다.
+
+### `MBTI_TONE`
+
+MBTI는 성향 점수가 아니라 **말투로만** 약하게 가져간다. 온보딩 결과와 궁합 점수는 답변으로만 정해진다.
+
+| 글자 | 말투 힌트 |
+|---|---|
+| E | 먼저 말을 거는 편이고 리액션이 조금 큰 편 |
+| I | 말수가 조금 적고 차분하게 답하는 편 |
+| F | 공감이나 감정 표현이 조금 섞인 말투 |
+| T | 담백하고 사실 위주로 말하는 편 |
+| J | 약속이나 계획 얘기를 구체적으로 꺼내는 편 |
+| P | 즉흥적인 제안이 섞인 말투 |
+
+S/N은 쓰지 않는다. `describe()`는 MBTI가 있으면 이 힌트를 "아주 약하게만, 성향과 다르면 성향이 우선"이라는 단서와 함께 붙인다.
 
 ## 3. `trait_lines()` 함수
 
@@ -4855,6 +4900,7 @@ def describe(name: str, p: PersonaResponse) -> str:
 ### 처리 순서
 
 1. `### 이름` 제목을 만든다.
+   - MBTI가 있으면 바로 아래에 `MBTI_TONE` 말투 힌트를 붙인다.
 2. `narrative`가 있으면 한 줄 소개, 본문, 특징을 붙인다.
 3. `trait_lines()`로 뚜렷한 성향을 붙인다.
 4. 뚜렷한 성향이 없으면 `(특별히 치우친 성향 없음)`이라고 쓴다.
