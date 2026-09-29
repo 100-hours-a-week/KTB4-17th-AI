@@ -48,6 +48,10 @@ _CONF_ORDER = {"LOW": 0, "MEDIUM": 1, "HIGH": 2}
 # ══ 점수 층 ════════════════════════════════════════════════
 
 
+# 백엔드 계약상 dimensions[].a/b 는 null 을 못 받는다 (#63). 모르는 값의 표시용 자리값
+_BACKEND_UNKNOWN = 50
+
+
 def dimension_score(fit: Fit, a: int, b: int) -> int | None:
     if fit == Fit.SIMILAR:
         return 100 - abs(a - b)
@@ -79,8 +83,10 @@ def score_dimensions(
             DimensionFit(
                 dimension=d,
                 label=dim.label,
-                a=a,
-                b=b,
+                # TODO(#63): 백엔드 검증기가 a/b 를 0~100 정수로만 받아 null 이면 502 가 난다.
+                #  백엔드가 null 을 받기 전까지 표시값만 50 으로 채운다. 궁합 score 는 위에서 모름(None) 기준으로 계산했다
+                a=_BACKEND_UNKNOWN if a is None else a,
+                b=_BACKEND_UNKNOWN if b is None else b,
                 fit=rule.fit,
                 score=score,
                 why=rule.why,

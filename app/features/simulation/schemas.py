@@ -239,8 +239,9 @@ class ScriptOutput(BaseModel):
 class DimensionFit(BaseModel):
     dimension: str
     label: str
-    a: int | None  # null 이면 그 사람이 이 차원을 답하지 않았다 (모름)
-    b: int | None
+    # 백엔드가 null 을 못 받아(#63) 모르는 값도 50 으로 나간다. 모름 여부는 score=null · confidence=LOW 로 본다
+    a: int
+    b: int
     fit: Fit
     score: int | None  # JUDGED 인데 LLM 근거도 없으면 None
     why: str
