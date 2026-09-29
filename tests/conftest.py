@@ -39,12 +39,16 @@ async def seed_persona(
     confirmed: bool = True,
     scores: dict | None = None,
     texts: dict | None = None,
+    confidence: dict | None = None,
+    mbti: str | None = None,
+    session_mbti: str | None = None,
 ) -> PersonaRecord:
     """온보딩이 끝나 페르소나가 저장된 상태를 만든다. confirmed=False 면 /confirm 전 초안."""
     session = OnboardingSession(
         id=f"s-{persona_id}",
         user_id=user_id,
         nickname=nickname,
+        mbti=session_mbti,
         total_turns=10,
         turn_index=10,
         pending_topic_id=None,
@@ -59,11 +63,12 @@ async def seed_persona(
         user_id=user_id,
         scores=scores or {},
         texts=texts or {},
-        confidence={},
+        confidence=confidence or {},
         narrative=None,
         version=1,
         is_confirmed=confirmed,
         confirmed_at=NOW if confirmed else None,
+        mbti=mbti,
     )
     db.add_all([session, record])
     await db.commit()

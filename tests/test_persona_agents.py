@@ -254,3 +254,36 @@ def test_malformed_summaries_value_is_ignored(monkeypatch, value):
 
     assert raw.avoidance == 78
     assert raw.summaries == []
+
+
+# ── 기록에 없는 과거 언급 ─────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "저번에 러닝 좋아한다고 하셨잖아요. 주말엔 뭐 하세요?",
+        "지난번에 말씀하신 거 기억나요 ㅎㅎ 주말엔요?",
+        "저번에 뵀을 때 인상이 좋으셨어요. 주말엔 뭐 하세요?",
+    ],
+)
+def test_reply_assuming_past_meeting_falls_back_to_seed(monkeypatch, reply):
+    out = _generate(monkeypatch, turn_index=2, reply=reply)
+
+    assert out.source == "seed"
+    assert out.text == _topic().seed
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "아까 노래 들으신다고 하셨죠 ㅎㅎ 주말엔 보통 뭐 하세요?",
+        "저번 주말엔 뭐 하셨어요? 저는 늦잠 잤어요 ㅎㅎ",  # 지난 주말을 묻는 정상 질문
+        "예전에 봤던 영화 중에 기억에 남는 거 있어요?",
+        "예전에 만났던 분이랑 다툴 땐 보통 어떻게 하셨어요?",  # 옛 연애 얘기
+    ],
+)
+def test_reply_without_claiming_past_meeting_is_kept(monkeypatch, reply):
+    out = _generate(monkeypatch, turn_index=2, reply=reply)
+
+    assert (out.source, out.text) == ("llm", reply)

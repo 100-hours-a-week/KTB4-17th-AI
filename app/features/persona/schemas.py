@@ -124,10 +124,6 @@ TEXTUAL: dict[str, str] = {
     "date_avoid": "피하고 싶은 것",
 }
 
-# 근거 부족 시 기본값. 0이나 None이 아닌 이유는
-# 매칭 계산이 "모름"을 극단값으로 오해하지 않게 하기 위함.
-DEFAULT_SCORE = 50
-
 ALL_DIMENSIONS: list[str] = [*SCORED.keys(), *TEXTUAL.keys()]
 
 # 차원의 area 를 등장 순서대로 중복 없이. summaries 카드의 category 값 후보.
@@ -526,7 +522,8 @@ class PersonaResponse(BaseModel):
     confirmed_at: datetime | None = None
     mbti: str | None = None
     source: Literal["llm", "fallback"] = "llm"  # fallback 이면 LLM 없이 규칙으로 만든 임시 초안
-    scores: dict[str, int]
+    # 근거 없는(직접 답하지 않은) 차원은 null — "모름". 50 으로 채우면 궁합 계산이 "중간"으로 오해한다
+    scores: dict[str, int | None]
     interests: list[str] = Field(default_factory=list)
     routine: list[str] = Field(default_factory=list)
     date_prefer: list[str] = Field(default_factory=list)

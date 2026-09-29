@@ -355,3 +355,26 @@ def test_get_unknown_simulation_is_not_found():
 
     with pytest.raises(SimulationNotFound):
         asyncio.run(with_db(scenario))
+
+
+# ── 모르는 차원(null)은 궁합 계산에서 뺀다 ────────────
+
+
+def _template_report(a_scores, b_scores):
+    pa = PersonaResponse(persona_id="pa", scores=a_scores)
+    pb = PersonaResponse(persona_id="pb", scores=b_scores)
+    return asyncio.run(build_report(ReportInput(persona_a=pa, persona_b=pb), None))
+
+
+def test_unknown_dimensions_do_not_count_as_a_perfect_match():
+    """둘 다 거리 두기를 답하지 않았다(null) — 50 대 50 '완전 일치(100)'가 아니라 모름으로 빠진다.
+    아는 건 연락 빈도(80 vs 75 → 95) 하나뿐이니 종합 점수도 그것으로만."""
+    report = _template_report({"contact_rhythm": 80, "avoidance": None}, {"contact_rhythm": 75, "avoidance": None})
+
+    dims = {d.dimension: d for a in report.areas for d in a.dimensions}
+    areas = {a.area: a.score for a in report.areas}
+    assert dims["avoidance"].score is None
+    assert dims["contact_rhythm"].score == 95
+    assert areas["intimacy"] is None
+    assert areas["communication"] == 95
+    assert report.overall.score == 95

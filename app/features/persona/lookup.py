@@ -49,4 +49,5 @@ async def load_persona(db: AsyncSession, ref: PersonaRef) -> LoadedPersona | Non
     # 닉네임은 온보딩 세션에만 있다. 세션이 지워졌으면(없을 리 없지만) 페르소나 id 앞자리로.
     session = await repo.get_session_brief(record.session_id)
     nickname = session.nickname if session else record.id[:6]
-    return LoadedPersona(record=record, nickname=nickname, response=persona_response(record))
+    response = persona_response(record, session_mbti=session.mbti if session else None)
+    return LoadedPersona(record=record, nickname=nickname, response=response)

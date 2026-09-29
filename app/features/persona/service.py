@@ -27,7 +27,6 @@ from .schemas import (
     CONFIDENCE_LOW,
     CONFIDENCE_MEDIUM,
     CONFIDENCE_WEIGHT,
-    DEFAULT_SCORE,
     MIN_ANSWERS_TO_FINISH,
     SCORED,
     SUPPLEMENTS,
@@ -173,7 +172,7 @@ REASK_PREFIX = "ㅎㅎ 제가 질문을 좀 애매하게 했나 봐요. 다시 �
 
 # ══ 추출 폴백 ══════════════════════════════════════════════
 # 추출 LLM 이 죽어도 온보딩은 끝나야 한다. 자유 답변은 LLM 없이 읽을 수 없으니,
-# 선택지로 답한 질문만 점수로 옮기고 나머지 차원은 비워 둔다(→ 기본값 50, 신뢰도 LOW).
+# 선택지로 답한 질문만 점수로 옮기고 나머지 차원은 비워 둔다(→ null, 신뢰도 LOW).
 # {주제 id: (차원, {선택지: 점수})}. "아직 잘 모르겠어요" 처럼 표에 없는 답은 근거 없음으로 둔다.
 
 CHOICE_SCORES: dict[str, tuple[str, dict[str, int]]] = {
@@ -210,10 +209,10 @@ _CONTRADICTIONS = [
 ]
 
 
-def narrative_contradiction(scores: dict[str, int], narrative: Narrative) -> str | None:
+def narrative_contradiction(scores: dict[str, int | None], narrative: Narrative) -> str | None:
     text = " ".join([narrative.headline, narrative.body, *narrative.traits])
     for dim, cond, phrases in _CONTRADICTIONS:
-        if cond(scores.get(dim, DEFAULT_SCORE)):
+        if scores.get(dim) is not None and cond(scores[dim]):
             for ph in phrases:
                 if ph in text:
                     return f"{dim}={scores[dim]} vs '{ph}'"
@@ -283,8 +282,8 @@ def changes_between(previous: PersonaRecord | None, current: PersonaRecord) -> l
         return []
     out: list[Change] = []
     for k, d in SCORED.items():
-        a, b = previous.scores.get(k, DEFAULT_SCORE), current.scores.get(k, DEFAULT_SCORE)
-        if abs(b - a) >= 10:
+        a, b = previous.scores.get(k), current.scores.get(k)
+        if a is not None and b is not None and abs(b - a) >= 10:
             out.append(Change(dimension=k, label=d.label, kind="score", before=str(a), after=str(b)))
         ca, cb = previous.confidence.get(k, CONFIDENCE_LOW), current.confidence.get(k, CONFIDENCE_LOW)
         if ca != cb:
@@ -300,22 +299,37 @@ def changes_between(previous: PersonaRecord | None, current: PersonaRecord) -> l
     return out
 
 
+# null 도입 전에는 근거 없는 차원을 50 으로 채워 저장했다. 신뢰도 LOW 인 50 은 그 흔적이라 모름으로 읽는다
+_LEGACY_UNKNOWN = 50
+
+
+def known_scores(scores: dict[str, int | None], confidence: dict[str, str]) -> dict[str, int | None]:
+    """저장된 점수 → 응답 점수. 옛 행의 '근거 없는 50'을 null 로 바꾼다. 근거 있는 50 은 진짜 중간값."""
+    return {
+        k: None if v == _LEGACY_UNKNOWN and confidence.get(k, CONFIDENCE_LOW) == CONFIDENCE_LOW else v
+        for k, v in scores.items()
+    }
+
+
 def persona_response(
     record: PersonaRecord,
     gaps: list[Gap] | None = None,
     changes: list[Change] | None = None,
+    session_mbti: str | None = None,
 ) -> PersonaResponse:
     """DB 행 → API 모델. 온보딩 밖(simulation·practice)에서도 쓰므로 세션 없이 만들 수 있다.
 
-    gaps·changes 는 온보딩 화면에서만 의미가 있어 호출부가 넣어준다."""
+    gaps·changes 는 온보딩 화면에서만 의미가 있어 호출부가 넣어준다.
+    MBTI 는 확정 때 페르소나 행에 옮겨 적는다(DB 제약상 초안 행엔 못 둔다). 그 전(초안)이나
+    MBTI 없이 확정된 옛 행이면 온보딩 시작 때 세션에 받아 둔 값(session_mbti)을 쓴다."""
     return PersonaResponse(
         persona_id=record.id,
         version=record.version,
         is_confirmed=record.is_confirmed,
         confirmed_at=record.confirmed_at,
-        mbti=record.mbti,
+        mbti=record.mbti or session_mbti,
         source=record.source,
-        scores=record.scores,
+        scores=known_scores(record.scores, record.confidence),
         confidence=record.confidence,
         narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
         summaries=[Summary.model_validate(s) for s in record.summaries] if record.summaries else [],
@@ -355,6 +369,42 @@ class OnboardingService:
     def _answered(session: OnboardingSession) -> int:
         """실제로 답한 턴 수. 건너뛴 턴과, 되물어도 질문과 무관했던 답(off_topic)은 세지 않는다."""
         return sum(1 for t in session.turns if t.answer and not (t.tags or {}).get("off_topic"))
+
+    async def _dimensions_from_answers(self, session: OnboardingSession) -> set[str]:
+        """사용자의 답변 자체에 근거가 있는 차원 (점수형 + 텍스트형).
+
+        추출 LLM 은 "말하지 않은 건 생략하라"는 지시에도 다른 답에서 미루어 점수를 채운다.
+        그래서 질문이 무엇을 겨눴는지(topic.covers)가 아니라, 태깅이 그 답변에서 주 근거(primary)로
+        짚은 차원만 인정한다 — "주말엔 그냥 쉬어요"는 일상의 근거일 뿐 선호 데이트의 근거가 아니다.
+        - 건너뜀·대기 중·되물어도 무관했던 답은 제외
+        - 온보딩 중 태깅이 실패한 답(tags 없음)은 여기서 다시 태깅한다. 또 실패하면 그 답은 근거로 치지 않는다
+        - 보강 질문은 그 차원만 겨눈 질문이라 답했으면 그 차원으로 인정
+        secondary 처럼 곁가지로만 스친 차원은 넣지 않는다."""
+        dims: set[str] = set()
+        for turn in session.turns:
+            if not turn.answer or turn.skipped or (turn.tags or {}).get("off_topic"):
+                continue
+            if turn.topic_id.startswith("supplement:"):
+                dims.add(turn.topic_id.removeprefix("supplement:"))
+                continue
+            primary = (turn.tags or {}).get("primary")
+            if turn.tags is None:
+                tags = await self.tagging.tag(
+                    turn.question,
+                    turn.answer,
+                    trace_metadata=build_langfuse_metadata(
+                        feature="persona",
+                        operation="retagging",
+                        user_id=session.user_id,
+                        session_id=session.id,
+                        turnIndex=turn.turn_index,
+                        topicId=turn.topic_id,
+                    ),
+                )
+                # 또 실패하면 이 답에서 무엇이 드러났는지 알 수 없다 — 질문으로 짐작하지 않고 인정하지 않는다
+                primary = tags.primary if tags else []
+            dims.update(primary or [])
+        return dims
 
     def _controls(self, session: OnboardingSession) -> dict:
         answered = self._answered(session)
@@ -533,10 +583,12 @@ class OnboardingService:
         if session.pending_topic_id is not None or session.turn_index < session.total_turns:
             raise OnboardingNotFinished
 
+        answered = await self._dimensions_from_answers(session)
         source = "llm"
         try:
             raw = await self.extraction.extract(
                 self._history(session),
+                answered=answered,
                 trace_metadata=build_langfuse_metadata(
                     feature="persona",
                     operation="extraction",
@@ -552,14 +604,29 @@ class OnboardingService:
             raw, source = fallback_extraction(session), "fallback"
         coverage = Coverage(session.coverage)
 
-        scores: dict[str, int] = {}
+        scores: dict[str, int | None] = {}
         confidence: dict[str, str] = {}
+        dropped: list[str] = []
         for key in SCORED:
             value = getattr(raw, key, None)
-            scores[key] = value if value is not None else DEFAULT_SCORE
-            confidence[key] = confidence_of(value is not None, coverage.primary.get(key, 0))
+            if value is not None and key not in answered:
+                # 직접 답하지 않은 차원을 LLM 이 추측해 채웠다 → 근거 없음(null, LOW)으로 되돌린다
+                dropped.append(key)
+                value = None
+            scores[key] = value  # 근거 없으면 None — "모름"
+            # 다시 태깅해서야 근거가 확인된 답은 온보딩 커버리지에 안 잡혀 있다 — 답이 있으면 최소 1건으로 친다
+            evidence = max(coverage.primary.get(key, 0), 1 if key in answered else 0)
+            confidence[key] = confidence_of(value is not None, evidence)
 
-        texts = {key: getattr(raw, key, []) for key in TEXTUAL}
+        texts: dict[str, list[str]] = {}
+        for key in TEXTUAL:
+            values = getattr(raw, key, [])
+            if values and key not in answered:
+                dropped.append(key)
+                values = []
+            texts[key] = values
+        if dropped:
+            logger.info("dropped unanswered dimensions from extraction: %s", dropped)
 
         narrative = raw.narrative
         if narrative is not None:
@@ -568,7 +635,9 @@ class OnboardingService:
                 logger.warning("narrative contradicts scores (%s) — dropped", why)
                 narrative = None
 
-        summaries = valid_summaries(raw.summaries)
+        # 근거 있는 점수 차원이 하나도 없는 area 의 카드는 추측으로 쓴 것이다
+        grounded_areas = {SCORED[k].area for k in SCORED if k in answered and getattr(raw, k, None) is not None}
+        summaries = [s for s in valid_summaries(raw.summaries) if s["category"] in grounded_areas]
 
         record, previous = await self.repo.save_persona(
             session,
@@ -631,6 +700,7 @@ class OnboardingService:
             record,
             gaps=gaps_of(session, record.confidence),
             changes=changes_between(previous, record),
+            session_mbti=session.mbti,
         )
 
     async def get_latest(self, session: OnboardingSession) -> PersonaResponse:

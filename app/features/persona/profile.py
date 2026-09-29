@@ -9,10 +9,21 @@ from __future__ import annotations
 
 from .schemas import CONFIDENCE_LOW, SCORED, PersonaResponse
 
-# 이 밖이면 "뚜렷한 성향"으로 서술한다. 안쪽(36~64)은 중간이라 굳이 말하지 않는다 —
-# 근거 부족 기본값 50 이 "중간 성향"으로 연기되는 걸 막기 위해서다.
+# 이 밖이면 "뚜렷한 성향"으로 서술한다. 안쪽(36~64)은 중간이라 굳이 말하지 않는다.
+# 답하지 않은 차원은 null(모름)이라 아예 빠진다.
 HIGH_FROM = 65
 LOW_TO = 35
+
+# MBTI 는 성향 점수가 아니라 말투로만 약하게 가져간다 — 온보딩 결과·궁합 점수는 답변으로만 정해진다.
+# J/P 는 관계 진지도 같은 성향으로 보기 어려워 말투로만 쓴다. S/N 은 쓰지 않는다.
+MBTI_TONE: dict[str, str] = {
+    "E": "먼저 말을 거는 편이고 리액션이 조금 큰 편",
+    "I": "말수가 조금 적고 차분하게 답하는 편",
+    "F": "공감이나 감정 표현이 조금 섞인 말투",
+    "T": "담백하고 사실 위주로 말하는 편",
+    "J": "약속이나 계획 얘기를 구체적으로 꺼내는 편",
+    "P": "즉흥적인 제안이 섞인 말투",
+}
 
 
 def trait_lines(p: PersonaResponse) -> list[str]:
@@ -34,8 +45,13 @@ def trait_lines(p: PersonaResponse) -> list[str]:
 
 
 def describe(name: str, p: PersonaResponse) -> str:
-    """프롬프트에 그대로 붙이는 블록. 이름 · 한 줄 · 성향 · 관심사 · 일상 · 데이트."""
+    """프롬프트에 그대로 붙이는 블록. 이름 · MBTI · 한 줄 · 성향 · 관심사 · 일상 · 데이트."""
     parts = [f"### {name}"]
+    if p.mbti:
+        # 본인이 고른 유형이라 말투를 잡는 데만 쓴다. 온보딩에서 직접 답한 성향이 늘 우선이고,
+        # MBTI 로 없는 성향·사실을 지어내면 안 된다 (답하지 않은 건 추출하지 않는다는 원칙과 같은 이유)
+        tone = [f"- {MBTI_TONE[c]} ({c})" for c in p.mbti if c in MBTI_TONE]
+        parts.append(f"MBTI: {p.mbti} — 말투 힌트 (아주 약하게만, 아래 성향과 다르면 성향이 우선):\n" + "\n".join(tone))
     if p.narrative:
         parts.append(f"한 줄: {p.narrative.headline}")
         parts.append(f"설명: {p.narrative.body}")

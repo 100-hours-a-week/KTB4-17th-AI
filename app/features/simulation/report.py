@@ -69,8 +69,12 @@ def score_dimensions(
     out = []
     for d, dim in SCORED.items():
         rule = RULES[d]
-        a, b = pa.scores.get(d, 50), pb.scores.get(d, 50)
-        score = ideal_fit.get(d) if rule.fit == Fit.JUDGED else dimension_score(rule.fit, a, b)
+        # 없거나 null 이면 "모름" — 50 으로 채우면 둘 다 모를 때 SIMILAR 가 100(완전 일치)이 된다
+        a, b = pa.scores.get(d), pb.scores.get(d)
+        if rule.fit == Fit.JUDGED:
+            score = ideal_fit.get(d)
+        else:
+            score = None if a is None or b is None else dimension_score(rule.fit, a, b)
         out.append(
             DimensionFit(
                 dimension=d,
@@ -99,7 +103,8 @@ def triggered_risks(pa: PersonaResponse, pb: PersonaResponse) -> list[Risk]:
     """a_dim↑ + b_dim↑ 조합. 누가 a 든 상관없으니 양방향 검사."""
 
     def hits(p1: PersonaResponse, p2: PersonaResponse, r: Risk) -> bool:
-        return p1.scores.get(r.a_dim, 50) >= RISK_THRESHOLD and p2.scores.get(r.b_dim, 50) >= RISK_THRESHOLD
+        a, b = p1.scores.get(r.a_dim), p2.scores.get(r.b_dim)
+        return a is not None and b is not None and a >= RISK_THRESHOLD and b >= RISK_THRESHOLD
 
     return [r for r in RISKS if hits(pa, pb, r) or hits(pb, pa, r)]
 
