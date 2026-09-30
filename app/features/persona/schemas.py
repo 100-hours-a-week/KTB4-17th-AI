@@ -13,6 +13,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
+from app.core.guardrail import ValidationResult
+
 # ══ 차원 정의 ══════════════════════════════════════════════
 
 
@@ -471,6 +473,7 @@ class Segment(BaseModel):
 class TurnResponse(BaseModel):
     session_id: str
     utterance: str  # segments 텍스트를 공백으로 이은 전체 발화. 기존 소비자는 이것만 써도 된다
+    validationResult: ValidationResult | None = None
     segments: list[Segment] = Field(default_factory=list)
     choices: list[str] | None = None
     progress: str

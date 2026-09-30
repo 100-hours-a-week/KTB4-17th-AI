@@ -268,10 +268,23 @@ def test_malformed_summaries_value_is_ignored(monkeypatch, value):
     ],
 )
 def test_reply_assuming_past_meeting_falls_back_to_seed(monkeypatch, reply):
+    monkeypatch.setenv("GUARDRAIL_MODE", "shadow")
     out = _generate(monkeypatch, turn_index=2, reply=reply)
 
     assert out.source == "seed"
     assert out.text == _topic().seed
+    assert out.validation is not None
+    assert out.validation.status == "SHADOW_FAIL"
+
+
+def test_reply_assuming_past_meeting_falls_back_to_seed_when_off(monkeypatch):
+    monkeypatch.setenv("GUARDRAIL_MODE", "off")
+    reply = "저번에 러닝 좋아한다고 하셨잖아요. 주말엔 뭐 하세요?"
+    out = _generate(monkeypatch, turn_index=2, reply=reply)
+
+    assert out.source == "seed"
+    assert out.text == _topic().seed
+    assert out.validation is None
 
 
 @pytest.mark.parametrize(

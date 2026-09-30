@@ -15,6 +15,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.core.guardrail import ValidationResult
 from app.features.persona.schemas import PersonaBrief, PersonaRef
 
 MAX_MESSAGE_LEN = 500
@@ -100,6 +101,7 @@ class PracticeReplyResponse(BaseModel):
     message_index: int
     content: str
     source: Literal["llm", "fallback"]
+    validationResult: ValidationResult | None = None
 
 
 # ── SSE 이벤트 data ────────────────────────────────────────
@@ -122,6 +124,7 @@ class DoneEvent(BaseModel):
     message_index: int
     content: str
     source: Literal["llm", "fallback"]
+    validationResult: ValidationResult | None = None
 
 
 # 스트리밍 중 실패 알림 (이 뒤로 delta 없음)

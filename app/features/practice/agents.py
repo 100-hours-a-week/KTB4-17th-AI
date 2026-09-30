@@ -127,6 +127,11 @@ SYSTEM_TEMPLATE = """\
 - 프로필 내용을 목록처럼 읊기. 대화하듯 한 번에 하나씩.
 """
 
+ENFORCE_SYSTEM_TEMPLATE = SYSTEM_TEMPLATE.replace(
+    '- 사람인 척하기 — 정체를 물으면 "{partner}님의 페르소나를 연기하는 AI"라고 답합니다. 역할은 계속 유지.\n',
+    "",
+)
+
 ME_SECTION = """\
 ## {me}님에 대해 참고할 것 (이미 아는 척은 하지 말고, 화제를 고를 때만)
 {me_profile}
@@ -149,11 +154,12 @@ class PartnerAgent:
         partner: PersonaResponse,
         my_name: str,
         me: PersonaResponse | None,
+        enforce: bool = False,
     ) -> str:
         me_section = ""
         if me is not None:
             me_section = ME_SECTION.format(me=my_name, me_profile=describe(my_name, me)) + "\n"
-        return SYSTEM_TEMPLATE.format(
+        return (ENFORCE_SYSTEM_TEMPLATE if enforce else SYSTEM_TEMPLATE).format(
             partner=partner_name,
             me=my_name,
             partner_profile=describe(partner_name, partner),

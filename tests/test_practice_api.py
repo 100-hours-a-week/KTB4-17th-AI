@@ -136,7 +136,7 @@ def test_message_streams_start_delta_done_as_sse():
     assert res.text == (
         'event: start\ndata: {"session_id":"s1","message_index":1}\n\n'
         'event: delta\ndata: {"text":"안녕"}\n\n'
-        'event: done\ndata: {"session_id":"s1","message_index":1,"content":"안녕","source":"llm"}\n\n'
+        'event: done\ndata: {"session_id":"s1","message_index":1,"content":"안녕","source":"llm","validationResult":null}\n\n'
     )
 
 
@@ -216,7 +216,10 @@ def test_retry_streams_reply_for_unanswered_message():
     res = client.post("/v1/practice/s1/retry/stream")
 
     assert res.status_code == 200
-    assert res.text == 'event: done\ndata: {"session_id":"s1","message_index":1,"content":"다시","source":"llm"}\n\n'
+    assert (
+        res.text
+        == 'event: done\ndata: {"session_id":"s1","message_index":1,"content":"다시","source":"llm","validationResult":null}\n\n'
+    )
     assert calls == [("retry",)]
 
 
@@ -336,7 +339,13 @@ def test_message_returns_collected_reply_as_json():
 
     assert res.status_code == 200
     assert res.headers["content-type"] == "application/json"
-    assert res.json() == {"session_id": "s1", "message_index": 1, "content": "안녕", "source": "llm"}
+    assert res.json() == {
+        "session_id": "s1",
+        "message_index": 1,
+        "content": "안녕",
+        "source": "llm",
+        "validationResult": None,
+    }
     assert calls == [("reply", "안녕하세요")]
 
 
