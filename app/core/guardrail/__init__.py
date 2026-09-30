@@ -5,6 +5,7 @@ from .engine import (
     cove_addon,
     effective_mode,
     fallback_text,
+    practice_cove_addon,
     validate,
 )
 from .models import (
@@ -31,5 +32,6 @@ __all__ = [
     "cove_addon",
     "effective_mode",
     "fallback_text",
+    "practice_cove_addon",
     "validate",
 ]

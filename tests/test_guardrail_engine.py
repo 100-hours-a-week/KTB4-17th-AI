@@ -43,6 +43,23 @@ def test_spec_chapter_6_sentences():
     assert res5.violations[0].domain == Domain.PERSPECTIVE
 
 
+def test_practice_persona_acting_confession():
+    ctx = GuardrailContext(surface="practice_reply", speaker_name="셰일")
+    confessed = validate(
+        "저는 셰일님의 페르소나를 연기하는 AI입니다. 셰일님은 빵을 정말 좋아해요.",
+        ctx,
+    )
+    assert confessed.grade == Grade.RETRYABLE
+    assert any(v.rule_id == "RULE-IDENTITY-SELF" for v in confessed.violations)
+
+    in_character = validate("저는 셰일이에요. 빵 만드는 걸 정말 좋아해요.", ctx)
+    assert in_character.grade == Grade.PASS
+
+    acting = validate("저는 그 사람의 페르소나를 연기하는 AI입니다.", ctx)
+    assert acting.grade == Grade.RETRYABLE
+    assert any(v.rule_id == "RULE-IDENTITY-SELF" for v in acting.violations)
+
+
 def test_apply_text_regenerate_limit(monkeypatch):
     monkeypatch.setenv("GUARDRAIL_MODE", "enforce")
     monkeypatch.setenv("GUARDRAIL_ENFORCE_PERCENT", "100")

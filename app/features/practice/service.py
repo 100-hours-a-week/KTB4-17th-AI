@@ -17,13 +17,19 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.guardrail import GuardrailContext, apply_text, cove_addon, effective_mode
+from app.core.guardrail import GuardrailContext, apply_text, effective_mode, practice_cove_addon
 from app.core.guardrail_trace import record_guardrail
 from app.core.observability import build_langfuse_metadata
 from app.features.persona.lookup import LoadedPersona, load_persona
 from app.features.persona.schemas import PersonaRef
 
-from .agents import FALLBACK_REPLY, OPENING_INSTRUCTION, LLMError, PartnerAgent
+from .agents import (
+    FALLBACK_REPLY,
+    OPENING_INSTRUCTION,
+    LLMError,
+    PartnerAgent,
+    without_identity_confession,
+)
 from .models import PracticeSession
 from .repository import PracticeRepository
 from .schemas import (
@@ -176,10 +182,11 @@ class PracticeService:
             partner=partner.response,
             my_name=session.my_nickname,
             me=me.response if me else None,
-            enforce=mode == "enforce",
         )
         if mode == "enforce":
-            system += "\n" + cove_addon(self._guardrail_context(session, partner.response, me.response if me else None))
+            system += "\n" + practice_cove_addon(
+                self._guardrail_context(session, partner.response, me.response if me else None)
+            )
         return system
 
     @staticmethod
@@ -324,6 +331,7 @@ class PracticeService:
             content = applied.text
             if validation and validation.status == "FALLBACK":
                 source = "fallback"
+            content = without_identity_confession(content, session.partner_nickname)
             await record_guardrail(
                 self.db,
                 feature="practice",
@@ -336,6 +344,8 @@ class PracticeService:
             )
             if mode == "enforce":
                 yield "delta", DeltaEvent(text=content)
+        else:
+            content = without_identity_confession(content, session.partner_nickname)
         await self._save_message(session, "persona", content, source)
         yield (
             "done",

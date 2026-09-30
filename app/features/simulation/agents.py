@@ -133,6 +133,10 @@ async def _call(
         # 잘린 JSON 은 파싱이 안 된다. invalid_json 과 구분해야 max_tokens 를 늘릴지 판단할 수 있다
         logger.warning("llm %s: output truncated at max_tokens=%d, tail=%r", name, max_tokens, text[-200:])
         raise LLMError(f"output truncated at max_tokens={max_tokens}", reason="truncated")
+    if finish_reason == "error":
+        # HTTP 200 이어도 공급자가 생성 도중 끊은 경우다. 반쪽 출력을 파싱하면 invalid_json 으로 잘못 분류된다 (#77)
+        logger.warning("llm %s: provider error mid-generation, tail=%r", name, text[-200:])
+        raise LLMError("provider error mid-generation (finish_reason=error)", reason="upstream_error")
     if not text:
         raise LLMError("empty response")
     return text
@@ -344,6 +348,8 @@ class SimulationAgent:
         retry_notice = ""
         first_failure: ValidationResult | None = None
         first_text = ""
+        # 화자 뒤바뀜으로 다시 받을 때 1차 대본을 둔다. 재생성이 실패하면 503 대신 이걸 쓴다 (#77)
+        mixed_first: ScriptOutput | None = None
         with propagate_langfuse_metadata(trace_metadata):
             for attempt in (1, 2):
                 try:
@@ -355,26 +361,33 @@ class SimulationAgent:
                         name="simulation-run",
                         metadata=trace_metadata,
                     )
-                except LLMError as e:
+                    script = _validate_script(data, name_a, name_b)
+                except (LLMError, SimulationFailed) as e:
+                    reason = e.reason
                     # 출력이 깨지거나 잘린 건 운이다 — 같은 요청을 한 번만 더. 전체 시간은 처음 timeout 안에서.
                     # 남은 시간이 1/3 도 안 되면 재시도해도 또 타임아웃이라 바로 실패시킨다.
                     remaining = deadline - time.monotonic()
-                    if attempt == 1 and e.reason in _RETRYABLE and remaining > total / 3:
-                        logger.warning("simulation-run retry: reason=%s remaining=%.1fs", e.reason, remaining)
-                        if e.reason == "truncated":
+                    if attempt == 1 and reason in _RETRYABLE and remaining > total / 3:
+                        logger.warning("simulation-run retry: reason=%s remaining=%.1fs", reason, remaining)
+                        if reason == "truncated":
                             max_tokens = int(max_tokens * 1.5)
                         continue
-                    raise SimulationFailed(str(e), reason=e.reason) from e
-
-                script = _validate_script(data, name_a, name_b)
-                mixed = _self_addressed_lines(script, name_a, name_b)
-                remaining = deadline - time.monotonic()
-                if mixed and attempt == 1 and remaining > total / 3:
-                    # 화자가 섞인 대본 — 리포트도 뒤바뀐 대본을 인용하게 된다. 한 번만 다시 받는다
-                    logger.warning(
-                        "simulation-run retry: reason=speaker_mixup lines=%s remaining=%.1fs", mixed, remaining
-                    )
-                    continue
+                    if mixed_first is None:
+                        if isinstance(e, SimulationFailed):
+                            raise
+                        raise SimulationFailed(str(e), reason=reason) from e
+                    logger.warning("simulation-run regeneration failed (reason=%s) — using first script", reason)
+                    script = mixed_first
+                else:
+                    mixed = _self_addressed_lines(script, name_a, name_b)
+                    remaining = deadline - time.monotonic()
+                    if mixed and attempt == 1 and remaining > total / 3:
+                        # 화자가 섞인 대본 — 리포트도 뒤바뀐 대본을 인용하게 된다. 한 번만 다시 받는다
+                        logger.warning(
+                            "simulation-run retry: reason=speaker_mixup lines=%s remaining=%.1fs", mixed, remaining
+                        )
+                        mixed_first = script
+                        continue
                 if mode != "off":
                     checked, checked_text = _validate_output(script, persona_a, persona_b, name_a, name_b)
                     if checked.grade in {Grade.RETRYABLE, Grade.BLOCK}:
@@ -446,9 +459,16 @@ def _validate_script(data: dict, name_a: str, name_b: str) -> ScriptOutput:
 
 
 def _self_addressed_lines(script: ScriptOutput, name_a: str, name_b: str) -> list[int]:
-    """자기 닉네임에 '님'을 붙여 부르는 줄 — "지수님은요?"를 지수가 말하면 화자가 섞였다는 뚜렷한 신호."""
-    own = {"a": f"{name_a}님", "b": f"{name_b}님"}
-    return [i for i, line in enumerate(script.transcript) if own[line.speaker] in line.text]
+    """자기 닉네임에 '님'을 붙여 부르는 줄 — "지수님은요?"를 지수가 말하면 화자가 섞였다는 뚜렷한 신호.
+
+    이름 앞에 글자가 붙어 있으면 다른 이름의 일부다 — a=셰일이 b=내가진짜셰일을 "내가진짜셰일님"이라 부른 걸
+    "셰일님"으로 잘못 읽어 정상 대본을 버린 적이 있다 (#77)."""
+
+    def calls_self(name: str) -> re.Pattern[str]:
+        return re.compile(rf"(?<![가-힣A-Za-z0-9]){re.escape(name)}님")
+
+    own = {"a": calls_self(name_a), "b": calls_self(name_b)}
+    return [i for i, line in enumerate(script.transcript) if own[line.speaker].search(line.text)]
 
 
 def _report_perspective_swap(text: str, pa: PersonaResponse, pb: PersonaResponse, name_a: str, name_b: str) -> bool:

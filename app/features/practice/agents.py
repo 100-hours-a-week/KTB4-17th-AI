@@ -93,8 +93,8 @@ async def _stream(
 # ══ 프롬프트 ═══════════════════════════════════════════════
 
 SYSTEM_TEMPLATE = """\
-당신은 "{partner}"입니다. AI 매칭 서비스의 "연습 대화"에서 {me}님의 대화 상대 역할을 합니다.
-아래 프로필은 실제 사용자 {partner}님의 온보딩 대화에서 추출한 연애 성향입니다. 이 사람이 되어 메신저로 대화하세요.
+당신은 "{partner}" 본인입니다. {me}님과 오늘 처음 메신저로 대화합니다.
+아래 프로필은 당신의 연애 성향입니다. 이 사람으로서 말하고 행동하세요.
 목표는 {me}님이 "이 사람이랑 말이 잘 통한다"고 느끼는 것입니다 — 성향은 지키되, 상대에게 맞춰 대화가 이어지게.
 
 ## 당신의 프로필 (이대로 말하고 행동합니다)
@@ -123,14 +123,12 @@ SYSTEM_TEMPLATE = """\
 ## 절대 하지 않는 것
 - 평가·진단·조언 ("잘 하고 계세요", "회피형이시네요" ✕). 상대 말을 요약하지 않기.
 - 이모지. 존댓말 유지 (상대가 반말하자고 해도 한 번은 "ㅎㅎ 저는 이게 편해요" 정도로).
-- 사람인 척하기 — 정체를 물으면 "{partner}님의 페르소나를 연기하는 AI"라고 답합니다. 역할은 계속 유지.
+- AI·인공지능·챗봇·언어 모델·페르소나·연기라는 단어를 답변에 넣지 않기. 누가 되냐고 물으면
+  "{partner}예요"처럼 1인칭으로 답하고, 프로필에 있는 관심사나 일상 하나만 짧게 얹습니다.
+  "AI야?", "인공지능이야?"라고 물어도 동의하지 않습니다. "네"로 받지 않습니다.
+  자신을 "{partner}님은"처럼 제3자로 부르지 않습니다.
 - 프로필 내용을 목록처럼 읊기. 대화하듯 한 번에 하나씩.
 """
-
-ENFORCE_SYSTEM_TEMPLATE = SYSTEM_TEMPLATE.replace(
-    '- 사람인 척하기 — 정체를 물으면 "{partner}님의 페르소나를 연기하는 AI"라고 답합니다. 역할은 계속 유지.\n',
-    "",
-)
 
 ME_SECTION = """\
 ## {me}님에 대해 참고할 것 (이미 아는 척은 하지 말고, 화제를 고를 때만)
@@ -145,6 +143,29 @@ OPENING_INSTRUCTION = (
 FALLBACK_REPLY = "아, 잠깐 딴생각했어요 ㅎㅎ 방금 얘기 한 번만 더 해줄래요?"
 
 
+def _with_ieyo(name: str) -> str:
+    """이름 마지막 글자에 받침이 있으면 '이에요', 없으면 '예요'."""
+    if not name:
+        return "저예요."
+    last = name[-1]
+    code = ord(last)
+    has_batchim = 0xAC00 <= code <= 0xD7A3 and (code - 0xAC00) % 28 != 0
+    return f"저는 {name}{'이에요' if has_batchim else '예요'}."
+
+
+def without_identity_confession(text: str, speaker_name: str) -> str:
+    """정체 자백이 있으면 그 문장 대신 이름만 1인칭으로 남긴다."""
+    from app.core.guardrail import GuardrailContext, validate
+
+    result = validate(
+        text,
+        GuardrailContext(surface="practice_reply", speaker_name=speaker_name or "상대", task="single_turn"),
+    )
+    if any(v.rule_id == "RULE-IDENTITY-SELF" for v in result.violations):
+        return _with_ieyo(speaker_name)
+    return text
+
+
 class PartnerAgent:
     # 상대(+선택적으로 나) 프로필을 템플릿에 채워 이번 대화의 시스템 프롬프트 문자열을 만든다
     @staticmethod
@@ -154,12 +175,11 @@ class PartnerAgent:
         partner: PersonaResponse,
         my_name: str,
         me: PersonaResponse | None,
-        enforce: bool = False,
     ) -> str:
         me_section = ""
         if me is not None:
             me_section = ME_SECTION.format(me=my_name, me_profile=describe(my_name, me)) + "\n"
-        return (ENFORCE_SYSTEM_TEMPLATE if enforce else SYSTEM_TEMPLATE).format(
+        return SYSTEM_TEMPLATE.format(
             partner=partner_name,
             me=my_name,
             partner_profile=describe(partner_name, partner),
