@@ -256,6 +256,8 @@ async def build_report(
     agent: ReportAgent | None = None,
     *,
     trace_metadata: LangfuseMetadata | None = None,
+    db=None,
+    user_key: str | None = None,
 ) -> MatchingReport:
     """서술을 ReportAgent 로 받아서 조립. 대화록을 밖에서 줄 때(/report/preview) 쓴다."""
     pa, pb = inp.persona_a, inp.persona_b
@@ -273,8 +275,15 @@ async def build_report(
             area_scores=area_scores,
             dim_scores={d.dimension: d.score for d in dims},
             trace_metadata=trace_metadata,
+            db=db,
+            user_key=user_key,
+            session_id=inp.transcript.simulation_id,
         )
     except LLMError as e:
         logger.warning("report narrative fallback: %s", e)
-        return assemble_report(inp, template_narrative(pa, pb), "template")
-    return assemble_report(inp, narrative, "llm")
+        report = assemble_report(inp, template_narrative(pa, pb), "template")
+        report.validationResult = getattr(agent, "last_validation", None)
+        return report
+    report = assemble_report(inp, narrative, "llm")
+    report.validationResult = narrative.validation
+    return report

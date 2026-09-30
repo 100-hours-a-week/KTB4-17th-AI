@@ -11,6 +11,7 @@ os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
+import app.core.guardrail_trace  # noqa: F401
 import app.features.practice.models  # noqa: F401  테이블을 metadata 에 등록
 import app.features.simulation.models  # noqa: F401
 from app.core.db import Base

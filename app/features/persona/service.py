@@ -9,6 +9,8 @@ from __future__ import annotations
 import logging
 from datetime import datetime
 
+from app.core.guardrail import effective_mode
+from app.core.guardrail_trace import record_guardrail
 from app.core.observability import build_langfuse_metadata
 
 from .agents import (
@@ -424,6 +426,7 @@ class OnboardingService:
             turn_index=session.turn_index,
             total_turns=session.total_turns,
             nickname=session.nickname,
+            user_key=session.user_id,
             trace_metadata=build_langfuse_metadata(
                 feature="persona",
                 operation="conversation",
@@ -433,6 +436,17 @@ class OnboardingService:
                 topicId=topic.id,
             ),
         )
+        if utterance.validation:
+            await record_guardrail(
+                self.repo.db,
+                feature="persona",
+                operation="conversation",
+                session_id=session.id,
+                user_id=session.user_id,
+                mode=effective_mode(session.user_id),
+                result=utterance.validation,
+                initial_text=utterance.initial_text,
+            )
         await self.repo.add_question(session, topic.id, utterance.text, utterance.source)
 
         return TurnResponse(
@@ -442,6 +456,7 @@ class OnboardingService:
             choices=list(topic.choices) if topic.choices else None,
             progress=f"{session.turn_index + 1}/{session.total_turns}",
             turn_index=session.turn_index,
+            validationResult=utterance.validation,
             **self._controls(session),
         )
 
@@ -585,6 +600,9 @@ class OnboardingService:
 
         answered = await self._dimensions_from_answers(session)
         source = "llm"
+        self.extraction.guardrail_db = self.repo.db
+        self.extraction.guardrail_user_key = session.user_id
+        self.extraction.guardrail_session_id = session.id
         try:
             raw = await self.extraction.extract(
                 self._history(session),

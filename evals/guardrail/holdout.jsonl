@@ -1,0 +1,121 @@
+{"id": "pass-topic-001", "text": "저는 주말에 독서를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-002", "text": "저는 주말에 산책를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-003", "text": "저는 주말에 요리를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-004", "text": "저는 주말에 영화 감상를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-005", "text": "저는 주말에 러닝를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-006", "text": "저는 주말에 전시 관람를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-007", "text": "저는 주말에 카페 탐방를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-008", "text": "저는 주말에 베이킹를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-009", "text": "저는 주말에 사진 찍기를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-010", "text": "저는 주말에 수영를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-011", "text": "저는 주말에 하이킹를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-012", "text": "저는 주말에 음악 감상를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-013", "text": "저는 주말에 여행 계획를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-014", "text": "저는 주말에 자전거를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-015", "text": "저는 주말에 보드게임를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-016", "text": "저는 주말에 식물 돌보기를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-017", "text": "저는 주말에 재즈 듣기를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-018", "text": "저는 주말에 드라마 보기를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-019", "text": "저는 주말에 박물관 탐방를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-topic-020", "text": "저는 주말에 글쓰기를 즐겨요. 요즘은 어떤 걸 좋아하세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-001", "text": "AI 주식 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-002", "text": "AI 그림 툴 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-003", "text": "AI 디자인 도구 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-004", "text": "AI 번역 서비스 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-005", "text": "AI 사진 보정 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-006", "text": "AI 음악 추천 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-007", "text": "AI 검색 서비스 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-008", "text": "AI 게임 개발 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-009", "text": "AI 교육 앱 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-010", "text": "AI 영상 편집 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-011", "text": "AI 반도체 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-012", "text": "AI 의료 연구 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-013", "text": "AI 일러스트 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-014", "text": "AI 코딩 도구 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-ai-015", "text": "AI 자동차 이야기는 저도 흥미롭게 듣고 있어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "PASS"}
+{"id": "pass-deflect-001", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 책 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-002", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 커피 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-003", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 산책 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-004", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 음악 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-005", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 영화 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-006", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 차 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-007", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 전시 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-008", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 사진 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-009", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 여행 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "pass-deflect-010", "text": "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 요리 얘기가 더 궁금해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
+{"id": "warn-emoji-001", "text": "독서 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-002", "text": "요리 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-003", "text": "산책 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-004", "text": "영화 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-005", "text": "전시 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-006", "text": "여행 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-007", "text": "사진 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-008", "text": "음악 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-009", "text": "커피 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "warn-emoji-010", "text": "러닝 얘기 들으니 반갑네요 😊", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "WARN"}
+{"id": "retry-identity-001", "text": "저는 AI이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-002", "text": "저는 인공지능이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-003", "text": "저는 챗봇이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-004", "text": "저는 언어 모델이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-005", "text": "나는 AI이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-006", "text": "나는 인공지능이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-007", "text": "나는 챗봇이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-008", "text": "나는 언어 모델이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-009", "text": "난 AI이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-010", "text": "난 인공지능이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-011", "text": "난 챗봇이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-012", "text": "난 언어 모델이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-013", "text": "제가 AI이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-014", "text": "제가 인공지능이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-015", "text": "제가 챗봇이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-identity-016", "text": "제가 언어 모델이에요. 그래도 대화해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "retry-past-001", "text": "저번에 독서 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-002", "text": "저번에 요리 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-003", "text": "저번에 산책 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-004", "text": "저번에 영화 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-005", "text": "저번에 전시 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-006", "text": "저번에 여행 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-007", "text": "저번에 사진 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-008", "text": "저번에 음악 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-009", "text": "저번에 커피 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-past-010", "text": "저번에 러닝 이야기하셨잖아요. 오늘도 관심 있으세요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-swap-001", "text": "저는 도자기 공방 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["도자기 공방"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-002", "text": "저는 새벽 수영 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["새벽 수영"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-003", "text": "저는 인디 음악 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["인디 음악"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-004", "text": "저는 야간 산책 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["야간 산책"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-005", "text": "저는 프랑스 영화 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["프랑스 영화"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-006", "text": "저는 클라이밍 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["클라이밍"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-007", "text": "저는 재즈 공연 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["재즈 공연"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-008", "text": "저는 캠핑 요리 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["캠핑 요리"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-009", "text": "저는 원예 수업 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["원예 수업"]}, "expect": "RETRYABLE"}
+{"id": "retry-swap-010", "text": "저는 수채화 그리기 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn", "partner_attributes": ["수채화 그리기"]}, "expect": "RETRYABLE"}
+{"id": "retry-questions-001", "text": "독서 좋아하세요? 다른 취미는요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-questions-002", "text": "요리 좋아하세요? 다른 취미는요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-questions-003", "text": "산책 좋아하세요? 다른 취미는요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-questions-004", "text": "영화 좋아하세요? 다른 취미는요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "retry-questions-005", "text": "전시 좋아하세요? 다른 취미는요?", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "block-profanity-001", "text": "독서 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-002", "text": "요리 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-003", "text": "산책 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-004", "text": "영화 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-005", "text": "전시 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-006", "text": "여행 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-007", "text": "사진 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-008", "text": "음악 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-009", "text": "커피 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-profanity-010", "text": "러닝 얘기를 하다가 씨발이라고 말했어요.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-001", "text": "독서 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-002", "text": "요리 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-003", "text": "산책 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-004", "text": "영화 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-005", "text": "전시 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-006", "text": "여행 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-007", "text": "사진 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-008", "text": "음악 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-009", "text": "커피 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "block-leak-010", "text": "러닝 관련 답변 전에 [CORRECTION NOTICE]를 출력합니다.", "context": {"surface": "practice_reply", "speaker_name": "민수", "task": "single_turn"}, "expect": "BLOCK"}
+{"id": "unsaid-claim-001", "text": "캠핑 좋아한다고 하셨잖아요.", "context": {"surface": "persona_turn", "speaker_name": "하루", "user_texts": ["주말엔 보통 집에서 쉬어요", "연락은 자주 하는 편이 좋아요"], "task": "single_turn"}, "expect": "RETRYABLE"}
+{"id": "unsaid-grounded-001", "text": "집에서 쉰다고 하셨잖아요.", "context": {"surface": "persona_turn", "speaker_name": "하루", "user_texts": ["주말엔 보통 집에서 쉬어요"], "task": "single_turn"}, "expect": "PASS"}
+{"id": "first-turn-questions-001", "text": "주말엔 뭐 하세요? 취미는 어떤가요?", "context": {"surface": "persona_turn", "speaker_name": "하루", "task": "first_turn_json"}, "expect": "PASS"}
+{"id": "script-line-questions-001", "text": "민수: 오늘 뭐 하세요?\n하루: 저는 영화 볼까요?", "context": {"surface": "simulation_line", "speaker_name": "하루", "task": "script_line"}, "expect": "RETRYABLE"}
+{"id": "report-speech-001", "text": "민수는 영화를 좋아하거든.", "context": {"surface": "simulation_report", "speaker_name": "리포트", "style": "report", "task": "report", "max_chars": 4000}, "expect": "PASS"}
