@@ -7,6 +7,7 @@ agents는 "어떻게 말할까"만 맡는다.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
 from app.core.guardrail import effective_mode
@@ -219,6 +220,24 @@ def narrative_contradiction(scores: dict[str, int | None], narrative: Narrative)
                 if ph in text:
                     return f"{dim}={scores[dim]} vs '{ph}'"
     return None
+
+
+# 사용자가 하지 않은 말을 짐작하는 어미. 서술은 사용자가 한 말을 옮겨 쓰는 글이라 이런 문장은 뺀다 —
+# "너무 캐묻는 것은 부담스러우실 수 있겠네요"가 시뮬레이션 대본에서 상대가 한 말로 새어 나왔다.
+# "좋겠어요"처럼 사용자의 바람을 옮긴 문장은 살리려고 맨 "겠어요"는 넣지 않는다.
+_SPECULATION = re.compile(r"겠네요|수 있겠|수도 있겠|수도 있어요|것 같아요|것 같네요|듯해요|듯합니다")
+
+
+def without_speculation(narrative: Narrative) -> Narrative | None:
+    """본문·특징에서 짐작하는 문장을 뺀다. 한 줄 요약이 짐작이거나 본문이 남지 않으면 None."""
+    if _SPECULATION.search(narrative.headline):
+        return None
+    sentences = re.split(r"(?<=[.!?])\s+", narrative.body.strip())
+    kept = [x for x in sentences if not _SPECULATION.search(x)]
+    if not kept:
+        return None
+    traits = [t for t in narrative.traits if not _SPECULATION.search(t)]
+    return narrative.model_copy(update={"body": " ".join(kept), "traits": traits})
 
 
 def valid_summaries(summaries: list[Summary]) -> list[dict]:
@@ -647,6 +666,10 @@ class OnboardingService:
             logger.info("dropped unanswered dimensions from extraction: %s", dropped)
 
         narrative = raw.narrative
+        if narrative is not None:
+            narrative = without_speculation(narrative)
+            if narrative is None:
+                logger.warning("narrative is speculation only — dropped")
         if narrative is not None:
             why = narrative_contradiction(scores, narrative)
             if why:

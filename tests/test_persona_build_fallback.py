@@ -17,7 +17,7 @@ from app.features.persona import api
 from app.features.persona.agents import BuildFailed, ExtractionAgent, TaggingAgent
 from app.features.persona.models import OnboardingSession, OnboardingTurn
 from app.features.persona.repository import PersonaRepository
-from app.features.persona.schemas import PersonaResponse, RawExtraction, Summary, Tags
+from app.features.persona.schemas import Narrative, PersonaResponse, RawExtraction, Summary, Tags
 from app.features.persona.service import OnboardingService, valid_summaries
 
 
@@ -298,6 +298,63 @@ def test_answer_confirmed_only_by_retagging_is_not_low_confidence():
 
     assert draft.scores["contact_rhythm"] == 20
     assert draft.confidence["contact_rhythm"] != "LOW"
+
+
+# ── 서술의 추측성 문장 ─────────────────────────────────
+
+
+def _with_narrative(body, traits=(), headline="각자의 시간을 존중하는 편"):
+    return RawExtraction(
+        **GOOD.model_dump(exclude_unset=True),
+        narrative=Narrative(headline=headline, body=body, traits=list(traits)),
+    )
+
+
+def test_speculative_sentence_is_removed_from_narrative_body():
+    """사용자가 하지 않은 말을 짐작한 문장("~부담스러우실 수 있겠네요")은 빼고, 한 말을 옮긴 문장은 남긴다.
+    짐작 문장이 시뮬레이션 대본에서 '상대가 한 말'로 새어 나왔다 (#67)."""
+    raw = _with_narrative(
+        "각자의 시간을 챙기는 걸 좋아하는 편이에요. 너무 캐묻는 것은 부담스러우실 수 있겠네요. 요즘은 러닝을 즐겨요."
+    )
+
+    (draft,), _ = _build(raw)
+
+    assert draft.narrative.body == "각자의 시간을 챙기는 걸 좋아하는 편이에요. 요즘은 러닝을 즐겨요."
+
+
+def test_sentence_carrying_the_users_wish_is_kept():
+    """'~면 좋겠어요'는 사용자의 바람을 옮긴 문장이지 짐작이 아니다."""
+    raw = _with_narrative("천천히 알아가면 좋겠어요. 요즘은 러닝을 즐겨요.")
+
+    (draft,), _ = _build(raw)
+
+    assert draft.narrative.body == "천천히 알아가면 좋겠어요. 요즘은 러닝을 즐겨요."
+
+
+def test_speculative_trait_is_removed():
+    raw = _with_narrative(
+        "각자의 시간을 챙기는 편이에요.",
+        traits=["각자 시간을 중요하게 생각함", "연락이 뜸하면 서운해할 것 같아요"],
+    )
+
+    (draft,), _ = _build(raw)
+
+    assert draft.narrative.traits == ["각자 시간을 중요하게 생각함"]
+
+
+@pytest.mark.parametrize(
+    ("headline", "body"),
+    [
+        ("진지한 만남을 원할 것 같아요", "각자의 시간을 챙기는 편이에요."),  # 한 줄 요약이 짐작
+        ("각자의 시간을 존중하는 편", "연락이 뜸하면 서운하실 수도 있겠어요."),  # 본문이 전부 짐작
+    ],
+    ids=["headline", "whole-body"],
+)
+def test_narrative_is_dropped_when_nothing_grounded_is_left(headline, body):
+    """한 줄 요약이 짐작이거나 본문이 전부 짐작이면 서술을 버린다 — 점수와 모순될 때처럼."""
+    (draft,), _ = _build(_with_narrative(body, headline=headline))
+
+    assert draft.narrative is None
 
 
 def test_valid_summaries_keeps_first_occurrence_per_known_area():
