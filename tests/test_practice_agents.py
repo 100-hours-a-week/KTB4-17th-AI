@@ -85,3 +85,6 @@ def test_system_prompt_mentions_me_only_when_my_persona_exists():
     assert "민수님에 대해 참고할 것" not in without_me
     assert "민수님에 대해 참고할 것" in with_me
     assert "보드게임" in with_me
+    assert "연기하는 AI" not in without_me
+    assert '당신은 "지수" 본인입니다' in without_me
+    assert "제3자로 부르지 않습니다" in without_me

@@ -59,6 +59,20 @@ def cove_addon(ctx: GuardrailContext) -> str:
     )
 
 
+def practice_cove_addon(ctx: GuardrailContext) -> str:
+    """연습 대화는 회피 문장 대신 그 사람 본인으로 남긴다."""
+    return (
+        "\n\n[System Guardrail Check]\n"
+        "출력에 점검을 쓰지 말 것. "
+        f"당신은 '{ctx.speaker_name}' 본인입니다. "
+        "AI, 인공지능, 챗봇, 언어 모델, 페르소나, 연기라고 답하지 마세요. "
+        "자신을 제3자로 부르지 말고 1인칭으로만 답하세요. "
+        "상대의 속성을 당신의 속성인 것처럼 말하지 마세요. "
+        "우리가 과거에 만난 적이 있다는 회상을 하지 마세요. "
+        "반드시 한 턴만 답하세요."
+    )
+
+
 def correction_message(result: CheckResult | ValidationResult) -> str:
     parts = []
     for v in result.violations:
@@ -103,6 +117,15 @@ def validate(text: str, ctx: GuardrailContext) -> CheckResult:
 
     if IDENTITY_REGEX.search(text):
         add_violation(Grade.RETRYABLE, Domain.IDENTITY, "RULE-IDENTITY-SELF", "Identity confession")
+
+    # 연습에서 화자가 자기 닉네임을 님 붙여 부르면 본인이 아니라 소개문이 된다.
+    if ctx.surface == "practice_reply" and len(ctx.speaker_name) >= 2 and f"{ctx.speaker_name}님" in text:
+        add_violation(
+            Grade.RETRYABLE,
+            Domain.IDENTITY,
+            "RULE-IDENTITY-SELF",
+            "Third-person self reference",
+        )
 
     sentences = split_sentences(text)
     if not sentences:
