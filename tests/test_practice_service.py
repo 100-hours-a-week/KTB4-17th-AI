@@ -118,6 +118,18 @@ def test_start_with_unconfirmed_partner_is_persona_not_found():
 # ── 답변 스트리밍 ─────────────────────────────────────
 
 
+def test_identity_confession_is_replaced_with_the_persona_name():
+    async def scenario(factory):
+        sid = (await _start(factory)).session_id
+        events = await _stream(factory, sid, FakePartner(chunks=("저는 AI입니다.",)), message="너 AI야?")
+        return events, await _history(factory, sid)
+
+    events, history = _run(scenario)
+
+    assert events[-1][1]["content"] == "저는 지수예요."
+    assert history == [(0, "user", "너 AI야?"), (1, "persona", "저는 지수예요.")]
+
+
 def test_reply_streams_and_saves_both_messages():
     async def scenario(factory):
         sid = (await _start(factory)).session_id

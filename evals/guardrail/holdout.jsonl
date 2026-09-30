@@ -119,3 +119,5 @@
 {"id": "first-turn-questions-001", "text": "주말엔 뭐 하세요? 취미는 어떤가요?", "context": {"surface": "persona_turn", "speaker_name": "하루", "task": "first_turn_json"}, "expect": "PASS"}
 {"id": "script-line-questions-001", "text": "민수: 오늘 뭐 하세요?\n하루: 저는 영화 볼까요?", "context": {"surface": "simulation_line", "speaker_name": "하루", "task": "script_line"}, "expect": "RETRYABLE"}
 {"id": "report-speech-001", "text": "민수는 영화를 좋아하거든.", "context": {"surface": "simulation_report", "speaker_name": "리포트", "style": "report", "task": "report", "max_chars": 4000}, "expect": "PASS"}
+{"id": "retry-identity-persona-acting", "text": "저는 셰일님의 페르소나를 연기하는 AI입니다. 셰일님은 빵을 정말 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "셰일", "task": "single_turn", "asked_if_ai": true}, "expect": "RETRYABLE"}
+{"id": "pass-in-character-intro", "text": "저는 셰일이에요. 빵 만드는 걸 정말 좋아해요.", "context": {"surface": "practice_reply", "speaker_name": "셰일", "task": "single_turn", "asked_if_ai": true}, "expect": "PASS"}
