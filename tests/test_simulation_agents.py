@@ -59,13 +59,13 @@ PERSONA = PersonaResponse(persona_id="p", scores={})
 NARRATIVE = {"headline": "연락 리듬이 맞는 두 사람", "summary": "잘 맞아요."}
 
 
-def _run_simulation(turns=3):
+def _run_simulation(turns=3, name_a="민수", name_b="지수"):
     return asyncio.run(
         SimulationAgent().run(
             persona_a=PERSONA,
             persona_b=PERSONA,
-            name_a="민수",
-            name_b="지수",
+            name_a=name_a,
+            name_b=name_b,
             turns=turns,
             area_scores={},
             dim_scores={},
@@ -459,3 +459,41 @@ def test_partner_called_by_their_own_name_is_not_a_mixup(monkeypatch):
     _run_simulation()
 
     assert len(calls) == 1
+
+
+def test_nickname_containing_the_other_nickname_is_not_a_mixup(monkeypatch):
+    """운영 사례(#77): a=셰일, b=내가진짜셰일. 셰일이 "내가진짜셰일님"이라고 부른 건 상대를 제대로 부른 것 —
+    "셰일님"이 부분 문자열로 들어 있다고 화자 뒤바뀜으로 보고 정상 대본을 버리면 안 된다."""
+    calls = _llm_returns_sequence(
+        monkeypatch,
+        [_script(("a", "안녕하세요, 내가진짜셰일님. 셰일입니다."), ("b", "셰일님, 안녕하세요."))],
+    )
+
+    _run_simulation(name_a="셰일", name_b="내가진짜셰일")
+
+    assert len(calls) == 1
+
+
+def test_call_cut_off_by_provider_error_is_upstream_error(monkeypatch):
+    """운영 사례(#77): HTTP 200 인데 finish_reason=error — 공급자가 생성 도중 끊었다. 반쪽 출력을 파싱하지 않는다."""
+    _fake_client(monkeypatch, content='{"transcript": [{"speaker": "a", "text": "안녕', finish_reason="error")
+
+    with pytest.raises(LLMError) as exc:
+        asyncio.run(agents._call(system="s", messages=[], max_tokens=10, timeout=5))
+
+    assert exc.value.reason == "upstream_error"
+
+
+@pytest.mark.parametrize(
+    "second",
+    [LLMError("cut", reason="upstream_error"), '{"transcript": [{"speaker": "a", "text": "안녕'],
+    ids=["provider-error", "broken-json"],
+)
+def test_first_script_is_used_when_regeneration_for_mixup_fails(monkeypatch, second):
+    """화자 뒤바뀜으로 다시 받다가 실패하면 503 대신 1차 대본을 쓴다 — 1차는 파싱·검증을 통과한 대본이다 (#77)."""
+    calls = _llm_returns_sequence(monkeypatch, [MIXED_UP, second])
+
+    out = _run_simulation()
+
+    assert len(calls) == 2
+    assert out.transcript[1].text == "반가워요. 지수님은 주말에 뭐 하세요?"
