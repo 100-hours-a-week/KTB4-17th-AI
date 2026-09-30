@@ -19,6 +19,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from app.core.guardrail import ValidationResult
 from app.features.persona.schemas import SCORED, PersonaBrief, PersonaRef, PersonaResponse
 
 # ══ 차원별 궁합 규칙 ═══════════════════════════════════════
@@ -201,6 +202,7 @@ class ReportNarrative(BaseModel):
     시뮬레이션에서는 대본과 같은 호출(1회)에서 나온다 — ScriptOutput.report."""
 
     model_config = {"extra": "ignore"}
+    validation: ValidationResult | None = Field(default=None, exclude=True)
 
     headline: str = Field(max_length=60)  # "연락 리듬이 딱 맞는 두 사람"
     summary: str = Field(max_length=800)  # 3~5문장
@@ -228,6 +230,7 @@ class ScriptOutput(BaseModel):
     대본만 따로 뽑고 리포트를 또 부르면 호출이 2회가 된다. 요구사항은 1회."""
 
     model_config = {"extra": "ignore"}
+    validation: ValidationResult | None = Field(default=None, exclude=True)
 
     transcript: list[ScriptLine] = Field(min_length=2)
     report: ReportNarrative
@@ -281,6 +284,7 @@ class ReportConfidence(BaseModel):
 
 
 class MatchingReport(BaseModel):
+    validationResult: ValidationResult | None = None
     simulation_id: str | None = None
     persona_a_id: str
     persona_b_id: str
@@ -332,6 +336,7 @@ class SimulationRequest(BaseModel):
 
 class SimulationResponse(BaseModel):
     simulation_id: str
+    validationResult: ValidationResult | None = None
     me: PersonaBrief
     partner: PersonaBrief
     turns: int
@@ -363,6 +368,7 @@ class ReportPreviewResponse(BaseModel):
     """POST /report/preview 응답. report 는 기존과 같은 MatchingReport, preview_id 로 나중에 다시 볼 수 있다."""
 
     preview_id: str
+    validationResult: ValidationResult | None = None
     report: MatchingReport
 
 

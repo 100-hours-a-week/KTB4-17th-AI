@@ -17,6 +17,8 @@ from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.guardrail import GuardrailContext, apply_text, cove_addon, effective_mode
+from app.core.guardrail_trace import record_guardrail
 from app.core.observability import build_langfuse_metadata
 from app.features.persona.lookup import LoadedPersona, load_persona
 from app.features.persona.schemas import PersonaRef
@@ -168,11 +170,32 @@ class PracticeService:
         me = None
         if session.my_persona_id:
             me = await load_persona(self.db, PersonaRef(persona_id=session.my_persona_id))
-        return self.agent.system_prompt(
+        mode = effective_mode(session.user_id)
+        system = self.agent.system_prompt(
             partner_name=session.partner_nickname,
             partner=partner.response,
             my_name=session.my_nickname,
             me=me.response if me else None,
+            enforce=mode == "enforce",
+        )
+        if mode == "enforce":
+            system += "\n" + cove_addon(self._guardrail_context(session, partner.response, me.response if me else None))
+        return system
+
+    @staticmethod
+    def _guardrail_context(session: PracticeSession, partner, me) -> GuardrailContext:
+        speaker = [*partner.interests, *partner.routine, *partner.date_prefer]
+        own = [*me.interests, *me.routine, *me.date_prefer] if me else []
+        partner_only = [item for item in own if item not in speaker]
+        user_texts = [m.content for m in session.messages if m.role == "user"]
+        return GuardrailContext(
+            surface="practice_reply",
+            speaker_name=session.partner_nickname,
+            partner_name=session.my_nickname,
+            speaker_attributes=speaker,
+            partner_attributes=partner_only,
+            user_texts=user_texts,
+            task="single_turn",
         )
 
     # 세션의 최근 메시지들을 LLM 에 넘길 messages 형식으로 변환
@@ -221,6 +244,7 @@ class PracticeService:
     # LLM 스트리밍 응답을 만들어 delta 로 흘리고, 끝나면 저장·커밋 후 done 을 낸다.
     # 스트림이 끊기면 롤백 후 error, 첫 조각도 못 받으면 폴백 문장으로 대화를 이어간다
     async def _respond(self, session: PracticeSession, *, opening: bool) -> AsyncIterator[Event]:
+        mode = effective_mode(session.user_id)
         system = await self._system(session)
         history = self._history(session)
         index = session.message_count
@@ -228,6 +252,7 @@ class PracticeService:
 
         parts: list[str] = []
         source = "llm"
+        validation = None
         try:
             async for chunk in self.agent.reply(
                 system=system,
@@ -244,7 +269,8 @@ class PracticeService:
                 ),
             ):
                 parts.append(chunk)
-                yield "delta", DeltaEvent(text=chunk)
+                if mode != "enforce":
+                    yield "delta", DeltaEvent(text=chunk)
         except LLMError as e:
             if parts:
                 # 중간에 끊겼다. 반 토막 문장을 저장하면 다음 턴 맥락이 망가진다 — 버리고 알린다
@@ -259,8 +285,68 @@ class PracticeService:
             yield "delta", DeltaEvent(text=FALLBACK_REPLY)
 
         content = "".join(parts).strip()
+        if source == "llm" and mode != "off":
+            partner = await self._load("partner", PersonaRef(persona_id=session.partner_persona_id))
+            me = (
+                await load_persona(self.db, PersonaRef(persona_id=session.my_persona_id))
+                if session.my_persona_id
+                else None
+            )
+            ctx = self._guardrail_context(session, partner.response, me.response if me else None)
+
+            async def regenerate(notice: str) -> str:
+                retry_history = [
+                    *history,
+                    {"role": "assistant", "content": content},
+                    {"role": "user", "content": notice},
+                ]
+                chunks = []
+                async for chunk in self.agent.reply(
+                    system=system,
+                    history=retry_history,
+                    opening=False,
+                    trace_metadata=build_langfuse_metadata(
+                        feature="practice",
+                        operation="reply",
+                        user_id=session.user_id,
+                        session_id=session.id,
+                        tags=("guardrail-retry",),
+                        messageIndex=index,
+                    ),
+                ):
+                    chunks.append(chunk)
+                return "".join(chunks).strip()
+
+            applied = await apply_text(
+                content, ctx, user_key=session.user_id, regenerate=regenerate, fallback=FALLBACK_REPLY
+            )
+            validation = applied.result
+            content = applied.text
+            if validation and validation.status == "FALLBACK":
+                source = "fallback"
+            await record_guardrail(
+                self.db,
+                feature="practice",
+                operation="reply",
+                session_id=session.id,
+                user_id=session.user_id,
+                mode=mode,
+                result=validation,
+                initial_text="".join(parts).strip(),
+            )
+            if mode == "enforce":
+                yield "delta", DeltaEvent(text=content)
         await self._save_message(session, "persona", content, source)
-        yield "done", DoneEvent(session_id=session.id, message_index=index, content=content, source=source)
+        yield (
+            "done",
+            DoneEvent(
+                session_id=session.id,
+                message_index=index,
+                content=content,
+                source=source,
+                validationResult=validation,
+            ),
+        )
 
 
 # 스트림 이벤트를 끝까지 소비해 최종 done 이벤트를 돌려준다 — 일반(JSON) 라우트용.

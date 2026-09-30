@@ -22,8 +22,17 @@ from functools import lru_cache
 from langfuse import get_client, observe
 from langfuse.openai import AsyncOpenAI
 from pydantic import ValidationError  # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.guardrail import (
+    GuardrailContext,
+    ValidationResult,
+    apply_text,
+    cove_addon,
+    effective_mode,
+)
+from app.core.guardrail_trace import record_guardrail
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 
 from .schemas import (
@@ -176,6 +185,8 @@ class Utterance:
     text: str  # 유저에게 하는 답변 (segments 텍스트를 공백으로 이은 것)
     source: str  # "llm" | "seed"
     segments: tuple[Segment, ...] = ()
+    validation: ValidationResult | None = None
+    initial_text: str = ""
 
 
 FIRST_TURN_TYPES = ("intro", "reason", "question", "self_disclosure", "answer_prompt")
@@ -336,23 +347,43 @@ class ConversationAgent:  # 대화 생성 담당
         total_turns: int,
         nickname: str,
         trace_metadata: LangfuseMetadata | None = None,
+        user_key: str | None = None,
     ) -> Utterance:
         with propagate_langfuse_metadata(trace_metadata):
             instruction = self._instruction(topic, turn_index, total_turns, nickname)
+            mode = effective_mode(user_key)
+            user_texts = [str(m.get("content", "")) for m in history if m.get("role") == "user"]
+            asked_if_ai = bool(
+                user_texts and re.search(r"(너|네가|니가|당신).{0,8}(AI|인공지능|챗봇)|AI야|인공지능이", user_texts[-1])
+            )
+            ctx = GuardrailContext(
+                surface="persona_turn",
+                speaker_name="하루",
+                user_texts=user_texts,
+                asked_if_ai=asked_if_ai,
+                task="first_turn_json" if turn_index == 0 else "single_turn",
+            )
+            system = SYSTEM_PROMPT
+            if mode == "enforce":
+                system = (
+                    system.replace("- 사람인 척하기 — 물어보면 AI라고 답합니다. 역할은 소개팅 상대, 정체는 AI\n", "")
+                    + "\n"
+                    + cove_addon(ctx)
+                )
             if turn_index == 0:
-                return await self._generate_first(instruction, history, topic, nickname, trace_metadata)
+                return await self._generate_first(
+                    instruction, history, topic, nickname, trace_metadata, system, ctx, user_key
+                )
+            messages = [*history, {"role": "user", "content": instruction}]
             try:
                 text = await _call(
-                    system=SYSTEM_PROMPT,
-                    messages=[*history, {"role": "user", "content": instruction}],
+                    system=system,
+                    messages=messages,
                     max_tokens=220,  # 리액션 + 내 얘기 + 넘어가기, 3문장
                     timeout=get_settings().onboarding_phrase_timeout_s,
                     name="persona-conversation",
                     metadata=trace_metadata,
                 )
-                if _PAST_MEETING.search(text):
-                    raise LLMError(f"references a past meeting: {text[:80]!r}")
-                return Utterance(text=text, source="llm", segments=(Segment(type="message", text=text),))
             except LLMError as e:
                 # 폴백 — 시드 질문 사용. API 호출 실패 시 사용
                 logger.warning("turn generation failed (%s), using seed", e)
@@ -365,6 +396,45 @@ class ConversationAgent:  # 대화 생성 담당
                     source="seed",
                     segments=(Segment(type="question", text=topic.seed),),
                 )
+            # off/shadow는 예전과 같이 없는 과거 회상을 사용자에게 보여 주지 않는다.
+            # shadow는 시드로 바꾼 뒤에도 판정만 남겨, enforce로 올리기 전에 빈도를 본다.
+            if mode != "enforce" and _PAST_MEETING.search(text):
+                validation = None
+                if mode == "shadow":
+                    judged = await apply_text(text, ctx, user_key=user_key, fallback=topic.seed)
+                    validation = judged.result
+                return Utterance(
+                    text=topic.seed,
+                    source="seed",
+                    segments=(Segment(type="question", text=topic.seed),),
+                    validation=validation,
+                    initial_text=text,
+                )
+
+            async def regenerate(notice: str) -> str:
+                return await _call(
+                    system=system,
+                    messages=[*messages, {"role": "assistant", "content": text}, {"role": "user", "content": notice}],
+                    max_tokens=220,
+                    timeout=get_settings().onboarding_phrase_timeout_s,
+                    name="persona-conversation",
+                    metadata=trace_metadata,
+                )
+
+            applied = await apply_text(text, ctx, user_key=user_key, regenerate=regenerate, fallback=topic.seed)
+            final = applied.text
+            return Utterance(
+                text=final,
+                source="seed" if applied.result and applied.result.status == "FALLBACK" else "llm",
+                segments=(
+                    Segment(
+                        type="question" if applied.result and applied.result.status == "FALLBACK" else "message",
+                        text=final,
+                    ),
+                ),
+                validation=applied.result,
+                initial_text=text,
+            )
 
     async def _generate_first(
         self,
@@ -373,11 +443,14 @@ class ConversationAgent:  # 대화 생성 담당
         topic: Topic,
         nickname: str,
         trace_metadata: LangfuseMetadata | None,
+        system: str,
+        ctx: GuardrailContext,
+        user_key: str | None,
     ) -> Utterance:
         """첫 턴은 단계별 JSON으로 받아 segment 경계를 LLM 출력 구조가 보장하게 한다."""
         try:
             raw = await _call_json(
-                system=SYSTEM_PROMPT,
+                system=system,
                 messages=[*history, {"role": "user", "content": instruction}],
                 max_tokens=450,
                 timeout=get_settings().onboarding_phrase_timeout_s,
@@ -385,7 +458,6 @@ class ConversationAgent:  # 대화 생성 담당
                 metadata=trace_metadata,
             )
             segments = _parse_first_turn(raw if isinstance(raw, dict) else {}, nickname)
-            return Utterance(text=_join(segments), source="llm", segments=tuple(segments))
         except (LLMError, ValueError) as e:  # pydantic ValidationError 도 ValueError
             logger.warning("first turn generation failed (%s), using template", e)
             get_client().update_current_span(
@@ -394,6 +466,47 @@ class ConversationAgent:  # 대화 생성 담당
             )
             segments = _first_turn_fallback(topic, nickname)
             return Utterance(text=_join(segments), source="seed", segments=tuple(segments))
+
+        initial_text = _join(segments)
+        regenerated_segments: list[Segment] | None = None
+
+        async def regenerate(notice: str) -> str:
+            nonlocal regenerated_segments
+            regenerated = await _call_json(
+                system=system,
+                messages=[
+                    *history,
+                    {"role": "user", "content": instruction},
+                    {"role": "assistant", "content": json.dumps(raw, ensure_ascii=False)},
+                    {"role": "user", "content": notice},
+                ],
+                max_tokens=450,
+                timeout=get_settings().onboarding_phrase_timeout_s,
+                name="persona-conversation",
+                metadata=trace_metadata,
+            )
+            regenerated_segments = _parse_first_turn(regenerated, nickname)
+            return _join(regenerated_segments)
+
+        fallback_segments = _first_turn_fallback(topic, nickname)
+        applied = await apply_text(
+            initial_text, ctx, user_key=user_key, regenerate=regenerate, fallback=_join(fallback_segments)
+        )
+        status = applied.result.status if applied.result else None
+        final_segments = (
+            fallback_segments
+            if status == "FALLBACK"
+            else regenerated_segments
+            if status == "REGENERATED" and regenerated_segments
+            else segments
+        )
+        return Utterance(
+            text=applied.text,
+            source="seed" if status == "FALLBACK" else "llm",
+            segments=tuple(final_segments),
+            validation=applied.result,
+            initial_text=initial_text,
+        )
 
 
 # ══ 태깅 ════════════════════════════════════════════════
@@ -532,10 +645,16 @@ RUBRIC = f"""\
 ## 서술 (narrative) — 사용자가 직접 읽는 글
 점수와 함께, 이 사람이 결과 화면에서 읽을 서술을 씁니다. 차트가 아니라 이 글이 결과입니다.
 - headline: 한 줄. "○○하지만 ○○한 관계를 원하는 타입" 꼴. 40자 이내
-- body: 3~5문장. 답변에서 실제로 한 말을 근거로, "~하는 편이에요" 톤의 존댓말.
+- body: 3~5문장. **문장마다 사용자가 대화에서 실제로 한 말 하나를 옮겨 씁니다.** "~하는 편이에요" 톤의 존댓말.
   사용자를 "당신"이 아니라 닉네임 없이 주어 생략으로 부릅니다. 점수를 숫자로 언급하지 않습니다.
-- traits: 한 줄짜리 특징 3~5개. 각 30자 이내. 예: "중요한 일은 혼자 정리한 뒤에 꺼내는 편"
+  답이 적으면 문장 수를 줄이세요. 억지로 3문장을 채우지 않습니다.
+- traits: 한 줄짜리 특징 3~5개. 각 30자 이내. 예: "중요한 일은 혼자 정리한 뒤에 꺼내는 편". 역시 사용자가 한 말에서만.
 - 근거가 없는 차원은 서술하지 않습니다. 점수와 모순되게 쓰지 않습니다.
+- **짐작 금지**: 사용자가 말하지 않은 마음·반응을 추측하지 않습니다.
+  "~할 것 같아요", "~하실 수 있겠네요", "~일 수도 있어요", "~듯해요" 같은 어미를 쓰지 않습니다.
+  ✕ "너무 캐묻는 것은 부담스러우실 수 있겠네요" (사용자가 한 말이 아님)
+  ○ "관계는 천천히 알아가고 싶다고 했어요" (사용자가 한 말)
+- 서술은 사용자에게 말을 거는 글이 아닙니다. "~시군요", "~하셨네요" 같은 대화체 반응도 쓰지 않습니다.
 - "회피형", "불안형" 같은 유형명 금지. 평가·조언 금지 ("좋은 분", "고치면 좋겠다" ✕).
 
 ## 요약 카드 (summaries) — narrative를 area별로 쪼갠 짧은 카드
@@ -586,7 +705,13 @@ class ExtractionAgent:
         *,
         answered: set[str] | None = None,
         trace_metadata: LangfuseMetadata | None = None,
+        db: AsyncSession | None = None,
+        user_key: str | None = None,
+        session_id: str | None = None,
     ) -> RawExtraction:
+        db = db or getattr(self, "guardrail_db", None)
+        user_key = user_key or getattr(self, "guardrail_user_key", None)
+        session_id = session_id or getattr(self, "guardrail_session_id", None)
         content = self._transcript(history)
         if answered is not None:
             content += self._answered_section(answered)
@@ -604,8 +729,48 @@ class ExtractionAgent:
                 raise BuildFailed(f"LLM call failed: {e}") from e
 
             try:
-                return RawExtraction.model_validate(data)
+                extracted = RawExtraction.model_validate(data)
             except ValidationError as e:
                 # 범위 위반·타입 오류. 재시도로 해결될 수 있으므로 BuildFailed로.
                 logger.warning("extraction validation failed: %s", e)
                 raise BuildFailed(f"invalid extraction: {e}") from e
+
+            if effective_mode(user_key) == "off":
+                return extracted
+            ctx = GuardrailContext(
+                surface="persona_narrative",
+                speaker_name="하루",
+                task="narrative",
+                max_chars=800,
+                user_texts=[m["content"] for m in history if m["role"] == "user"],
+            )
+
+            async def rejected(parts: list[str]) -> bool:
+                bad = False
+                for text in parts:
+                    checked = await apply_text(text, ctx, user_key=user_key, fallback="")
+                    if db and checked.result:
+                        await record_guardrail(
+                            db,
+                            feature="persona",
+                            operation="extraction",
+                            session_id=session_id,
+                            user_id=user_key,
+                            mode=effective_mode(user_key),
+                            result=checked.result,
+                            initial_text=text,
+                        )
+                    bad |= bool(checked.result and checked.result.status == "FALLBACK")
+                return bad
+
+            if extracted.narrative:
+                if await rejected(
+                    [extracted.narrative.headline, extracted.narrative.body, *extracted.narrative.traits]
+                ):
+                    extracted.narrative = None
+            if extracted.summaries:
+                if await rejected(
+                    [text for summary in extracted.summaries for text in (summary.title, summary.content)]
+                ):
+                    extracted.summaries = []
+            return extracted

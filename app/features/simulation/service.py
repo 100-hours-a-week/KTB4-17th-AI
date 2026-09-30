@@ -190,6 +190,8 @@ class SimulationService:
                 user_id=me.record.user_id,
                 requestedTurns=req.turns,
             ),
+            db=self.db,
+            user_key=me.record.user_id,
         )
         turns = normalize_script(script.transcript, req.turns)
         if len(turns) < 2:
@@ -223,6 +225,7 @@ class SimulationService:
             narrative,
             "llm",
         )
+        report.validationResult = script.validation
         record.transcript = [t.model_dump() for t in turns]
         record.report = report.model_dump(mode="json")
         await self.db.flush()
@@ -284,6 +287,7 @@ class SimulationService:
                 useLlm=use_llm,
                 transcriptTurns=len(inp.transcript.turns),
             ),
+            db=self.db,
         )
         record = await self.repo.save_preview(
             persona_a=inp.persona_a.model_dump(mode="json"),
@@ -295,7 +299,7 @@ class SimulationService:
             report=report.model_dump(mode="json"),
             narrative_source=report.narrative_source,
         )
-        return ReportPreviewResponse(preview_id=record.id, report=report)
+        return ReportPreviewResponse(preview_id=record.id, report=report, validationResult=report.validationResult)
 
     async def get_preview(self, preview_id: str) -> ReportPreviewDetail:
         record = await self.repo.get_preview(preview_id)
@@ -352,6 +356,7 @@ class SimulationService:
     def _to_response(record: SimulationRecord, me: PersonaBrief, partner: PersonaBrief) -> SimulationResponse:
         return SimulationResponse(
             simulation_id=record.id,
+            validationResult=MatchingReport.model_validate(record.report).validationResult,
             me=me,
             partner=partner,
             turns=record.turns,

@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 from functools import lru_cache
 
@@ -25,8 +26,20 @@ from langfuse import observe
 from langfuse.openai import AsyncOpenAI
 from openai import APIStatusError
 from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.guardrail import (
+    Domain,
+    Grade,
+    GuardrailContext,
+    ValidationResult,
+    Violation,
+    correction_message,
+    effective_mode,
+    validate,
+)
+from app.core.guardrail_trace import record_guardrail
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.profile import describe
 from app.features.persona.schemas import SCORED, PersonaResponse
@@ -307,6 +320,8 @@ class SimulationAgent:
         area_scores: dict[str, int | None],
         dim_scores: dict[str, int | None],
         trace_metadata: LangfuseMetadata | None = None,
+        db: AsyncSession | None = None,
+        user_key: str | None = None,
     ) -> ScriptOutput:
         """호출 1회. 실패하면 SimulationFailed."""
         user = "\n\n".join(
@@ -325,12 +340,16 @@ class SimulationAgent:
         max_tokens = 3000 + 300 * turns
         total = get_settings().simulation_script_timeout_s
         deadline = time.monotonic() + total
+        mode = effective_mode(user_key)
+        retry_notice = ""
+        first_failure: ValidationResult | None = None
+        first_text = ""
         with propagate_langfuse_metadata(trace_metadata):
             for attempt in (1, 2):
                 try:
                     data = await _call_json(
                         system=SIMULATION_SYSTEM,
-                        messages=[{"role": "user", "content": user}],
+                        messages=[{"role": "user", "content": user + retry_notice}],
                         max_tokens=max_tokens,
                         timeout=total if attempt == 1 else deadline - time.monotonic(),
                         name="simulation-run",
@@ -356,6 +375,63 @@ class SimulationAgent:
                         "simulation-run retry: reason=speaker_mixup lines=%s remaining=%.1fs", mixed, remaining
                     )
                     continue
+                if mode != "off":
+                    checked, checked_text = _validate_output(script, persona_a, persona_b, name_a, name_b)
+                    if checked.grade in {Grade.RETRYABLE, Grade.BLOCK}:
+                        if mode == "enforce":
+                            if attempt == 1 and remaining > total / 3:
+                                first_failure, first_text = checked, checked_text
+                                retry_notice = "\n\n" + correction_message(checked)
+                                continue
+                            failed = checked.model_copy(
+                                update={
+                                    "status": "FALLBACK",
+                                    "regenerated": attempt == 2,
+                                    "initial_grade": first_failure.initial_grade
+                                    if first_failure
+                                    else checked.initial_grade,
+                                    "violations": first_failure.violations if first_failure else checked.violations,
+                                }
+                            )
+                            if db:
+                                await record_guardrail(
+                                    db,
+                                    feature="simulation",
+                                    operation="run",
+                                    session_id=None,
+                                    user_id=user_key,
+                                    mode=mode,
+                                    result=failed,
+                                    initial_text=first_text or checked_text,
+                                )
+                                try:
+                                    await db.commit()
+                                except Exception:
+                                    logger.warning("guardrail failure trace commit failed", exc_info=True)
+                            raise SimulationFailed("guardrail validation failed", reason="guardrail")
+                        checked.status = "SHADOW_FAIL"
+                    elif first_failure:
+                        checked = checked.model_copy(
+                            update={
+                                "status": "REGENERATED",
+                                "initial_grade": first_failure.initial_grade,
+                                "regenerated": True,
+                                "violations": first_failure.violations,
+                                "latency_ms": checked.latency_ms + first_failure.latency_ms,
+                            }
+                        )
+                    if db:
+                        await record_guardrail(
+                            db,
+                            feature="simulation",
+                            operation="run",
+                            session_id=None,
+                            user_id=user_key,
+                            mode=mode,
+                            result=checked,
+                            initial_text=first_text or checked_text,
+                        )
+                    script.validation = checked
                 return script
         raise AssertionError("unreachable")  # 두 번째 시도는 반드시 return 또는 raise
 
@@ -373,6 +449,106 @@ def _self_addressed_lines(script: ScriptOutput, name_a: str, name_b: str) -> lis
     """자기 닉네임에 '님'을 붙여 부르는 줄 — "지수님은요?"를 지수가 말하면 화자가 섞였다는 뚜렷한 신호."""
     own = {"a": f"{name_a}님", "b": f"{name_b}님"}
     return [i for i, line in enumerate(script.transcript) if own[line.speaker] in line.text]
+
+
+def _report_perspective_swap(text: str, pa: PersonaResponse, pb: PersonaResponse, name_a: str, name_b: str) -> bool:
+    """Detect an exclusive profile phrase attributed to the other named person."""
+    attrs_a = set([*pa.interests, *pa.routine, *pa.date_prefer])
+    attrs_b = set([*pb.interests, *pb.routine, *pb.date_prefer])
+    for owner_attrs, other_attrs, owner, other in (
+        (attrs_a, attrs_b, name_a, name_b),
+        (attrs_b, attrs_a, name_b, name_a),
+    ):
+        for attr in owner_attrs - other_attrs:
+            if len(attr) < 4:
+                continue
+            for match in re.finditer(re.escape(other), text):
+                after = text[match.end() : match.end() + 40]
+                pos = after.find(attr)
+                if pos >= 0 and owner not in after[:pos]:
+                    return True
+    return False
+
+
+def _validate_output(
+    script: ScriptOutput, pa: PersonaResponse, pb: PersonaResponse, name_a: str, name_b: str
+) -> tuple[ValidationResult, str]:
+    own = {
+        "a": (pa, pb, name_a, name_b),
+        "b": (pb, pa, name_b, name_a),
+    }
+    checks = []
+    for line in script.transcript:
+        speaker, partner, speaker_name, partner_name = own[line.speaker]
+        own_attrs = [*speaker.interests, *speaker.routine, *speaker.date_prefer]
+        other_attrs = [
+            item for item in [*partner.interests, *partner.routine, *partner.date_prefer] if item not in own_attrs
+        ]
+        checks.append(
+            validate(
+                line.text,
+                GuardrailContext(
+                    surface="simulation_line",
+                    speaker_name=speaker_name,
+                    partner_name=partner_name,
+                    speaker_attributes=own_attrs,
+                    partner_attributes=other_attrs,
+                    task="script_line",
+                    max_chars=300,
+                ),
+            )
+        )
+    report = script.report
+    report_text = " ".join(
+        [
+            report.headline,
+            report.summary,
+            *report.area_comments.values(),
+            *report.strengths,
+            *report.cautions,
+            report.date_comment,
+        ]
+    )
+    checks.append(
+        validate(
+            report_text,
+            GuardrailContext(
+                surface="simulation_report",
+                speaker_name=name_a,
+                partner_name=name_b,
+                task="report",
+                style="report",
+                max_chars=4000,
+            ),
+        )
+    )
+    violations = [v for check in checks for v in check.violations]
+    grade = max(
+        (v.severity for v in violations),
+        default=Grade.PASS,
+        key=lambda g: {Grade.PASS: 0, Grade.WARN: 1, Grade.RETRYABLE: 2, Grade.BLOCK: 3}[g],
+    )
+    # 이름 창 검사는 엔진의 validate 결과와 독립적으로 판단한다.
+    if grade in {Grade.PASS, Grade.WARN} and _report_perspective_swap(report_text, pa, pb, name_a, name_b):
+        grade = Grade.RETRYABLE
+        violations = [
+            Violation(
+                domain=Domain.PERSPECTIVE,
+                rule_id="RULE-PERSPECTIVE-SWAP",
+                description="리포트에서 상대의 프로필 속성을 다른 사람에게 귀속했습니다.",
+                severity=Grade.RETRYABLE,
+            )
+        ]
+    result = ValidationResult(
+        status="WARN" if grade == Grade.WARN else "PASS",
+        grade=grade,
+        initial_grade=grade,
+        regenerated=False,
+        violations=violations,
+        latency_ms=sum(check.latency_ms for check in checks),
+    )
+    full_text = "\n".join([*(line.text for line in script.transcript), report_text])
+    return result, full_text
 
 
 # ══ 2. 리포트만 — 대화록을 밖에서 줄 때 (/report/preview) ═══
@@ -400,6 +576,9 @@ class ReportAgent:
         area_scores: dict[str, int | None],
         dim_scores: dict[str, int | None],
         trace_metadata: LangfuseMetadata | None = None,
+        db: AsyncSession | None = None,
+        user_key: str | None = None,
+        session_id: str | None = None,
     ) -> ReportNarrative:
         """실패하면 LLMError. 호출부(report.build_report)가 템플릿으로 폴백한다."""
         user = "\n\n".join(
@@ -421,6 +600,60 @@ class ReportAgent:
                 metadata=trace_metadata,
             )
         try:
-            return ReportNarrative.model_validate(data)
+            narrative = ReportNarrative.model_validate(data)
         except ValidationError as e:
             raise LLMError(f"invalid narrative: {e}") from e
+        mode = effective_mode(user_key)
+        if mode != "off":
+            text = " ".join(
+                [
+                    narrative.headline,
+                    narrative.summary,
+                    *narrative.area_comments.values(),
+                    *narrative.strengths,
+                    *narrative.cautions,
+                    narrative.date_comment,
+                ]
+            )
+            checked = validate(
+                text,
+                GuardrailContext(
+                    surface="simulation_report",
+                    speaker_name=name_a,
+                    partner_name=name_b,
+                    task="report",
+                    style="report",
+                    max_chars=4000,
+                ),
+            )
+            bad = checked.grade in {Grade.RETRYABLE, Grade.BLOCK}
+            result = ValidationResult(
+                status="SHADOW_FAIL"
+                if bad and mode == "shadow"
+                else "FALLBACK"
+                if bad
+                else "WARN"
+                if checked.grade == Grade.WARN
+                else "PASS",
+                grade=checked.grade,
+                initial_grade=checked.grade,
+                regenerated=False,
+                violations=checked.violations,
+                latency_ms=checked.latency_ms,
+            )
+            if db:
+                await record_guardrail(
+                    db,
+                    feature="simulation",
+                    operation="report",
+                    session_id=session_id,
+                    user_id=user_key,
+                    mode=mode,
+                    result=result,
+                    initial_text=text,
+                )
+            if bad and mode == "enforce":
+                self.last_validation = result
+                raise LLMError("report guardrail validation failed", reason="guardrail")
+            narrative.validation = result
+        return narrative

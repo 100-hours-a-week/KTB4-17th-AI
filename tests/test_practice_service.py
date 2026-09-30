@@ -126,12 +126,18 @@ def test_reply_streams_and_saves_both_messages():
 
     sid, events, history = _run(scenario)
 
-    assert events == [
+    assert events[:3] == [
         ("start", {"session_id": sid, "message_index": 1}),
         ("delta", {"text": "안녕"}),
         ("delta", {"text": "하세요"}),
-        ("done", {"session_id": sid, "message_index": 1, "content": "안녕하세요", "source": "llm"}),
     ]
+    assert events[3][0] == "done"
+    done = events[3][1]
+    result = done.pop("validationResult")
+    assert done == {"session_id": sid, "message_index": 1, "content": "안녕하세요", "source": "llm"}
+    assert result["status"] == "PASS"
+    assert result["grade"] == "PASS"
+    assert result["regenerated"] is False
     assert history == [(0, "user", "주말에 뭐 해요?"), (1, "persona", "안녕하세요")]
 
 

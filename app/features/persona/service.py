@@ -7,8 +7,11 @@ agents는 "어떻게 말할까"만 맡는다.
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 
+from app.core.guardrail import effective_mode
+from app.core.guardrail_trace import record_guardrail
 from app.core.observability import build_langfuse_metadata
 
 from .agents import (
@@ -219,6 +222,24 @@ def narrative_contradiction(scores: dict[str, int | None], narrative: Narrative)
     return None
 
 
+# 사용자가 하지 않은 말을 짐작하는 어미. 서술은 사용자가 한 말을 옮겨 쓰는 글이라 이런 문장은 뺀다 —
+# "너무 캐묻는 것은 부담스러우실 수 있겠네요"가 시뮬레이션 대본에서 상대가 한 말로 새어 나왔다.
+# "좋겠어요"처럼 사용자의 바람을 옮긴 문장은 살리려고 맨 "겠어요"는 넣지 않는다.
+_SPECULATION = re.compile(r"겠네요|수 있겠|수도 있겠|수도 있어요|것 같아요|것 같네요|듯해요|듯합니다")
+
+
+def without_speculation(narrative: Narrative) -> Narrative | None:
+    """본문·특징에서 짐작하는 문장을 뺀다. 한 줄 요약이 짐작이거나 본문이 남지 않으면 None."""
+    if _SPECULATION.search(narrative.headline):
+        return None
+    sentences = re.split(r"(?<=[.!?])\s+", narrative.body.strip())
+    kept = [x for x in sentences if not _SPECULATION.search(x)]
+    if not kept:
+        return None
+    traits = [t for t in narrative.traits if not _SPECULATION.search(t)]
+    return narrative.model_copy(update={"body": " ".join(kept), "traits": traits})
+
+
 def valid_summaries(summaries: list[Summary]) -> list[dict]:
     """AREAS 밖 category·중복 category는 버린다. category당 첫 항목만 남긴다.
 
@@ -424,6 +445,7 @@ class OnboardingService:
             turn_index=session.turn_index,
             total_turns=session.total_turns,
             nickname=session.nickname,
+            user_key=session.user_id,
             trace_metadata=build_langfuse_metadata(
                 feature="persona",
                 operation="conversation",
@@ -433,6 +455,17 @@ class OnboardingService:
                 topicId=topic.id,
             ),
         )
+        if utterance.validation:
+            await record_guardrail(
+                self.repo.db,
+                feature="persona",
+                operation="conversation",
+                session_id=session.id,
+                user_id=session.user_id,
+                mode=effective_mode(session.user_id),
+                result=utterance.validation,
+                initial_text=utterance.initial_text,
+            )
         await self.repo.add_question(session, topic.id, utterance.text, utterance.source)
 
         return TurnResponse(
@@ -442,6 +475,7 @@ class OnboardingService:
             choices=list(topic.choices) if topic.choices else None,
             progress=f"{session.turn_index + 1}/{session.total_turns}",
             turn_index=session.turn_index,
+            validationResult=utterance.validation,
             **self._controls(session),
         )
 
@@ -585,6 +619,9 @@ class OnboardingService:
 
         answered = await self._dimensions_from_answers(session)
         source = "llm"
+        self.extraction.guardrail_db = self.repo.db
+        self.extraction.guardrail_user_key = session.user_id
+        self.extraction.guardrail_session_id = session.id
         try:
             raw = await self.extraction.extract(
                 self._history(session),
@@ -629,6 +666,10 @@ class OnboardingService:
             logger.info("dropped unanswered dimensions from extraction: %s", dropped)
 
         narrative = raw.narrative
+        if narrative is not None:
+            narrative = without_speculation(narrative)
+            if narrative is None:
+                logger.warning("narrative is speculation only — dropped")
         if narrative is not None:
             why = narrative_contradiction(scores, narrative)
             if why:
