@@ -63,7 +63,7 @@ class Settings(BaseSettings):
     # 로컬 서빙 예시: "local-model" 또는 서빙 중인 모델 이름
     llm_model: str = Field(
         default="anthropic/claude-3.5-sonnet",
-        validation_alias="LLM_MODEL",
+        validation_alias="LLM_MODEL3",
         description="호출할 기본 LLM 모델명",
     )
 

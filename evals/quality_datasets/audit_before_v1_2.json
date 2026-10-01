@@ -1,0 +1,1116 @@
+{
+  "ok": false,
+  "datasetSplits": {
+    "persona_onboarding_conversation": {
+      "calibration": 12,
+      "regression": 36,
+      "blind_holdout": 12
+    },
+    "persona_onboarding_tagging": {
+      "calibration": 16,
+      "regression": 48,
+      "blind_holdout": 16
+    },
+    "persona_build": {
+      "calibration": 12,
+      "regression": 36,
+      "blind_holdout": 12
+    },
+    "practice_reply": {
+      "calibration": 12,
+      "regression": 36,
+      "blind_holdout": 12
+    },
+    "simulation_run": {
+      "calibration": 7,
+      "regression": 22,
+      "blind_holdout": 7
+    },
+    "simulation_report_preview": {
+      "calibration": 5,
+      "regression": 14,
+      "blind_holdout": 5
+    }
+  },
+  "total": 320,
+  "holdoutStimulusCrossSplitExactSentenceCount": 0,
+  "sentenceCollisions": {},
+  "holdoutStimulusCrossSplitApproximatePairCount": 63,
+  "approximateCollisions": [
+    {
+      "holdoutText": "거리 두기에 관해 현재 말씀할 수 있는 범위만 들려주시겠어요",
+      "otherText": "자기·감정 표현에 관해 현재 말씀할 수 있는 범위만 들려주시겠어요",
+      "sequenceRatio": 0.8462,
+      "characterTrigramDice": 0.7917,
+      "holdoutCases": [
+        "persona_build-044",
+        "persona_build-045"
+      ],
+      "otherCases": [
+        "persona_build-038"
+      ]
+    },
+    {
+      "holdoutText": "빵집 산책 일정은 다음에 정하고, 빵 굽기를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "otherText": "미술관 일정은 다음에 정하고, 수채화를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "sequenceRatio": 0.8116,
+      "characterTrigramDice": 0.7385,
+      "holdoutCases": [
+        "practice_reply-024"
+      ],
+      "otherCases": [
+        "practice_reply-006"
+      ]
+    },
+    {
+      "holdoutText": "빵집 산책 일정은 다음에 정하고, 빵 굽기를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "otherText": "조용한 카페 일정은 다음에 정하고, 퍼즐를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "sequenceRatio": 0.8,
+      "characterTrigramDice": 0.7273,
+      "holdoutCases": [
+        "practice_reply-024"
+      ],
+      "otherCases": [
+        "practice_reply-012"
+      ]
+    },
+    {
+      "holdoutText": "빵집 산책 일정은 다음에 정하고, 빵 굽기를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "otherText": "수목원 일정은 다음에 정하고, 정원 가꾸기를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "sequenceRatio": 0.8169,
+      "characterTrigramDice": 0.7463,
+      "holdoutCases": [
+        "practice_reply-024"
+      ],
+      "otherCases": [
+        "practice_reply-018"
+      ]
+    },
+    {
+      "holdoutText": "빵집 산책 일정은 다음에 정하고, 빵 굽기를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "otherText": "밤 산책 일정은 다음에 정하고, 별 관찰를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "sequenceRatio": 0.8696,
+      "characterTrigramDice": 0.8,
+      "holdoutCases": [
+        "practice_reply-024"
+      ],
+      "otherCases": [
+        "practice_reply-042"
+      ]
+    },
+    {
+      "holdoutText": "빵집 산책 일정은 다음에 정하고, 빵 굽기를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "otherText": "실 가게 일정은 다음에 정하고, 뜨개질를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "sequenceRatio": 0.8116,
+      "characterTrigramDice": 0.7385,
+      "holdoutCases": [
+        "practice_reply-024"
+      ],
+      "otherCases": [
+        "practice_reply-048"
+      ]
+    },
+    {
+      "holdoutText": "빵집 산책 일정은 다음에 정하고, 빵 굽기를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "otherText": "로스터리 일정은 다음에 정하고, 커피 내리기를 처음 시작할 때 어려웠던 점을 이야기해 봐요",
+      "sequenceRatio": 0.8056,
+      "characterTrigramDice": 0.7353,
+      "holdoutCases": [
+        "practice_reply-024"
+      ],
+      "otherCases": [
+        "practice_reply-054"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "독립서점에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-001",
+        "simulation_run-002"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "박물관에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-003",
+        "simulation_run-005"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "차 시음에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-007",
+        "simulation_run-010"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "식물원에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-012",
+        "simulation_run-017"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "공예 시장에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-017",
+        "simulation_run-025"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "작은 전시에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-023",
+        "simulation_run-035"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "요리 수업에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-006"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "호숫가에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-010"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "강변 카페에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-019"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "독립서점에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-001",
+        "simulation_run-002"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "박물관에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-003",
+        "simulation_run-005"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "차 시음에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-007",
+        "simulation_run-010"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "호숫가에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-010",
+        "simulation_run-014"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "식물원에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-012",
+        "simulation_run-017"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "공예 시장에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-017",
+        "simulation_run-025"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "강변 카페에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-019",
+        "simulation_run-029"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "작은 전시에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-023",
+        "simulation_run-035"
+      ]
+    },
+    {
+      "holdoutText": "동네 산책에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "요리 수업에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-021",
+        "simulation_run-032"
+      ],
+      "otherCases": [
+        "simulation_report_preview-006"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "독립서점에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-001",
+        "simulation_run-002"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "박물관에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-003",
+        "simulation_run-005"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "차 시음에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-007",
+        "simulation_run-010"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "호숫가에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-010",
+        "simulation_run-014"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "식물원에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.9057,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-012",
+        "simulation_run-017"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "공예 시장에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8889,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-017",
+        "simulation_run-025"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "강변 카페에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-019",
+        "simulation_run-029"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "작은 전시에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-023",
+        "simulation_run-035"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "요리 수업에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-006"
+      ]
+    },
+    {
+      "holdoutText": "다음에도 공원 벤치에서 이야기 나누되 일정은 서로 확인해요",
+      "otherText": "다음에도 식물원에서 이야기 나누되 일정은 서로 확인해요",
+      "sequenceRatio": 0.898,
+      "characterTrigramDice": 0.7556,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-012",
+        "simulation_run-017"
+      ]
+    },
+    {
+      "holdoutText": "다음에도 공원 벤치에서 이야기 나누되 일정은 서로 확인해요",
+      "otherText": "다음에도 공예 시장에서 이야기 나누되 일정은 서로 확인해요",
+      "sequenceRatio": 0.88,
+      "characterTrigramDice": 0.7826,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-017",
+        "simulation_run-025"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "독립서점에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-001",
+        "simulation_run-002"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "박물관에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-003",
+        "simulation_run-005"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "차 시음에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-007",
+        "simulation_run-010"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "식물원에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.9153,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-012",
+        "simulation_run-017"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "공예 시장에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.9,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-017",
+        "simulation_run-025"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "작은 전시에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-023",
+        "simulation_run-035"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "요리 수업에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-006"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "호숫가에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-010"
+      ]
+    },
+    {
+      "holdoutText": "공원 벤치에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "강변 카페에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-014"
+      ],
+      "otherCases": [
+        "simulation_report_preview-019"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "독립서점에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-001",
+        "simulation_run-002"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "박물관에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-003",
+        "simulation_run-005"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "차 시음에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-007",
+        "simulation_run-010"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "식물원에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-012",
+        "simulation_run-017"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "공예 시장에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-017",
+        "simulation_run-025"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "작은 전시에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-023",
+        "simulation_run-035"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "요리 수업에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-006"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "호숫가에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8814,
+      "characterTrigramDice": 0.8727,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-010"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "otherText": "강변 카페에 관한 오늘의 이야기를 생각해 보고 다음 일정을 알려 드릴게요",
+      "sequenceRatio": 0.8667,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-019"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "독립서점에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-001",
+        "simulation_run-002"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "박물관에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-003",
+        "simulation_run-005"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "차 시음에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-007",
+        "simulation_run-010"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "호숫가에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-010",
+        "simulation_run-014"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "식물원에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8679,
+      "characterTrigramDice": 0.8571,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-012",
+        "simulation_run-017"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "공예 시장에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-017",
+        "simulation_run-025"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "강변 카페에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-019",
+        "simulation_run-029"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "작은 전시에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-023",
+        "simulation_run-035"
+      ]
+    },
+    {
+      "holdoutText": "문화센터에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "otherText": "요리 수업에서 처음 인사드리니 그 장소 이야기가 먼저 떠오르네요",
+      "sequenceRatio": 0.8519,
+      "characterTrigramDice": 0.84,
+      "holdoutCases": [
+        "simulation_report_preview-015"
+      ],
+      "otherCases": [
+        "simulation_report_preview-006"
+      ]
+    }
+  ],
+  "rewrittenHoldoutVerification": {
+    "caseCount": 25,
+    "caseIds": [
+      "persona_onboarding_tagging-074",
+      "persona_build-007",
+      "persona_build-008",
+      "persona_build-017",
+      "persona_build-018",
+      "persona_build-027",
+      "persona_build-028",
+      "persona_build-042",
+      "persona_build-044",
+      "persona_build-045",
+      "practice_reply-020",
+      "practice_reply-021",
+      "practice_reply-022",
+      "practice_reply-023",
+      "practice_reply-024",
+      "practice_reply-056",
+      "practice_reply-057",
+      "practice_reply-058",
+      "practice_reply-059",
+      "practice_reply-060",
+      "simulation_run-032",
+      "simulation_report_preview-014",
+      "simulation_report_preview-015",
+      "simulation_report_preview-016",
+      "simulation_report_preview-021"
+    ],
+    "collidingCaseIds": [
+      "persona_build-044",
+      "persona_build-045",
+      "practice_reply-024",
+      "simulation_report_preview-014",
+      "simulation_report_preview-015",
+      "simulation_report_preview-021",
+      "simulation_run-032"
+    ],
+    "collisionCount": 7
+  },
+  "approximationPolicy": {
+    "normalization": "NFKC/casefold/문장부호·공백 제거",
+    "minimumCharacters": 24,
+    "minimumDistinctCharacters": 8,
+    "sequenceRatioAtLeast": 0.8,
+    "characterTrigramDiceAtLeast": 0.55,
+    "minimumMatchedCharacters": 22,
+    "fixedContractExemptions": [
+      "안녕하세요, 저는 하루예요"
+    ],
+    "shortSentences": "근사 검사 제외, 정확 일치 검사는 유지",
+    "semanticGuarantee": false
+  },
+  "familyLeakCount": 0,
+  "declaredStimulusFamilyLeakCount": 0,
+  "offTopicPositiveCounts": {
+    "calibration": 3,
+    "blind_holdout": 3,
+    "regression": 4
+  },
+  "secondaryNonemptyCounts": {
+    "calibration": 3,
+    "regression": 5,
+    "blind_holdout": 1
+  },
+  "previewPersonaConsistencyChecked": 48,
+  "practicePersonaConsistencyChecked": 60,
+  "uniqueRubrics": {
+    "persona_onboarding_conversation": 60,
+    "persona_onboarding_tagging": 80,
+    "persona_build": 60,
+    "practice_reply": 60,
+    "simulation_run": 36,
+    "simulation_report_preview": 24
+  },
+  "errors": [
+    "holdout 근사 자극 교차 split 유사 문장 63쌍",
+    "첫 주제 weekend 아님: persona_onboarding_conversation-001",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-002",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-003",
+    "첫 주제 weekend 아님: persona_onboarding_conversation-004",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-005",
+    "첫 주제 weekend 아님: persona_onboarding_conversation-006",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-008",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-009",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-011",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-013",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-014",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-015",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-016",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-017",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-018",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-019",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-020",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-021",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-022",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-023",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-024",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-025",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-026",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-027",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-028",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-029",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-030",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-031",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-032",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-033",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-034",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-035",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-036",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-037",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-038",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-039",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-040",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-041",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-042",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-043",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-044",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-045",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-046",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-047",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-048",
+    "첫 주제 weekend 아님: persona_onboarding_conversation-049",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-050",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-051",
+    "첫 주제 weekend 아님: persona_onboarding_conversation-052",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-053",
+    "첫 주제 weekend 아님: persona_onboarding_conversation-054",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-055",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-056",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-057",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-058",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-059",
+    "history 실제 intro/weekend 누락: persona_onboarding_conversation-060",
+    "15차원 누락: practice_reply-001/partner",
+    "accuracy 불일치: practice_reply-001/partner",
+    "15차원 누락: practice_reply-002/partner",
+    "accuracy 불일치: practice_reply-002/partner",
+    "15차원 누락: practice_reply-003/partner",
+    "accuracy 불일치: practice_reply-003/partner",
+    "15차원 누락: practice_reply-004/partner",
+    "accuracy 불일치: practice_reply-004/partner",
+    "15차원 누락: practice_reply-005/partner",
+    "accuracy 불일치: practice_reply-005/partner",
+    "15차원 누락: practice_reply-006/partner",
+    "accuracy 불일치: practice_reply-006/partner",
+    "15차원 누락: practice_reply-007/partner",
+    "accuracy 불일치: practice_reply-007/partner",
+    "15차원 누락: practice_reply-008/partner",
+    "accuracy 불일치: practice_reply-008/partner",
+    "15차원 누락: practice_reply-009/partner",
+    "accuracy 불일치: practice_reply-009/partner",
+    "15차원 누락: practice_reply-010/partner",
+    "accuracy 불일치: practice_reply-010/partner",
+    "15차원 누락: practice_reply-011/partner",
+    "accuracy 불일치: practice_reply-011/partner",
+    "15차원 누락: practice_reply-012/partner",
+    "accuracy 불일치: practice_reply-012/partner",
+    "15차원 누락: practice_reply-013/partner",
+    "accuracy 불일치: practice_reply-013/partner",
+    "15차원 누락: practice_reply-014/partner",
+    "accuracy 불일치: practice_reply-014/partner",
+    "15차원 누락: practice_reply-015/partner",
+    "accuracy 불일치: practice_reply-015/partner",
+    "15차원 누락: practice_reply-016/partner",
+    "accuracy 불일치: practice_reply-016/partner",
+    "15차원 누락: practice_reply-017/partner",
+    "accuracy 불일치: practice_reply-017/partner",
+    "15차원 누락: practice_reply-018/partner",
+    "accuracy 불일치: practice_reply-018/partner",
+    "15차원 누락: practice_reply-019/partner",
+    "accuracy 불일치: practice_reply-019/partner",
+    "15차원 누락: practice_reply-020/partner",
+    "accuracy 불일치: practice_reply-020/partner",
+    "15차원 누락: practice_reply-021/partner",
+    "accuracy 불일치: practice_reply-021/partner",
+    "15차원 누락: practice_reply-022/partner",
+    "accuracy 불일치: practice_reply-022/partner",
+    "15차원 누락: practice_reply-023/partner",
+    "accuracy 불일치: practice_reply-023/partner",
+    "15차원 누락: practice_reply-024/partner",
+    "accuracy 불일치: practice_reply-024/partner",
+    "15차원 누락: practice_reply-025/partner",
+    "accuracy 불일치: practice_reply-025/partner",
+    "15차원 누락: practice_reply-026/partner",
+    "accuracy 불일치: practice_reply-026/partner",
+    "15차원 누락: practice_reply-027/partner",
+    "accuracy 불일치: practice_reply-027/partner",
+    "15차원 누락: practice_reply-028/partner",
+    "accuracy 불일치: practice_reply-028/partner",
+    "15차원 누락: practice_reply-029/partner",
+    "accuracy 불일치: practice_reply-029/partner",
+    "15차원 누락: practice_reply-030/partner",
+    "accuracy 불일치: practice_reply-030/partner",
+    "15차원 누락: practice_reply-031/partner",
+    "accuracy 불일치: practice_reply-031/partner",
+    "15차원 누락: practice_reply-032/partner",
+    "accuracy 불일치: practice_reply-032/partner",
+    "15차원 누락: practice_reply-033/partner",
+    "accuracy 불일치: practice_reply-033/partner",
+    "15차원 누락: practice_reply-034/partner",
+    "accuracy 불일치: practice_reply-034/partner",
+    "15차원 누락: practice_reply-035/partner",
+    "accuracy 불일치: practice_reply-035/partner",
+    "15차원 누락: practice_reply-036/partner",
+    "accuracy 불일치: practice_reply-036/partner",
+    "15차원 누락: practice_reply-037/partner",
+    "accuracy 불일치: practice_reply-037/partner",
+    "15차원 누락: practice_reply-038/partner",
+    "accuracy 불일치: practice_reply-038/partner",
+    "15차원 누락: practice_reply-039/partner",
+    "accuracy 불일치: practice_reply-039/partner",
+    "15차원 누락: practice_reply-040/partner",
+    "accuracy 불일치: practice_reply-040/partner",
+    "15차원 누락: practice_reply-041/partner",
+    "accuracy 불일치: practice_reply-041/partner",
+    "15차원 누락: practice_reply-042/partner",
+    "accuracy 불일치: practice_reply-042/partner",
+    "15차원 누락: practice_reply-043/partner",
+    "accuracy 불일치: practice_reply-043/partner",
+    "15차원 누락: practice_reply-044/partner",
+    "accuracy 불일치: practice_reply-044/partner",
+    "15차원 누락: practice_reply-045/partner",
+    "accuracy 불일치: practice_reply-045/partner",
+    "15차원 누락: practice_reply-046/partner",
+    "accuracy 불일치: practice_reply-046/partner",
+    "15차원 누락: practice_reply-047/partner",
+    "accuracy 불일치: practice_reply-047/partner",
+    "15차원 누락: practice_reply-048/partner",
+    "accuracy 불일치: practice_reply-048/partner",
+    "15차원 누락: practice_reply-049/partner",
+    "accuracy 불일치: practice_reply-049/partner",
+    "15차원 누락: practice_reply-050/partner",
+    "accuracy 불일치: practice_reply-050/partner",
+    "15차원 누락: practice_reply-051/partner",
+    "accuracy 불일치: practice_reply-051/partner",
+    "15차원 누락: practice_reply-052/partner",
+    "accuracy 불일치: practice_reply-052/partner",
+    "15차원 누락: practice_reply-053/partner",
+    "accuracy 불일치: practice_reply-053/partner",
+    "15차원 누락: practice_reply-054/partner",
+    "accuracy 불일치: practice_reply-054/partner",
+    "15차원 누락: practice_reply-055/partner",
+    "accuracy 불일치: practice_reply-055/partner",
+    "15차원 누락: practice_reply-056/partner",
+    "accuracy 불일치: practice_reply-056/partner",
+    "15차원 누락: practice_reply-057/partner",
+    "accuracy 불일치: practice_reply-057/partner",
+    "15차원 누락: practice_reply-058/partner",
+    "accuracy 불일치: practice_reply-058/partner",
+    "15차원 누락: practice_reply-059/partner",
+    "accuracy 불일치: practice_reply-059/partner",
+    "15차원 누락: practice_reply-060/partner",
+    "accuracy 불일치: practice_reply-060/partner"
+  ],
+  "scope": "전체 발화와 문장 단위의 정확 일치 및 정규화 후 SequenceMatcher/문자 3-gram 교차 검사를 수행한다. 고정 intro만 정확 검사에서 제외하며 짧은 관용문은 근사 검사에서 제외한다. 의미 동등성 전부의 자동 증명을 주장하지 않는다."
+}

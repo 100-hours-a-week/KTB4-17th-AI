@@ -1,0 +1,723 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <title>Langfuse 데이터셋 사용 가이드</title>
+  <style>
+    :root {
+      --bg: #f7f7fa;
+      --panel: #ffffff;
+      --panel-2: #f0f1f5;
+      --text: #17181c;
+      --muted: #666b76;
+      --line: #dfe1e7;
+      --purple: #6c55d9;
+      --purple-soft: #eeeafd;
+      --blue: #2367d1;
+      --blue-soft: #e9f1ff;
+      --green: #18794e;
+      --green-soft: #e8f6ef;
+      --orange: #a15c00;
+      --orange-soft: #fff1dc;
+      --red: #b42318;
+      --red-soft: #ffebe9;
+      --shadow: 0 16px 50px rgba(24, 25, 31, .08);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #111216;
+        --panel: #191b21;
+        --panel-2: #23262e;
+        --text: #f0f1f4;
+        --muted: #a7abb5;
+        --line: #343741;
+        --purple: #a996ff;
+        --purple-soft: #29243f;
+        --blue: #79aaff;
+        --blue-soft: #1d2b43;
+        --green: #6bd39d;
+        --green-soft: #183328;
+        --orange: #f0b35c;
+        --orange-soft: #382b18;
+        --red: #ff8b81;
+        --red-soft: #3b211f;
+        --shadow: none;
+      }
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; scroll-padding-top: 20px; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font: 16px/1.68 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", "Malgun Gothic", sans-serif;
+      overflow-wrap: anywhere;
+    }
+    a { color: var(--blue); }
+    code, pre {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+    code {
+      background: var(--panel-2);
+      border-radius: 5px;
+      padding: 2px 6px;
+      font-size: .9em;
+    }
+    pre {
+      position: relative;
+      margin: 12px 0;
+      padding: 18px;
+      overflow: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #111318;
+      color: #e8eaf0;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+    button { font: inherit; }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 230px minmax(0, 900px);
+      gap: 32px;
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    .toc {
+      position: sticky;
+      top: 24px;
+      align-self: start;
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+    }
+    .toc .eyebrow { margin-bottom: 10px; }
+    .toc a {
+      display: block;
+      padding: 7px 9px;
+      border-radius: 8px;
+      color: var(--muted);
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .toc a:hover, .toc a.active {
+      color: var(--purple);
+      background: var(--purple-soft);
+    }
+    main { min-width: 0; padding-bottom: 80px; }
+    section { margin: 44px 0; }
+    h1 { margin: 10px 0 12px; font-size: clamp(2rem, 4vw, 3.4rem); line-height: 1.13; letter-spacing: -.035em; }
+    h2 { margin: 0 0 14px; font-size: 1.5rem; letter-spacing: -.02em; }
+    h3 { margin: 24px 0 8px; font-size: 1.08rem; }
+    p { margin: 8px 0; }
+    ul, ol { padding-left: 1.4rem; }
+    li { margin: 7px 0; }
+    .eyebrow {
+      color: var(--purple);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .lead { color: var(--muted); font-size: 1.12rem; max-width: 760px; }
+    .muted { color: var(--muted); }
+    .hero {
+      padding: 34px;
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 92% 10%, var(--purple-soft), transparent 38%),
+        var(--panel);
+      box-shadow: var(--shadow);
+    }
+    .hero-state {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 22px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 6px 11px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--panel);
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+    .pill.ok .dot { background: var(--green); }
+    .pill.todo .dot { background: var(--orange); }
+    .panel {
+      padding: 22px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--panel);
+    }
+    .callout {
+      margin: 16px 0;
+      padding: 16px 18px;
+      border-left: 4px solid var(--purple);
+      border-radius: 10px;
+      background: var(--purple-soft);
+    }
+    .callout strong { display: block; margin-bottom: 3px; }
+    .callout.warn { border-left-color: var(--orange); background: var(--orange-soft); }
+    .callout.danger { border-left-color: var(--red); background: var(--red-soft); }
+    .callout.good { border-left-color: var(--green); background: var(--green-soft); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+      margin: 18px 0;
+    }
+    .flow-step {
+      position: relative;
+      min-height: 120px;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+    }
+    .flow-step:not(:last-child)::after {
+      content: "→";
+      position: absolute;
+      top: 43px;
+      right: -19px;
+      z-index: 2;
+      width: 28px;
+      text-align: center;
+      color: var(--purple);
+      font-weight: 900;
+      background: var(--bg);
+    }
+    .flow-step b { display: block; margin-bottom: 5px; }
+    .flow-step small { color: var(--muted); }
+    .num {
+      display: inline-grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      margin-bottom: 10px;
+      border-radius: 8px;
+      color: #fff;
+      background: var(--purple);
+      font-weight: 800;
+    }
+
+    .split-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 16px;
+    }
+    .split-card {
+      padding: 18px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+    }
+    .split-card.cal { border-top: 5px solid var(--blue); }
+    .split-card.reg { border-top: 5px solid var(--green); }
+    .split-card.hold { border-top: 5px solid var(--orange); }
+    .split-card h3 { margin-top: 0; }
+    .split-card .count { font-size: 1.7rem; font-weight: 850; letter-spacing: -.03em; }
+    .split-card .when {
+      display: inline-block;
+      margin-top: 8px;
+      padding: 3px 8px;
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .mock {
+      margin: 18px 0;
+      overflow: hidden;
+      border: 1px solid #333641;
+      border-radius: 16px;
+      background: #101115;
+      color: #ececf1;
+      box-shadow: var(--shadow);
+    }
+    .mock-top {
+      display: flex;
+      gap: 7px;
+      padding: 11px 14px;
+      border-bottom: 1px solid #30323a;
+      background: #17181d;
+    }
+    .mock-top i { width: 10px; height: 10px; border-radius: 50%; background: #464954; }
+    .mock-body { display: grid; grid-template-columns: 190px 1fr; min-height: 410px; }
+    .mock-side { padding: 18px 13px; border-right: 1px solid #30323a; color: #a9abb4; }
+    .mock-side b { display: block; margin-bottom: 18px; color: #fff; }
+    .mock-side span { display: block; margin: 6px 0; padding: 7px 9px; border-radius: 7px; }
+    .mock-side .on { color: #fff; background: #2c2d34; font-weight: 700; }
+    .mock-content { padding: 22px; min-width: 0; }
+    .crumb { color: #aaaeba; font-size: 13px; }
+    .mock h4 { margin: 8px 0 16px; font-size: 20px; }
+    .tabs { display: flex; gap: 18px; border-bottom: 1px solid #30323a; color: #989ba5; }
+    .tabs span { padding: 8px 0; }
+    .tabs .on { color: #fff; border-bottom: 2px solid #a996ff; }
+    .item-card { margin-top: 17px; padding: 14px; border: 1px solid #353741; border-radius: 10px; background: #17181d; }
+    .item-card .item-id { color: #b5a7ff; font-weight: 750; }
+    .meta-box { position: relative; margin-top: 13px; padding: 14px; border: 1px solid #464955; border-radius: 8px; background: #111217; }
+    .meta-box pre { margin: 0; padding: 0; border: 0; background: transparent; color: #dfe1e7; }
+    .highlight-line { display: block; margin: 3px -7px; padding: 3px 7px; border-radius: 5px; color: #fff; background: #51449a; }
+    .arrow-label {
+      position: absolute;
+      top: 52px;
+      right: 12px;
+      padding: 6px 9px;
+      border-radius: 8px;
+      background: #f2b861;
+      color: #1b1408;
+      font: 700 12px/1.2 -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    .steps { counter-reset: step; list-style: none; padding: 0; }
+    .steps > li {
+      position: relative;
+      margin: 0 0 12px;
+      padding: 18px 18px 18px 62px;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      background: var(--panel);
+    }
+    .steps > li::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      top: 17px;
+      left: 18px;
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: var(--purple-soft);
+      color: var(--purple);
+      font-weight: 850;
+    }
+    .steps b { display: block; margin-bottom: 3px; }
+
+    .table-wrap { overflow-x: auto; margin: 14px 0; border: 1px solid var(--line); border-radius: 12px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; background: var(--panel); }
+    th, td { padding: 11px 13px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    tr:last-child td { border-bottom: 0; }
+    th { color: var(--muted); background: var(--panel-2); font-size: 12px; white-space: nowrap; }
+    td.n { text-align: right; font-variant-numeric: tabular-nums; }
+
+    .status-line {
+      display: grid;
+      grid-template-columns: 30px 1fr auto;
+      align-items: center;
+      gap: 12px;
+      padding: 13px 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .status-line:last-child { border-bottom: 0; }
+    .status-icon { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; font-weight: 900; }
+    .done .status-icon { color: var(--green); background: var(--green-soft); }
+    .next .status-icon { color: var(--orange); background: var(--orange-soft); }
+    .status-label { color: var(--muted); font-size: 13px; }
+
+    .copy-wrap { position: relative; }
+    .copy-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      z-index: 1;
+      padding: 5px 9px;
+      border: 1px solid #444752;
+      border-radius: 7px;
+      color: #dfe1e7;
+      background: #24262e;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    .copy-btn:hover { background: #30333d; }
+    details { margin: 12px 0; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+    summary { padding: 13px 16px; cursor: pointer; font-weight: 750; }
+    details > div { padding: 0 16px 16px; }
+    footer { margin-top: 54px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+
+    @media (max-width: 900px) {
+      .layout { display: block; padding: 14px; }
+      .toc { position: static; margin-bottom: 16px; }
+      .toc a { display: inline-block; }
+      .flow { grid-template-columns: 1fr 1fr; }
+      .flow-step:not(:last-child)::after { display: none; }
+      .split-grid { grid-template-columns: 1fr; }
+      .mock-body { grid-template-columns: 1fr; }
+      .mock-side { display: none; }
+    }
+    @media (max-width: 560px) {
+      .hero { padding: 22px; }
+      .flow { grid-template-columns: 1fr; }
+      .mock-content { padding: 14px; }
+      .arrow-label { position: static; display: inline-block; margin-top: 8px; }
+      .status-line { grid-template-columns: 30px 1fr; }
+      .status-label { grid-column: 2; }
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <nav class="toc" aria-label="문서 목차">
+      <div class="eyebrow">빠른 이동</div>
+      <a href="#answer">먼저 답부터</a>
+      <a href="#calibration">calibration이란?</a>
+      <a href="#where">어디에 있나?</a>
+      <a href="#workflow">실제 사용 순서</a>
+      <a href="#first-run">첫 실행 추천</a>
+      <a href="#datasets">데이터셋별 역할</a>
+      <a href="#sdk">SDK 실행 구조</a>
+      <a href="#results">결과 보는 법</a>
+      <a href="#warning">현재 주의사항</a>
+    </nav>
+
+    <main>
+      <header class="hero" id="answer">
+        <div class="eyebrow">Langfuse Dataset Usage Guide</div>
+        <h1>올린 데이터셋은<br>어떻게 사용하는가</h1>
+        <p class="lead">지금 Langfuse에 올린 것은 <strong>시험 문제와 채점 기준</strong>입니다. AI가 문제를 풀고 점수가 기록되려면 별도의 <strong>Experiment 실행</strong>이 한 번 더 필요합니다.</p>
+        <div class="hero-state">
+          <span class="pill ok"><span class="dot"></span>데이터셋 6개 업로드 완료</span>
+          <span class="pill ok"><span class="dot"></span>총 330문제 준비 완료</span>
+          <span class="pill todo"><span class="dot"></span>답변 생성 실행 필요</span>
+          <span class="pill todo"><span class="dot"></span>채점기 연결 필요</span>
+        </div>
+      </header>
+
+      <section>
+        <h2>한 장으로 보는 전체 흐름</h2>
+        <div class="flow" aria-label="데이터셋 평가 흐름">
+          <div class="flow-step"><span class="num">1</span><b>Dataset</b><small>문제와 채점 기준을 가져옵니다.</small></div>
+          <div class="flow-step"><span class="num">2</span><b>Task</b><small>현재 앱 코드와 모델로 답변을 생성합니다.</small></div>
+          <div class="flow-step"><span class="num">3</span><b>Evaluator</b><small>정답 계약과 비교해 점수를 매깁니다.</small></div>
+          <div class="flow-step"><span class="num">4</span><b>Experiment</b><small>결과·점수·지연·비용을 저장하고 비교합니다.</small></div>
+        </div>
+        <div class="callout good">
+          <strong>가장 중요한 한 문장</strong>
+          Dataset 화면에 항목이 보인다고 평가가 실행된 것은 아닙니다. <code>Start Experiment</code> 또는 Python SDK 실행 후에야 답변과 점수가 생깁니다.
+        </div>
+      </section>
+
+      <section id="calibration">
+        <div class="eyebrow">질문 1</div>
+        <h2><code>calibration</code>이 대체 무엇인가?</h2>
+        <p><strong>calibration은 “채점 연습용 문제”라는 표시</strong>입니다. 별도 데이터셋 이름도 아니고, Langfuse 왼쪽 메뉴도 아닙니다.</p>
+        <p>사람이 몇 문제를 직접 읽고 “이 답변은 몇 점이어야 하는가”를 맞춰 보면서 자동 채점기가 너무 엄격하거나 느슨하지 않은지 조정할 때 씁니다.</p>
+
+        <div class="split-grid">
+          <article class="split-card cal">
+            <h3>calibration</h3>
+            <div class="count">66건 · 20%</div>
+            <p>채점 기준과 LLM Judge를 맞추는 연습 문제입니다. 내용을 보면서 수정해도 됩니다.</p>
+            <span class="when">처음에 사용</span>
+          </article>
+          <article class="split-card reg">
+            <h3>regression</h3>
+            <div class="count">198건 · 60%</div>
+            <p>모델이나 프롬프트를 바꿀 때 이전보다 나빠졌는지 반복 확인합니다.</p>
+            <span class="when">평소 반복 사용</span>
+          </article>
+          <article class="split-card hold">
+            <h3>blind_holdout</h3>
+            <div class="count">66건 · 20%</div>
+            <p>수정을 끝낸 뒤 마지막으로 확인하는 문제입니다. 튜닝하면서 자주 보면 의미가 사라집니다.</p>
+            <span class="when">마지막에만 사용</span>
+          </article>
+        </div>
+
+        <div class="callout">
+          <strong>시험에 비유하면</strong>
+          <code>calibration</code>은 답안 예시를 보며 채점 기준을 익히는 연습문제, <code>regression</code>은 매번 보는 모의고사, <code>blind_holdout</code>은 마지막 실전 시험입니다.
+        </div>
+      </section>
+
+      <section id="where">
+        <div class="eyebrow">질문 2</div>
+        <h2><code>calibration</code>은 어디에 있는가?</h2>
+        <p>각 Dataset Item의 <strong>Metadata 안</strong>에 있습니다. 키 이름은 <code>split</code>입니다.</p>
+
+        <ol class="steps">
+          <li><b>왼쪽 메뉴에서 Datasets 선택</b><span class="muted">이미 보고 있던 화면입니다.</span></li>
+          <li><b>예: <code>quality/persona/onboarding-tagging</code> 선택</b><span class="muted">처음 연습하기 가장 쉬운 데이터셋입니다.</span></li>
+          <li><b>Items 탭에서 아무 항목의 ID를 클릭</b><span class="muted">예: <code>persona_onboarding_tagging-001</code></span></li>
+          <li><b>Metadata를 확인</b><span class="muted"><code>"split": "calibration"</code>이면 보정용 문제입니다.</span></li>
+        </ol>
+
+        <div class="mock" role="img" aria-label="Langfuse 항목 상세에서 metadata split을 찾는 예시 화면">
+          <div class="mock-top"><i></i><i></i><i></i></div>
+          <div class="mock-body">
+            <aside class="mock-side">
+              <b>langfuse</b>
+              <span>Tracing</span>
+              <span>Scores</span>
+              <span>Evaluators</span>
+              <span class="on">Datasets</span>
+            </aside>
+            <div class="mock-content">
+              <div class="crumb">Datasets / quality/persona/onboarding-tagging</div>
+              <h4>persona_onboarding_tagging-001</h4>
+              <div class="tabs"><span>Input</span><span>Expected output</span><span class="on">Metadata</span></div>
+              <div class="item-card">
+                <div class="item-id">Metadata</div>
+                <div class="meta-box">
+                  <pre>{
+  "caseId": "persona_onboarding_tagging-001",
+  "difficulty": "medium",
+<span class="highlight-line">  "split": "calibration",</span>
+  "datasetVersion": "1.12.0",
+  "datasetStatus": "draft-source-drift"
+}</pre>
+                  <span class="arrow-label">여기가 split입니다</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout warn">
+          <strong>왜 목록에서 calibration 폴더가 안 보였나?</strong>
+          6개 Dataset 안에 세 split이 섞여 있기 때문입니다. <code>calibration</code>이라는 일곱 번째 Dataset은 없습니다.
+        </div>
+      </section>
+
+      <section id="workflow">
+        <div class="eyebrow">실제 운영</div>
+        <h2>실제로는 어떤 순서로 사용하는가?</h2>
+        <ol class="steps">
+          <li><b>calibration만 소량 실행</b>자동 채점 결과와 사람이 읽은 판단이 비슷한지 확인합니다.</li>
+          <li><b>Evaluator 수정</b>문장 수·라벨 일치는 코드로, 자연스러움은 LLM Judge나 사람 검토로 채점합니다.</li>
+          <li><b>regression으로 baseline 생성</b>현재 모델과 프롬프트의 기준 성능을 저장합니다.</li>
+          <li><b>후보 모델 또는 프롬프트 실행</b>같은 문제로 다시 실행해 candidate Experiment를 만듭니다.</li>
+          <li><b>baseline과 candidate 비교</b>평균 점수뿐 아니라 나빠진 개별 항목의 trace를 확인합니다.</li>
+          <li><b>blind_holdout으로 마지막 확인</b>최종 후보가 정해졌을 때만 실행합니다.</li>
+        </ol>
+
+        <div class="panel">
+          <h3 style="margin-top:0">Experiment 이름 예시</h3>
+          <pre>Experiment: persona-onboarding-tagging
+
+Run 1: baseline-main-claude35
+Run 2: candidate-prompt-v2-claude35
+Run 3: candidate-prompt-v2-new-model</pre>
+          <p class="muted">같은 Experiment 안에서 Run 이름을 다르게 만들면 Langfuse에서 전후 결과를 나란히 비교하기 쉽습니다.</p>
+        </div>
+      </section>
+
+      <section id="first-run">
+        <div class="eyebrow">추천 시작점</div>
+        <h2>처음에는 이것 하나만 실행하면 된다</h2>
+        <div class="callout good">
+          <strong><code>quality/persona/onboarding-tagging</code>의 calibration 16건</strong>
+          출력이 작은 JSON이고 정답 라벨을 집합 비교할 수 있어 첫 파이프라인을 확인하기 가장 쉽습니다.
+        </div>
+
+        <div class="status-line done">
+          <span class="status-icon">✓</span>
+          <div><strong>Dataset 업로드</strong><br><span class="muted">80건이 Langfuse에 있음</span></div>
+          <span class="status-label">완료</span>
+        </div>
+        <div class="status-line next">
+          <span class="status-icon">2</span>
+          <div><strong>calibration 16건 선택</strong><br><span class="muted">metadata.split으로 선택</span></div>
+          <span class="status-label">다음 작업</span>
+        </div>
+        <div class="status-line next">
+          <span class="status-icon">3</span>
+          <div><strong><code>TaggingAgent.tag()</code> 실행</strong><br><span class="muted">각 질문·답변에서 라벨 생성</span></div>
+          <span class="status-label">구현 필요</span>
+        </div>
+        <div class="status-line next">
+          <span class="status-icon">4</span>
+          <div><strong>라벨 일치율 기록</strong><br><span class="muted">primary · secondary · off_topic 채점</span></div>
+          <span class="status-label">구현 필요</span>
+        </div>
+        <div class="status-line next">
+          <span class="status-icon">5</span>
+          <div><strong>Langfuse Experiments에서 확인</strong><br><span class="muted">점수·실패 항목·trace 확인</span></div>
+          <span class="status-label">실행 후</span>
+        </div>
+      </section>
+
+      <section id="datasets">
+        <div class="eyebrow">6개 문제집</div>
+        <h2>각 데이터셋은 무엇을 평가하는가?</h2>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr><th>Dataset</th><th>무엇을 시험?</th><th>calibration</th><th>주요 채점</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>quality/persona/onboarding-conversation</code></td><td>온보딩 다음 질문</td><td class="n">12</td><td>말투, 질문 수, 주제 유지</td></tr>
+              <tr><td><code>quality/persona/onboarding-tagging</code></td><td>답변의 성향 라벨</td><td class="n">16</td><td>라벨 집합 정확도</td></tr>
+              <tr><td><code>quality/persona/build</code></td><td>대화에서 페르소나 생성</td><td class="n">12</td><td>점수 범위, null, 근거</td></tr>
+              <tr><td><code>quality/practice/reply</code></td><td>연습대화 다음 답변</td><td class="n">14</td><td>페르소나 일관성, 자연스러움</td></tr>
+              <tr><td><code>quality/simulation/run</code></td><td>두 사람의 소개팅 대본</td><td class="n">7</td><td>화자 순서, 줄 수, 성향 충돌</td></tr>
+              <tr><td><code>quality/simulation/report-preview</code></td><td>대화 기반 궁합 리포트</td><td class="n">5</td><td>점수 규칙, 인용, 설명</td></tr>
+              <tr><td><strong>합계</strong></td><td></td><td class="n"><strong>66</strong></td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section id="sdk">
+        <div class="eyebrow">실행 방식</div>
+        <h2>CLI가 아니라 SDK로 실행하는 이유</h2>
+        <p>CLI는 Dataset을 올리고 조회하는 데 사용했습니다. 실제 평가는 각 문제를 현재 애플리케이션 함수에 넣어야 하므로 Python SDK의 Experiment Runner를 사용합니다.</p>
+        <p>이 프로젝트에는 아직 이 실행 스크립트가 없습니다. 아래 구조의 <code>scripts/run_quality_experiment.py</code>를 새로 만들어야 합니다.</p>
+
+        <details open>
+          <summary>가장 단순한 실행 구조 보기</summary>
+          <div>
+            <div class="copy-wrap">
+              <button class="copy-btn" type="button" data-copy="runner-code">복사</button>
+              <pre id="runner-code">from dotenv import load_dotenv
+load_dotenv()
+
+from langfuse import Evaluation, get_client
+from app.features.persona.agents import TaggingAgent
+
+langfuse = get_client()
+
+async def task(*, item, **kwargs):
+    data = item.input
+    result = await TaggingAgent().tag(
+        question=data["question"],
+        answer=data["answer"],
+    )
+    return result.model_dump() if result else {"fallback": True}
+
+def evaluator(*, output, expected_output, **kwargs):
+    # 실제 구현에서는 primary/secondary/off_topic 허용값을 각각 비교
+    passed = not output.get("fallback", False)
+    return Evaluation(name="contract_pass", value=1.0 if passed else 0.0)
+
+dataset = langfuse.get_dataset("quality/persona/onboarding-tagging")
+calibration_items = [
+    item for item in dataset.items
+    if item.metadata.get("split") == "calibration"
+]
+
+try:
+    result = langfuse.run_experiment(
+        name="persona-onboarding-tagging",
+        run_name="calibration-baseline",
+        data=calibration_items,
+        task=task,
+        evaluators=[evaluator],
+        max_concurrency=3,
+        metadata={"datasetVersion": "1.12.0"},
+    )
+    print(result.format(include_item_results=True))
+    print(result.dataset_run_url)
+finally:
+    langfuse.flush()</pre>
+            </div>
+          </div>
+        </details>
+
+        <div class="callout warn">
+          <strong>이 코드는 구조를 설명하는 최소 예시입니다.</strong>
+          실제 실행 파일에는 데이터셋별 앱 함수 연결, 정확한 evaluator, 실패·폴백 기록, 비용 제한이 추가되어야 합니다.
+        </div>
+
+        <p>공식 참고: <a href="https://langfuse.com/docs/evaluation/experiments/experiments-via-sdk" target="_blank" rel="noreferrer">Langfuse Experiments via SDK</a></p>
+      </section>
+
+      <section id="results">
+        <div class="eyebrow">실행 후</div>
+        <h2>결과는 어디에서 보는가?</h2>
+        <ol class="steps">
+          <li><b>Langfuse 왼쪽 메뉴의 Datasets 또는 Experiments로 이동</b>실행한 Dataset의 Run이 생성됩니다.</li>
+          <li><b>Run을 클릭</b>각 항목의 입력, 모델 출력, expected output, 점수를 볼 수 있습니다.</li>
+          <li><b>낮은 점수 항목을 클릭</b>연결된 trace에서 실제 프롬프트, 응답, 지연시간, 토큰 사용량을 확인합니다.</li>
+          <li><b>두 Run을 Compare</b>baseline과 candidate의 평균 점수 및 항목별 변화를 비교합니다.</li>
+        </ol>
+
+        <div class="panel">
+          <h3 style="margin-top:0">최소한 기록할 점수</h3>
+          <ul>
+            <li><code>contract_pass</code>: 필수 규칙 전체 통과 여부</li>
+            <li><code>quality_score</code>: 자연스러움·근거 충실도 등의 1~5점</li>
+            <li><code>fallback</code>: 모델 실패 후 폴백 사용 여부</li>
+            <li><code>latency</code>, 토큰, 비용: Langfuse trace에서 함께 비교</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="warning">
+        <div class="eyebrow">현재 상태</div>
+        <h2>지금 바로 성능 합격 판정에 쓰면 안 되는 이유</h2>
+        <div class="callout danger">
+          <strong>현재 업로드 상태: <code>draft-source-drift</code></strong>
+          데이터셋을 만들 때 기준으로 삼은 앱 코드와 현재 앱 코드가 달라졌습니다. 파이프라인 시험과 초벌 비교에는 쓸 수 있지만, 정식 배포 차단 기준으로 쓰기 전에는 기대값을 현재 코드에 맞춰 갱신해야 합니다.
+        </div>
+        <ul>
+          <li><code>calibration</code>은 자유롭게 읽고 채점기를 조정해도 됩니다.</li>
+          <li><code>regression</code>은 baseline과 후보 비교에 사용합니다.</li>
+          <li><code>blind_holdout</code>은 현재 같은 프로젝트에 평문으로 올라가 있어 완전히 봉인된 시험은 아닙니다.</li>
+          <li>330건 전체 실행은 모델 호출 비용이 발생하므로 처음에는 태깅 calibration 16건부터 시작합니다.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>결론</h2>
+        <div class="callout good">
+          <strong>다음 한 단계</strong>
+          <code>quality/persona/onboarding-tagging</code>에서 <code>split=calibration</code>인 16건만 골라 <code>TaggingAgent.tag()</code>를 실행하고, 그 결과를 Langfuse Experiment로 기록하는 runner를 만드는 것입니다.
+        </div>
+      </section>
+
+      <footer>
+        KTB-17DEV · Langfuse 데이터셋 1.12.0 · 총 330건<br>
+        이 문서는 Dataset 업로드 이후의 사용 흐름을 설명하기 위한 안내서이며, Experiment 실행 자체는 포함하지 않습니다.
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    const links = [...document.querySelectorAll('.toc a')];
+    const sections = links
+      .map((link) => document.querySelector(link.getAttribute('href')))
+      .filter(Boolean);
+
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        links.forEach((link) => {
+          link.classList.toggle('active', link.getAttribute('href') === `#${entry.target.id}`);
+        });
+      }
+    }, { rootMargin: '-15% 0px -75% 0px' });
+    sections.forEach((section) => observer.observe(section));
+
+    document.querySelectorAll('[data-copy]').forEach((button) => {
+      button.addEventListener('click', async () => {
+        const target = document.getElementById(button.dataset.copy);
+        if (!target) return;
+        await navigator.clipboard.writeText(target.textContent);
+        const old = button.textContent;
+        button.textContent = '복사됨';
+        setTimeout(() => { button.textContent = old; }, 1200);
+      });
+    });
+  </script>
+</body>
+</html>
