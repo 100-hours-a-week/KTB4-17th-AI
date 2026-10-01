@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.core.config import get_settings
 from app.core.guardrail import effective_mode
@@ -47,6 +47,7 @@ from .schemas import (
     Summary,
     Topic,
     TurnResponse,
+    UpdateNicknameResponse,
     Weight,
 )
 
@@ -168,6 +169,14 @@ class PersonaConfirmationConflict(Exception):
 
 class PersonaAlreadyConfirmed(Exception):
     """같은 세션의 가치관이 이미 확정되어 새 build가 필요하지 않다."""
+
+
+class UserNotFound(Exception):
+    """해당 user_id의 온보딩 세션이 존재하지 않는다."""
+
+    def __init__(self, user_id: str) -> None:
+        super().__init__(f"user not found: {user_id}")
+        self.user_id = user_id
 
 
 # 질문과 무관한 답(태깅 off_topic)에 한 번 되물을 때 앞에 붙이는 말. 뒤에 그 주제의 기본 질문이 온다
@@ -767,3 +776,14 @@ class OnboardingService:
         coverage.apply([dimension])  # 그 차원을 겨눈 질문이므로 주 근거로 인정. 태깅 호출 없음
         await self.repo.add_supplement(session, dimension, question, answer, coverage.to_dict())
         return await self.build_persona(session)
+
+    async def update_nickname(self, user_id: str, nickname: str) -> UpdateNicknameResponse:
+        rowcount = await self.repo.update_nickname(user_id, nickname)
+        if rowcount == 0:
+            raise UserNotFound(user_id)
+        return UpdateNicknameResponse(
+            user_id=user_id,
+            nickname=nickname,
+            updated_sessions=rowcount,
+            updated_at=datetime.now(UTC),
+        )

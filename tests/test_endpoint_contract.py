@@ -11,6 +11,7 @@ from app.main import app
 
 EXPECTED_DOCUMENTED_ENDPOINTS = {
     ("GET", "/health"),
+    ("POST", "/ai/api/v1/persona/nickname"),
     ("POST", "/ai/api/v1/persona/onboarding/start"),
     ("POST", "/ai/api/v1/persona/onboarding/{session_id}/answer"),
     ("POST", "/ai/api/v1/persona/onboarding/{session_id}/skip"),

@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -29,6 +29,17 @@ class PersonaRepository:
         self.db = db
 
     # ── 세션 ──────────────────────────────────────────────
+
+    async def update_nickname(self, user_id: str, nickname: str) -> int:
+        """해당 user_id의 모든 온보딩 세션의 닉네임을 변경한다. 변경된 행 수를 반환한다."""
+        stmt = (
+            update(OnboardingSession)
+            .where(OnboardingSession.user_id == user_id)
+            .values(nickname=nickname, updated_at=datetime.now(UTC))
+        )
+        res = await self.db.execute(stmt)
+        await self.db.flush()
+        return res.rowcount
 
     async def create_session(
         self, nickname: str, total_turns: int, user_id: str, mbti: str | None = None
