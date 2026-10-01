@@ -3,7 +3,18 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import logging
+import os
 from contextlib import asynccontextmanager
+
+import sentry_sdk
+
+# SENTRY_DSN 이 비어 있으면 SDK 가 꺼진 채로 동작한다 (로컬·테스트·CI 에서 이벤트를 보내지 않는다).
+sentry_sdk.init(
+    dsn=os.getenv("SENTRY_DSN"),
+    # 요청 헤더·IP 등 사용자 데이터를 함께 수집한다.
+    # https://docs.sentry.io/platforms/python/data-management/data-collected/
+    send_default_pii=True,
+)
 
 # 앱 로거(logging.getLogger(__name__))에 핸들러가 없으면 WARNING 이상만, 시각도 없이 찍힌다.
 # uvicorn 로거는 자기 핸들러가 있고 propagate=False 라 중복되지 않는다.
@@ -63,6 +74,12 @@ api_router.include_router(simulation_router)
 async def health_check() -> dict[str, str]:
     """서버 정상 가동 여부를 확인하는 헬스 체크 엔드포인트."""
     return {"status": "ok"}
+
+
+# Sentry 연동 확인용. 이벤트 수신을 확인한 뒤 제거한다.
+@app.get("/sentry-debug", include_in_schema=False)
+async def trigger_error():
+    division_by_zero = 1 / 0  # noqa: F841
 
 
 app.include_router(api_router)
