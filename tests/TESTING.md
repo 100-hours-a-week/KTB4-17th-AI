@@ -249,3 +249,12 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - 운영 태깅 호출이 전부 1.5초에서 끊김 (`persona tagging failed and used topic coverage`, #80)
 - 온보딩 답변 태깅 `onboarding_tag_timeout_s` 1.5 → 4.0
 - /build 재태깅은 별도 `persona_retag_timeout_s` 8.0 — 재태깅이 이 값을 쓰고 온보딩 값보다 긴지 테스트 (설정이 없어 먼저 실패 확인)
+
+## 온보딩 — 첫 턴 타임아웃 · 폴백 인사 문구 (red → green)
+
+`tests/test_persona_agents.py` · seam: 온보딩 발화 생성 (`ConversationAgent.generate`, LLM 호출만 가짜)
+
+- 운영에서 `persona first turn fell back to template` 반복 (#82) — 첫 턴(5개 항목 JSON, 450토큰)이 일반 턴과 같은 2.5초 제한
+- 첫 턴 전용 `onboarding_first_turn_timeout_s` 8.0 — 첫 턴 생성과 첫 턴 가드레일 재생성에 적용 (설정이 없어 먼저 실패 확인)
+- 폴백 인사 문구: "알아가고 싶어서 가볍게 몇 가지 여쭤보려고요." / "○○님 얘기도 편하게 들려주세요." — segment 순서·타입은 유지 (기존 문구로 먼저 실패 확인)
+- LLM 첫 턴 지시 5단계도 같은 방향으로 ("답해 주세요" 같은 설문 말투 금지)

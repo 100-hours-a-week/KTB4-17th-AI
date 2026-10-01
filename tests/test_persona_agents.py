@@ -39,7 +39,7 @@ def test_first_turn_order_question_then_haru_answer_then_invite():
     question = text.index("이번 주제의 질문")
     seed = text.index("약속 없는 주말은")
     answer = text.index("하루 자신의 예시 답변을 한 문장으로 덧붙이기")
-    invite = text.index("편하게 답해 달라고")
+    invite = text.index("편하게 들려 달라고")
     assert intro < reason < question < answer < invite
     assert question < seed < answer
     assert "저는 늦잠부터 자는 편이에요" in text
@@ -300,3 +300,43 @@ def test_reply_without_claiming_past_meeting_is_kept(monkeypatch, reply):
     out = _generate(monkeypatch, turn_index=2, reply=reply)
 
     assert (out.source, out.text) == ("llm", reply)
+
+
+# ── 첫 턴 타임아웃 · 폴백 문구 ─────────────────────────
+
+
+def test_first_turn_waits_longer_than_later_turns(monkeypatch):
+    """첫 턴은 5개 항목 JSON(450토큰)을 받는다. 일반 턴(2.5초)과 같은 제한으로는 운영에서 매번 템플릿으로 떨어졌다 (#82)."""
+    import asyncio
+
+    from app.core.config import get_settings
+    from app.features.persona import agents
+
+    seen = {}
+
+    async def fake_call(**kwargs):
+        seen.update(kwargs)
+        raise agents.LLMError("stop here")
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+
+    asyncio.run(ConversationAgent().generate(history=[], topic=_topic(), turn_index=0, total_turns=5, nickname="민수"))
+
+    settings = get_settings()
+    assert seen["timeout"] == settings.onboarding_first_turn_timeout_s
+    assert settings.onboarding_first_turn_timeout_s > settings.onboarding_phrase_timeout_s
+
+
+def test_first_turn_fallback_reads_naturally(monkeypatch):
+    """폴백 인사: '알아가고 싶어서 … 나눠보고 싶어요'(싶어 반복), 질문 뒤 '○○님도 편하게 답해 주세요'(설문 말투)를 고친다 (#82).
+    segment 순서·타입은 프론트 계약이라 그대로."""
+    out = _generate(monkeypatch, turn_index=0, error=True)
+
+    assert out.source == "seed"
+    assert [(s.type, s.text) for s in out.segments] == [
+        ("intro", "안녕하세요, 저는 하루예요."),
+        ("reason", "민수님을 알아가고 싶어서 가볍게 몇 가지 여쭤보려고요."),
+        ("question", "약속 없는 주말은 보통 어떻게 보내세요?"),
+        ("self_disclosure", "저는 늦잠부터 자는 편이에요"),
+        ("answer_prompt", "민수님 얘기도 편하게 들려주세요."),
+    ]

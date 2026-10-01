@@ -201,10 +201,11 @@ def _first_turn_fallback(topic: Topic, nickname: str) -> list[Segment]:
     """LLM 실패 시 고정 템플릿. 순서·타입이 코드로 보장된다."""
     return [
         Segment(type="intro", text=FIRST_TURN_INTRO),
-        Segment(type="reason", text=f"{nickname}님을 알아가고 싶어서 가볍게 이야기를 나눠보고 싶어요."),
+        Segment(type="reason", text=f"{nickname}님을 알아가고 싶어서 가볍게 몇 가지 여쭤보려고요."),
         Segment(type="question", text=topic.seed),
         Segment(type="self_disclosure", text=topic.opener or "저는 이런 얘기 나누는 걸 좋아해요."),
-        Segment(type="answer_prompt", text=f"{nickname}님도 편하게 답해 주세요."),
+        # 질문은 앞에서 이미 했다 — 또 "답해 달라"고 하면 설문처럼 들린다 (#82)
+        Segment(type="answer_prompt", text=f"{nickname}님 얘기도 편하게 들려주세요."),
     ]
 
 
@@ -314,7 +315,8 @@ class ConversationAgent:  # 대화 생성 담당
                 f"3. {question} — 하루의 예시 답변보다 반드시 먼저 사용자에게 묻기",
                 "4. 질문을 던진 뒤에 위 '문 여는 한 줄'을 참고해 하루 자신의 예시 답변을 한 문장으로 덧붙이기 "
                 "(하루의 답변이 질문보다 앞서면 안 됨. 연애관 주제면 제3자 얘기로)",
-                f"5. 마지막에 {nickname}님도 편하게 답해 달라고 부담 없이 유도하기",
+                f"5. 마지막에 {nickname}님 얘기도 편하게 들려 달라고 부담 없이 유도하기 "
+                "(질문은 이미 했으니 '답해 주세요' 같은 설문 말투 금지)",
                 "질문은 정확히 하나만 하세요. 설문조사 말투는 피하세요.",
                 "출력은 위 다섯 단계를 키로 가진 JSON 객체 하나만, 각 값은 그 단계의 발화 문장입니다. "
                 "설명·마크다운 금지. "
@@ -453,7 +455,7 @@ class ConversationAgent:  # 대화 생성 담당
                 system=system,
                 messages=[*history, {"role": "user", "content": instruction}],
                 max_tokens=450,
-                timeout=get_settings().onboarding_phrase_timeout_s,
+                timeout=get_settings().onboarding_first_turn_timeout_s,
                 name="persona-conversation",
                 metadata=trace_metadata,
             )
@@ -481,7 +483,7 @@ class ConversationAgent:  # 대화 생성 담당
                     {"role": "user", "content": notice},
                 ],
                 max_tokens=450,
-                timeout=get_settings().onboarding_phrase_timeout_s,
+                timeout=get_settings().onboarding_first_turn_timeout_s,
                 name="persona-conversation",
                 metadata=trace_metadata,
             )
