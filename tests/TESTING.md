@@ -242,6 +242,14 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - 화자 뒤바뀜으로 다시 받다가 실패(공급자 오류·깨진 JSON)하면 503 대신 1차 대본을 쓴다
 - 세 조각 모두 테스트를 먼저 쓰고 실패를 확인한 뒤 구현
 
+## 온보딩 — 태깅 타임아웃 (red → green)
+
+`tests/test_persona_build_fallback.py` · seam: `/build` 결과 (태깅·추출 에이전트만 가짜)
+
+- 운영 태깅 호출이 전부 1.5초에서 끊김 (`persona tagging failed and used topic coverage`, #80)
+- 온보딩 답변 태깅 `onboarding_tag_timeout_s` 1.5 → 4.0
+- /build 재태깅은 별도 `persona_retag_timeout_s` 8.0 — 재태깅이 이 값을 쓰고 온보딩 값보다 긴지 테스트 (설정이 없어 먼저 실패 확인)
+
 ## 온보딩 — 첫 턴 타임아웃 · 폴백 인사 문구 (red → green)
 
 `tests/test_persona_agents.py` · seam: 온보딩 발화 생성 (`ConversationAgent.generate`, LLM 호출만 가짜)
