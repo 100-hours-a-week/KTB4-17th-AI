@@ -126,11 +126,13 @@ class PracticeService:
         summaries = []
         for s in await self.repo.list_for_user(user_id, limit):
             partner = await load_persona(self.db, PersonaRef(persona_id=s.partner_persona_id))
+            me = await load_persona(self.db, PersonaRef(persona_id=s.my_persona_id)) if s.my_persona_id else None
+            my_nickname = me.nickname if me else s.my_nickname
             summaries.append(
                 PracticeSessionSummary(
                     session_id=s.id,
                     partner=partner.brief if partner else _brief_fallback(s),
-                    my_nickname=s.my_nickname,
+                    my_nickname=my_nickname,
                     status=s.status,
                     message_count=s.message_count,
                     created_at=s.created_at,
@@ -142,10 +144,14 @@ class PracticeService:
     # 세션 + 메시지 목록을 응답 스키마로 조립. 상대 페르소나가 지워졌으면 최소 정보로 대체
     async def get(self, session: PracticeSession) -> PracticeSessionResponse:
         partner = await load_persona(self.db, PersonaRef(persona_id=session.partner_persona_id))
+        me = (
+            await load_persona(self.db, PersonaRef(persona_id=session.my_persona_id)) if session.my_persona_id else None
+        )
+        my_nickname = me.nickname if me else session.my_nickname
         return PracticeSessionResponse(
             session_id=session.id,
             partner=partner.brief if partner else _brief_fallback(session),
-            my_nickname=session.my_nickname,
+            my_nickname=my_nickname,
             status=session.status,
             messages=[
                 PracticeMessageItem(index=m.index, role=m.role, content=m.content, created_at=m.created_at)
@@ -177,6 +183,16 @@ class PracticeService:
         if session.my_persona_id:
             me = await load_persona(self.db, PersonaRef(persona_id=session.my_persona_id))
         mode = effective_mode(session.user_id)
+        # 온보딩 세션의 닉네임이 유효하게 로드되었으면(id 앞자리 폴백이 아니면) 우선 반영하고 세션에도 동기화한다
+        partner_name = (
+            partner.nickname if partner and partner.nickname != partner.record.id[:6] else session.partner_nickname
+        )
+        my_name = me.nickname if me and me.nickname != me.record.id[:6] else session.my_nickname
+        if session.partner_nickname != partner_name:
+            session.partner_nickname = partner_name
+        if session.my_nickname != my_name:
+            session.my_nickname = my_name
+
         system = self.agent.system_prompt(
             partner_name=session.partner_nickname,
             partner=partner.response,

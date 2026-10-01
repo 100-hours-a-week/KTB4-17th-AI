@@ -20,6 +20,8 @@ from .schemas import (
     StartRequest,
     SupplementRequest,
     TurnResponse,
+    UpdateNicknameRequest,
+    UpdateNicknameResponse,
     answer_problem,
 )
 from .service import (
@@ -32,6 +34,7 @@ from .service import (
     TooFewAnswers,
     TurnMismatch,
     UnknownDimension,
+    UserNotFound,
 )
 
 router = APIRouter(prefix="/v1/persona", tags=["persona"])
@@ -39,6 +42,21 @@ router = APIRouter(prefix="/v1/persona", tags=["persona"])
 
 def get_service(db: AsyncSession = Depends(get_db)) -> OnboardingService:
     return OnboardingService(PersonaRepository(db))
+
+
+@router.post("/nickname", response_model=UpdateNicknameResponse)
+async def update_nickname(
+    req: UpdateNicknameRequest,
+    service: OnboardingService = Depends(get_service),
+    db: AsyncSession = Depends(get_db),
+) -> UpdateNicknameResponse:
+    """사용자의 닉네임을 변경한다. 연결된 온보딩 세션들의 닉네임이 모두 갱신된다."""
+    try:
+        res = await service.update_nickname(req.user_id, req.nickname)
+    except UserNotFound as e:
+        raise HTTPException(404, f"해당 사용자의 온보딩 세션을 찾을 수 없어요: {e.user_id}") from e
+    await db.commit()
+    return res
 
 
 @router.post("/onboarding/start", response_model=TurnResponse)
