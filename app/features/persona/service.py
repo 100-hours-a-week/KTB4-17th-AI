@@ -10,6 +10,7 @@ import logging
 import re
 from datetime import datetime
 
+from app.core.config import get_settings
 from app.core.guardrail import effective_mode
 from app.core.guardrail_trace import record_guardrail
 from app.core.observability import build_langfuse_metadata
@@ -413,6 +414,7 @@ class OnboardingService:
                 tags = await self.tagging.tag(
                     turn.question,
                     turn.answer,
+                    timeout=get_settings().persona_retag_timeout_s,
                     trace_metadata=build_langfuse_metadata(
                         feature="persona",
                         operation="retagging",

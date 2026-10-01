@@ -534,9 +534,12 @@ class TaggingAgent:
         question: str,
         answer: str,
         *,
+        timeout: float | None = None,
         trace_metadata: LangfuseMetadata | None = None,
     ) -> Tags | None:
         """실패 시 None. service가 topic.covers를 대신 쓴다.
+
+        timeout 을 안 주면 온보딩 중 답변 태깅용(onboarding_tag_timeout_s).
 
         태깅 실패로 커버리지가 영영 안 차면 같은 주제를 맴돌게 되므로
         여기서 예외를 올리지 않는다.
@@ -547,7 +550,7 @@ class TaggingAgent:
                     system=TAG_PROMPT,
                     messages=[{"role": "user", "content": f"질문: {question}\n답변: {answer}"}],
                     max_tokens=120,
-                    timeout=get_settings().onboarding_tag_timeout_s,
+                    timeout=timeout if timeout is not None else get_settings().onboarding_tag_timeout_s,
                     name="persona-tagging",
                     metadata=trace_metadata,
                 )
