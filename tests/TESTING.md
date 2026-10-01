@@ -258,3 +258,17 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - 첫 턴 전용 `onboarding_first_turn_timeout_s` 8.0 — 첫 턴 생성과 첫 턴 가드레일 재생성에 적용 (설정이 없어 먼저 실패 확인)
 - 폴백 인사 문구: "알아가고 싶어서 가볍게 몇 가지 여쭤보려고요." / "○○님 얘기도 편하게 들려주세요." — segment 순서·타입은 유지 (기존 문구로 먼저 실패 확인)
 - LLM 첫 턴 지시 5단계도 같은 방향으로 ("답해 주세요" 같은 설문 말투 금지)
+
+## 온보딩 — 첫 턴 항목 단위 보정 · 일반 턴 타임아웃 (red → green)
+
+`tests/test_persona_agents.py` · seam: 온보딩 발화 생성 (`ConversationAgent.generate`, LLM 호출만 가짜)
+
+배포 후 Langfuse 확인 (#87)
+- 첫 턴: LLM 이 1.19초에 정상 응답했지만 `answer_prompt` 의 물음표 하나 때문에 다섯 항목 전체를 버리고 템플릿
+- 2턴 이후: 정확히 2.50초에서 끊겨 seed
+
+- 첫 턴 규칙(인사 고정, reason 에 닉네임·"알아가", 물음표는 question 에만 하나)에 어긋난 항목만 템플릿 문장으로 교체, 나머지 LLM 문장 유지
+  - 항목이 비었거나 문자열이 아니면 구조가 깨진 것이라 전체 템플릿 (기존과 같음)
+  - "규칙 위반이면 전체 템플릿"을 고정하던 기존 테스트를 새 동작으로 교체
+- `onboarding_phrase_timeout_s` 2.5 → 5.0
+- 세 조각 모두 테스트를 먼저 쓰고 실패를 확인한 뒤 구현

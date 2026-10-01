@@ -209,8 +209,12 @@ def _first_turn_fallback(topic: Topic, nickname: str) -> list[Segment]:
     ]
 
 
-def _parse_first_turn(raw: dict, nickname: str) -> list[Segment]:
-    """LLM JSON → 5개 segment. 타입·비어 있음·의미 불변식 위반 시 ValueError (호출부가 전체 폴백)."""
+def _parse_first_turn(raw: dict, nickname: str, topic: Topic) -> list[Segment]:
+    """LLM JSON → 5개 segment.
+
+    항목이 비었거나 문자열이 아니면 응답 구조가 깨진 것이라 ValueError (호출부가 전체 템플릿으로 폴백).
+    규칙에 어긋난 항목은 그 항목만 템플릿 문장으로 바꾼다 — answer_prompt 의 물음표 하나 때문에
+    멀쩡한 나머지 네 항목까지 버린 적이 있다 (#87)."""
     texts = {}
     for t in FIRST_TURN_TYPES:
         value = raw.get(t)
@@ -218,15 +222,24 @@ def _parse_first_turn(raw: dict, nickname: str) -> list[Segment]:
             raise ValueError(f"missing segment: {t}")
         texts[t] = value.strip()
 
-    if texts["intro"] != FIRST_TURN_INTRO:
-        raise ValueError("intro must be the fixed greeting")
-    if f"{nickname}님" not in texts["reason"] or "알아가" not in texts["reason"]:
-        raise ValueError("reason must express wanting to get to know the nickname")
-    # 질문은 question segment 에만, 전체에서 정확히 하나
-    if any(_question_marks(texts[t]) for t in FIRST_TURN_TYPES if t != "question"):
-        raise ValueError("only the question segment may ask a question")
-    if _question_marks(texts["question"]) != 1:
-        raise ValueError("question segment must contain exactly one question")
+    # 항목별 규칙. 질문은 question 항목에만, 전체에서 정확히 하나
+    def valid(t: str, text: str) -> bool:
+        if t == "question":
+            return _question_marks(text) == 1
+        if _question_marks(text):
+            return False
+        if t == "intro":
+            return text == FIRST_TURN_INTRO
+        if t == "reason":
+            return f"{nickname}님" in text and "알아가" in text
+        return True
+
+    template = {s.type: s.text for s in _first_turn_fallback(topic, nickname)}
+    repaired = [t for t in FIRST_TURN_TYPES if not valid(t, texts[t])]
+    for t in repaired:
+        texts[t] = template[t]
+    if repaired:
+        logger.warning("first turn segments repaired with template: %s", repaired)
 
     return [Segment(type=t, text=texts[t]) for t in FIRST_TURN_TYPES]  # type: ignore[arg-type]
 
@@ -459,7 +472,7 @@ class ConversationAgent:  # 대화 생성 담당
                 name="persona-conversation",
                 metadata=trace_metadata,
             )
-            segments = _parse_first_turn(raw if isinstance(raw, dict) else {}, nickname)
+            segments = _parse_first_turn(raw if isinstance(raw, dict) else {}, nickname, topic)
         except (LLMError, ValueError) as e:  # pydantic ValidationError 도 ValueError
             logger.warning("first turn generation failed (%s), using template", e)
             get_client().update_current_span(
@@ -487,7 +500,7 @@ class ConversationAgent:  # 대화 생성 담당
                 name="persona-conversation",
                 metadata=trace_metadata,
             )
-            regenerated_segments = _parse_first_turn(regenerated, nickname)
+            regenerated_segments = _parse_first_turn(regenerated, nickname, topic)
             return _join(regenerated_segments)
 
         fallback_segments = _first_turn_fallback(topic, nickname)
