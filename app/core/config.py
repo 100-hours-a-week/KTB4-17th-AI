@@ -89,6 +89,9 @@ class Settings(BaseSettings):
     onboarding_phrase_timeout_s: float = 2.5
     # 페르소나 프로필 종합 추출 타임아웃
     persona_extract_timeout_s: float = 15.0
+    # 온보딩 첫 턴(5개 항목 JSON, 450토큰). 일반 턴과 같은 2.5초로는 운영에서 매번 템플릿으로 떨어졌다 (#82).
+    # 온보딩을 시작할 때 한 번만 기다리는 호출이라 넉넉히
+    onboarding_first_turn_timeout_s: float = 8.0
     # 연습 대화(practice) 실시간 스트리밍 답변 전체 타임아웃
     practice_timeout_s: float = 12.0
     # 시뮬레이션 대본+리포트 1회 호출 타임아웃 (SimulationAgent.run)

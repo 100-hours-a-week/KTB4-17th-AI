@@ -241,3 +241,12 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - `finish_reason=error`(HTTP 200 이지만 생성 도중 끊김)는 파싱하지 않고 `upstream_error`
 - 화자 뒤바뀜으로 다시 받다가 실패(공급자 오류·깨진 JSON)하면 503 대신 1차 대본을 쓴다
 - 세 조각 모두 테스트를 먼저 쓰고 실패를 확인한 뒤 구현
+
+## 온보딩 — 첫 턴 타임아웃 · 폴백 인사 문구 (red → green)
+
+`tests/test_persona_agents.py` · seam: 온보딩 발화 생성 (`ConversationAgent.generate`, LLM 호출만 가짜)
+
+- 운영에서 `persona first turn fell back to template` 반복 (#82) — 첫 턴(5개 항목 JSON, 450토큰)이 일반 턴과 같은 2.5초 제한
+- 첫 턴 전용 `onboarding_first_turn_timeout_s` 8.0 — 첫 턴 생성과 첫 턴 가드레일 재생성에 적용 (설정이 없어 먼저 실패 확인)
+- 폴백 인사 문구: "알아가고 싶어서 가볍게 몇 가지 여쭤보려고요." / "○○님 얘기도 편하게 들려주세요." — segment 순서·타입은 유지 (기존 문구로 먼저 실패 확인)
+- LLM 첫 턴 지시 5단계도 같은 방향으로 ("답해 주세요" 같은 설문 말투 금지)
