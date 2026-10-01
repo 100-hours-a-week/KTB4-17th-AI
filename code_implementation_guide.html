@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KTB4-17th-AI 코드 레벨 구현 분석서</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600&family=Pretendard:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Prism.js for Syntax Highlighting -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/themes/prism-tomorrow.min.css" rel="stylesheet" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/components/prism-core.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/prism/1.29.0/plugins/autoloader/prism-autoloader.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Pretendard', '-apple-system', 'BlinkMacSystemFont', 'system-ui', 'Roboto', 'sans-serif'],
+            mono: ['"Fira Code"', 'Consolas', 'Monaco', 'monospace'],
+          },
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              100: '#e0e7ff',
+              400: '#818cf8',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            surface: {
+              dark: '#0f172a',
+              card: '#1e293b',
+              border: '#334155',
+              code: '#090d16',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body {
+      font-family: 'Pretendard', sans-serif;
+      background-color: #0b0f19;
+      color: #cbd5e1;
+    }
+    code, pre {
+      font-family: 'Fira Code', monospace !important;
+    }
+    .custom-scrollbar::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+    .gradient-border {
+      position: relative;
+      border-radius: 0.75rem;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.2), rgba(168, 85, 247, 0.1), rgba(15, 23, 42, 0.8));
+    }
+    .nav-active {
+      background: rgba(99, 102, 241, 0.15);
+      color: #818cf8;
+      border-left: 3px solid #6366f1;
+    }
+    /* Mermaid-like custom SVG styling */
+    .flow-node {
+      transition: all 0.2s ease;
+    }
+    .flow-node:hover {
+      filter: drop-shadow(0 0 8px rgba(99, 102, 241, 0.6));
+    }
+  </style>
+</head>
+<body class="custom-scrollbar antialiased selection:bg-brand-500 selection:text-white">
+
+  <!-- 상단 네비게이션 헤더 -->
+  <header class="fixed top-0 left-0 right-0 h-16 bg-[#0f172a]/90 backdrop-blur-md border-b border-surface-border z-50 flex items-center justify-between px-6">
+    <div class="flex items-center space-x-3">
+      <div class="w-9 h-9 rounded-lg bg-gradient-to-tr from-indigo-500 to-purple-500 flex items-center justify-center text-white font-black text-lg shadow-lg shadow-indigo-500/30">
+        AI
+      </div>
+      <div>
+        <h1 class="text-base font-bold text-white tracking-tight flex items-center gap-2">
+          KTB4-17th-AI
+          <span class="text-xs px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 font-mono">v0.1.0 Architecture</span>
+        </h1>
+        <p class="text-xs text-slate-400">별이삼샵 소개팅 AI API 서버 코드 분석서</p>
+      </div>
+    </div>
+    <div class="flex items-center space-x-4 text-xs">
+      <span class="px-2.5 py-1 rounded bg-slate-800 text-slate-300 border border-slate-700 font-mono">Python 3.12 · FastAPI · SQLAlchemy Async</span>
+      <a href="#summary" class="text-slate-400 hover:text-white transition">개요</a>
+      <a href="#persona" class="text-slate-400 hover:text-white transition">온보딩</a>
+      <a href="#simulation" class="text-slate-400 hover:text-white transition">시뮬레이션</a>
+      <a href="#practice" class="text-slate-400 hover:text-white transition">연습대화</a>
+      <a href="#engineering" class="text-slate-400 hover:text-white transition">핵심 기법</a>
+    </div>
+  </header>
+
+  <!-- 전체 레이아웃 컨테이너 -->
+  <div class="flex pt-16 min-h-screen">
+    
+    <!-- 좌측 고정 목차 사이드바 -->
+    <aside class="w-72 fixed top-16 bottom-0 left-0 bg-[#0c1222] border-r border-surface-border overflow-y-auto custom-scrollbar p-5 hidden lg:block">
+      <div class="text-[11px] font-semibold tracking-wider text-slate-500 uppercase mb-3">Table of Contents</div>
+      <nav class="space-y-1 text-sm font-medium">
+        <a href="#summary" class="block px-3 py-2 rounded-md text-slate-300 hover:bg-slate-800/60 hover:text-white transition">
+          1. 프로젝트 개요 & 아키텍처
+        </a>
+        <div class="pl-3 space-y-1 border-l border-slate-800 ml-3 my-1 text-xs">
+          <a href="#arch-layers" class="block py-1 text-slate-400 hover:text-indigo-400">레이어드 아키텍처 규칙</a>
+          <a href="#arch-stack" class="block py-1 text-slate-400 hover:text-indigo-400">기술 스택 & 핵심 제약</a>
+        </div>
+
+        <a href="#persona" class="block px-3 py-2 rounded-md text-slate-300 hover:bg-slate-800/60 hover:text-white transition">
+          2. 페르소나 온보딩 (Persona)
+        </a>
+        <div class="pl-3 space-y-1 border-l border-slate-800 ml-3 my-1 text-xs">
+          <a href="#persona-domains" class="block py-1 text-slate-400 hover:text-indigo-400">15대 정량 & 4대 텍스트 차원</a>
+          <a href="#persona-topic-algo" class="block py-1 text-slate-400 hover:text-indigo-400">동적 주제 선택 (next_topic)</a>
+          <a href="#persona-agents" class="block py-1 text-slate-400 hover:text-indigo-400">3중 에이전트 분리 원칙</a>
+          <a href="#persona-validation" class="block py-1 text-slate-400 hover:text-indigo-400">근거 필터링 & 모순 검증</a>
+          <a href="#persona-concurrency" class="block py-1 text-slate-400 hover:text-indigo-400">턴 중복 방지 & 멱등적 빌드</a>
+        </div>
+
+        <a href="#simulation" class="block px-3 py-2 rounded-md text-slate-300 hover:bg-slate-800/60 hover:text-white transition">
+          3. 시뮬레이션 & 리포트 (Simulation)
+        </a>
+        <div class="pl-3 space-y-1 border-l border-slate-800 ml-3 my-1 text-xs">
+          <a href="#sim-rule-layer" class="block py-1 text-slate-400 hover:text-indigo-400">결정론적 규칙 점수 산출식</a>
+          <a href="#sim-risks" class="block py-1 text-slate-400 hover:text-indigo-400">위험 조합(Risks) 감지 메커니즘</a>
+          <a href="#sim-one-call" class="block py-1 text-slate-400 hover:text-indigo-400">LLM 1회 호출 (대본+리포트)</a>
+          <a href="#sim-normalize" class="block py-1 text-slate-400 hover:text-indigo-400">대본 정규화 (normalize_script)</a>
+          <a href="#sim-concurrency" class="block py-1 text-slate-400 hover:text-indigo-400">커넥션 풀 반환 & 인플라이트 락</a>
+        </div>
+
+        <a href="#practice" class="block px-3 py-2 rounded-md text-slate-300 hover:bg-slate-800/60 hover:text-white transition">
+          4. 1:1 연습 대화 (Practice)
+        </a>
+        <div class="pl-3 space-y-1 border-l border-slate-800 ml-3 my-1 text-xs">
+          <a href="#practice-dual-api" class="block py-1 text-slate-400 hover:text-indigo-400">SSE 스트리밍 vs JSON 듀얼 구조</a>
+          <a href="#practice-session-scope" class="block py-1 text-slate-400 hover:text-indigo-400">request 스코프 DB 세션 수명</a>
+          <a href="#practice-save-first" class="block py-1 text-slate-400 hover:text-indigo-400">선저장 후스트리밍 & /retry</a>
+          <a href="#practice-anthropic" class="block py-1 text-slate-400 hover:text-indigo-400">Anthropic 첫 메시지 제약 대응</a>
+        </div>
+
+        <a href="#engineering" class="block px-3 py-2 rounded-md text-slate-300 hover:bg-slate-800/60 hover:text-white transition">
+          5. 핵심 엔지니어링 패턴 총정리
+        </a>
+        <div class="pl-3 space-y-1 border-l border-slate-800 ml-3 my-1 text-xs">
+          <a href="#eng-lookup" class="block py-1 text-slate-400 hover:text-indigo-400">도메인 격리 (Lookup & Profile)</a>
+          <a href="#eng-observability" class="block py-1 text-slate-400 hover:text-indigo-400">Langfuse 분산 관측성 전파</a>
+          <a href="#eng-fallback" class="block py-1 text-slate-400 hover:text-indigo-400">장애 격리 & Graceful Fallback</a>
+          <a href="#eng-playground" class="block py-1 text-slate-400 hover:text-indigo-400">로컬 플레이그라운드 비침습 설계</a>
+        </div>
+      </nav>
+
+      <!-- 메타 박스 -->
+      <div class="mt-8 p-3 rounded-lg bg-slate-900 border border-slate-800 text-[11px] space-y-1.5">
+        <div class="text-slate-400 font-semibold flex items-center gap-1.5">
+          <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Analysis Verified
+        </div>
+        <p class="text-slate-500">FastAPI, SQLAlchemy 2.0 Async, Pydantic V2, Langfuse</p>
+      </div>
+    </aside>
+
+    <!-- 메인 컨텐츠 영역 -->
+    <main class="flex-1 lg:ml-72 p-6 md:p-12 max-w-5xl">
+      
+      <!-- 상단 타이틀 배너 -->
+      <div class="mb-14 pb-10 border-b border-surface-border">
+        <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-xs font-semibold mb-4">
+          <span>PROJECT IMPLEMENTATION ARCHITECTURE</span>
+        </div>
+        <h1 class="text-3xl md:text-5xl font-extrabold text-white tracking-tight leading-tight mb-4">
+          별이삼샵 AI API 서버 <br/>
+          <span class="bg-gradient-to-r from-indigo-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">코드 레벨 심층 분석 보고서</span>
+        </h1>
+        <p class="text-base md:text-lg text-slate-400 leading-relaxed max-w-3xl">
+          본 문서는 <code class="text-indigo-300 font-mono">KTB4-17th-AI</code> 저장소의 구조, 아키텍처 원칙, 그리고 <strong class="text-slate-200">페르소나 온보딩</strong>, <strong class="text-slate-200">시뮬레이션</strong>, <strong class="text-slate-200">연습 대화</strong>의 3대 핵심 도메인이 실제 Python 코드로 어떻게 결합·구현되었는지를 코드 스니펫과 함께 정밀하게 분석합니다.
+        </p>
+      </div>
+
+      <!-- ========================================================================= -->
+      <!-- 1. 프로젝트 개요 & 아키텍처 -->
+      <!-- ========================================================================= -->
+      <section id="summary" class="mb-20 scroll-mt-24">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 font-bold border border-indigo-500/30">1</span>
+          <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">프로젝트 개요 & 시스템 아키텍처</h2>
+        </div>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+          <code class="text-indigo-300 font-mono font-medium">KTB4-17th-AI</code>는 연애 소개팅 매칭 서비스인 '별이삼샵'의 핵심 지능형 백엔드 서버입니다.
+          단순한 챗봇이 아니라 사용자의 대화로부터 <strong>15개 가치관 차원</strong>을 실시간 추적하고, 저장된 페르소나들 간의 <strong>가상 소개팅 시뮬레이션</strong> 및 <strong>1:1 실시간 롤플레잉 대화</strong>를 고성능 비동기(Async) 구조로 안전하게 처리합니다.
+        </p>
+
+        <!-- 아키텍처 흐름 SVG 다이어그램 -->
+        <div class="bg-surface-card border border-surface-border rounded-xl p-6 mb-8 shadow-xl">
+          <h3 class="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+            <svg class="w-4 h-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+            High-Level Architecture & Domain Pipelines
+          </h3>
+          <div class="overflow-x-auto">
+            <svg viewBox="0 0 850 260" class="w-full min-w-[750px] text-xs">
+              <defs>
+                <linearGradient id="boxGrad1" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#1e1b4b"/>
+                  <stop offset="100%" stop-color="#0f172a"/>
+                </linearGradient>
+                <linearGradient id="boxGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#31104b"/>
+                  <stop offset="100%" stop-color="#0f172a"/>
+                </linearGradient>
+                <linearGradient id="boxGrad3" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#064e3b"/>
+                  <stop offset="100%" stop-color="#0f172a"/>
+                </linearGradient>
+              </defs>
+
+              <!-- Entry: FastAPI Router -->
+              <rect x="20" y="90" width="130" height="70" rx="8" fill="#1e293b" stroke="#4f46e5" stroke-width="2"/>
+              <text x="85" y="120" fill="#ffffff" font-weight="bold" text-anchor="middle">FastAPI Router</text>
+              <text x="85" y="140" fill="#94a3b8" font-size="11" text-anchor="middle">/ai/api/v1/...</text>
+
+              <!-- Arrow 1 -->
+              <path d="M 150 125 L 200 125" stroke="#6366f1" stroke-width="2" marker-end="url(#arrow)"/>
+              <circle cx="175" cy="125" r="3" fill="#818cf8"/>
+
+              <!-- Dispatcher Box -->
+              <rect x="200" y="30" width="180" height="200" rx="10" fill="#0f172a" stroke="#334155" stroke-dasharray="4"/>
+              <text x="290" y="55" fill="#94a3b8" font-weight="bold" text-anchor="middle">Features Routing</text>
+
+              <!-- Feature 1: Persona -->
+              <rect x="220" y="70" width="140" height="42" rx="6" fill="url(#boxGrad1)" stroke="#6366f1" stroke-width="1.5"/>
+              <text x="290" y="95" fill="#c7d2fe" font-weight="600" text-anchor="middle">features/persona</text>
+
+              <!-- Feature 2: Simulation -->
+              <rect x="220" y="122" width="140" height="42" rx="6" fill="url(#boxGrad2)" stroke="#a855f7" stroke-width="1.5"/>
+              <text x="290" y="147" fill="#f5d0fe" font-weight="600" text-anchor="middle">features/simulation</text>
+
+              <!-- Feature 3: Practice -->
+              <rect x="220" y="174" width="140" height="42" rx="6" fill="url(#boxGrad3)" stroke="#10b981" stroke-width="1.5"/>
+              <text x="290" y="199" fill="#a7f3d0" font-weight="600" text-anchor="middle">features/practice</text>
+
+              <!-- Connecting to Service & Agent Layers -->
+              <path d="M 360 91 L 430 91" stroke="#6366f1" stroke-width="1.5"/>
+              <path d="M 360 143 L 430 143" stroke="#a855f7" stroke-width="1.5"/>
+              <path d="M 360 195 L 430 195" stroke="#10b981" stroke-width="1.5"/>
+
+              <!-- Business Logic & Agent Processing -->
+              <rect x="430" y="55" width="180" height="165" rx="8" fill="#1e293b" stroke="#334155"/>
+              <text x="520" y="80" fill="#e2e8f0" font-weight="bold" text-anchor="middle">Service & Agent Layer</text>
+              <text x="520" y="105" fill="#818cf8" text-anchor="middle">동적 토픽 알고리즘 / 커버리지</text>
+              <text x="520" y="135" fill="#c084fc" text-anchor="middle">규칙 점수 산출 + 1회 LLM</text>
+              <text x="520" y="165" fill="#34d399" text-anchor="middle">SSE 토큰 스트리밍 / 재시도</text>
+              <text x="520" y="195" fill="#94a3b8" font-size="10" text-anchor="middle">Langfuse Tracing Metadata</text>
+
+              <!-- Output Connections -->
+              <path d="M 610 100 L 670 70" stroke="#475569" stroke-width="1.5"/>
+              <path d="M 610 170 L 670 190" stroke="#475569" stroke-width="1.5"/>
+
+              <!-- Storage & External LLM -->
+              <rect x="670" y="40" width="160" height="60" rx="8" fill="#0f172a" stroke="#38bdf8" stroke-width="1.5"/>
+              <text x="750" y="65" fill="#7dd3fc" font-weight="bold" text-anchor="middle">PostgreSQL (asyncpg)</text>
+              <text x="750" y="85" fill="#64748b" font-size="10" text-anchor="middle">세션·턴·페르소나·시뮬레이션</text>
+
+              <rect x="670" y="160" width="160" height="60" rx="8" fill="#0f172a" stroke="#f43f5e" stroke-width="1.5"/>
+              <text x="750" y="185" fill="#fda4af" font-weight="bold" text-anchor="middle">OpenRouter / Local LLM</text>
+              <text x="750" y="205" fill="#64748b" font-size="10" text-anchor="middle">Claude 3.5 Sonnet / vLLM</text>
+            </svg>
+          </div>
+        </div>
+
+        <div id="arch-layers" class="space-y-4 mb-8">
+          <h3 class="text-xl font-bold text-white">엄격한 레이어드 아키텍처 (Layered Architecture Rules)</h3>
+          <p class="text-slate-300 leading-relaxed">
+            프로젝트는 코드베이스의 유지보수성과 테스트 격리를 위해 계층별 책임을 엄격히 제한하고 있습니다.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-4 rounded-lg bg-surface-card border border-surface-border">
+              <div class="text-indigo-400 font-mono font-semibold text-sm mb-1">api.py</div>
+              <div class="text-white font-medium text-sm mb-1">HTTP 진입점 & 유효성 검증</div>
+              <p class="text-xs text-slate-400">Pydantic 스키마 검증, 상태 코드 반환, HTTP 에러 매핑만 수행합니다. 비즈니스 로직을 절대 작성하지 않습니다.</p>
+            </div>
+            <div class="p-4 rounded-lg bg-surface-card border border-surface-border">
+              <div class="text-purple-400 font-mono font-semibold text-sm mb-1">service.py</div>
+              <div class="text-white font-medium text-sm mb-1">비즈니스 판단의 주체 (결정권자)</div>
+              <p class="text-xs text-slate-400">어떤 질문을 언제 던질지, 점수를 어떻게 환산할지, 트랜잭션 커밋/롤백 시점을 전적으로 통제합니다.</p>
+            </div>
+            <div class="p-4 rounded-lg bg-surface-card border border-surface-border">
+              <div class="text-emerald-400 font-mono font-semibold text-sm mb-1">agents.py</div>
+              <div class="text-white font-medium text-sm mb-1">LLM 대화 및 서술 생성</div>
+              <p class="text-xs text-slate-400">"어떻게 말할 것인가"만을 담당합니다. 프롬프트 엔지니어링, JSON 포맷팅, 토큰 한도 제어, Langfuse 트레이싱을 포함합니다.</p>
+            </div>
+            <div class="p-4 rounded-lg bg-surface-card border border-surface-border">
+              <div class="text-amber-400 font-mono font-semibold text-sm mb-1">repository.py & models.py</div>
+              <div class="text-white font-medium text-sm mb-1">데이터 영속성 계층</div>
+              <p class="text-xs text-slate-400">Service는 SQLAlchemy 쿼리를 직접 작성하지 않고 Repository를 통해서만 안전하게 DB에 접근합니다.</p>
+            </div>
+          </div>
+        </div>
+
+        <div id="arch-stack" class="p-4 rounded-lg bg-slate-900 border border-slate-800">
+          <div class="text-xs font-semibold text-slate-400 uppercase mb-2">공통 인프라 규약 (<code class="text-indigo-300">app/core/</code>)</div>
+          <ul class="text-xs text-slate-300 space-y-1.5 list-disc list-inside">
+            <li><strong>단일 공통 Base (<code class="text-slate-200">app.core.db.Base</code>)</strong>: 기능별(feature)로 Base를 분리하면 시뮬레이션 및 연습대화가 <code class="text-slate-200">personas</code> 테이블에 외래키(ForeignKey)를 맺을 때 MetaData 불일치가 발생하므로 모든 모델이 단일 Base를 상속.</li>
+            <li><strong>비동기 커넥션 풀링 (<code class="text-slate-200">pool_pre_ping=True</code>)</strong>: 비동기 <code class="text-slate-200">asyncpg</code> 풀에서 유실되거나 끊긴 연결을 감지하여 재연결 보장.</li>
+            <li><strong>Pydantic v2 Settings (<code class="text-slate-200">app.core.config.Settings</code>)</strong>: OpenRouter API 키 및 로컬 vLLM/Ollama 호환 엔드포인트를 통일된 OpenAI 규격 클라이언트로 추상화.</li>
+          </ul>
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- 2. 페르소나 온보딩 (Persona) -->
+      <!-- ========================================================================= -->
+      <section id="persona" class="mb-20 scroll-mt-24">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 font-bold border border-indigo-500/30">2</span>
+          <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">페르소나 온보딩 (app/features/persona/)</h2>
+        </div>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+          온보딩 시스템은 정형화된 설문지 문항을 강요하는 대신, 소개팅 상대인 <strong>'하루'</strong>와의 자연스러운 10턴 대화를 통해 사용자의 심리적·행동적 가치관을 실시간으로 추론하고 영속화합니다.
+        </p>
+
+        <!-- 도메인 차원 체계 -->
+        <div id="persona-domains" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-3">15대 정량 차원(SCORED) & 4대 텍스트 차원(TEXTUAL)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            모든 평가 차원은 <code class="text-indigo-300 font-mono">schemas.py</code>의 카탈로그로 중앙 관리되며, LLM 프롬프트가 이를 동적으로 조립하므로 차원 추가 시 프롬프트를 수동 수정할 필요가 없습니다.
+          </p>
+
+          <div class="overflow-hidden rounded-xl border border-surface-border">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-surface-card text-slate-300 font-semibold border-b border-surface-border">
+                <tr>
+                  <th class="p-3">영역 (Area)</th>
+                  <th class="p-3">차원 키 (Key)</th>
+                  <th class="p-3">지표 라벨</th>
+                  <th class="p-3">Low (0~35) 기준</th>
+                  <th class="p-3">High (65~100) 기준</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-surface-border bg-slate-900/50">
+                <tr>
+                  <td class="p-3 font-semibold text-indigo-400" rowspan="2">intimacy<br><span class="text-[10px] text-slate-500">친밀도</span></td>
+                  <td class="p-3 font-mono text-slate-300">avoidance</td>
+                  <td class="p-3 text-white">거리 두기</td>
+                  <td class="p-3 text-slate-400">웬만한 건 공유하고 함께 시간 선호</td>
+                  <td class="p-3 text-slate-400">각자 생활을 중시하고 독립적 거리 유지</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">anxiety</td>
+                  <td class="p-3 text-white">관계 불안</td>
+                  <td class="p-3 text-slate-400">상대 반응이 늦어도 동요 없음</td>
+                  <td class="p-3 text-slate-400">반응이 미지근하면 관계 의심·신경 쓰임</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-semibold text-purple-400" rowspan="5">communication<br><span class="text-[10px] text-slate-500">소통 방식</span></td>
+                  <td class="p-3 font-mono text-slate-300">disclosure</td>
+                  <td class="p-3 text-white">자기·감정 표현</td>
+                  <td class="p-3 text-slate-400">속내를 잘 꺼내지 않음</td>
+                  <td class="p-3 text-slate-400">느낀 것을 즉시 말로 표현</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">openness</td>
+                  <td class="p-3 text-white">솔직한 관계 대화</td>
+                  <td class="p-3 text-slate-400">관계 논의 꺼내기를 부담스러워함</td>
+                  <td class="p-3 text-slate-400">'우리 어떤지' 얘기를 먼저 꺼냄</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">positivity</td>
+                  <td class="p-3 text-white">긍정적 상호작용</td>
+                  <td class="p-3 text-slate-400">무덤덤하고 건조한 톤</td>
+                  <td class="p-3 text-slate-400">밝고 다정한 표현이 잦음</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">assurances</td>
+                  <td class="p-3 text-white">관계 확신 표현</td>
+                  <td class="p-3 text-slate-400">미래나 마음을 말로 안 함</td>
+                  <td class="p-3 text-slate-400">'오래 보자' 같은 확신 표현</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">contact_rhythm</td>
+                  <td class="p-3 text-white">연락 빈도</td>
+                  <td class="p-3 text-slate-400">할 말 있을 때만 연락</td>
+                  <td class="p-3 text-slate-400">하루 종일 수시로 톡 주고받기</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-semibold text-rose-400" rowspan="4">conflict<br><span class="text-[10px] text-slate-500">갈등 대처</span></td>
+                  <td class="p-3 font-mono text-slate-300">problem_solving</td>
+                  <td class="p-3 text-white">문제 해결</td>
+                  <td class="p-3 text-slate-400">갈등을 덮거나 흐지부지 넘김</td>
+                  <td class="p-3 text-slate-400">원인을 짚고 타협점 모색</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">withdrawal</td>
+                  <td class="p-3 text-white">회피·철수</td>
+                  <td class="p-3 text-slate-400">그 자리에서 계속 대화</td>
+                  <td class="p-3 text-slate-400">입을 닫거나 자리를 뜸</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">engagement</td>
+                  <td class="p-3 text-white">감정적 맞대응</td>
+                  <td class="p-3 text-slate-400">감정을 올리지 않음</td>
+                  <td class="p-3 text-slate-400">목소리가 커지거나 쏘아붙임</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">compliance</td>
+                  <td class="p-3 text-white">일방적 수용</td>
+                  <td class="p-3 text-slate-400">아닌 건 아니라고 명확히 표현</td>
+                  <td class="p-3 text-slate-400">갈등 회피를 위해 무조건 맞춤</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-semibold text-amber-400" rowspan="3">ideal<br><span class="text-[10px] text-slate-500">이상형</span></td>
+                  <td class="p-3 font-mono text-slate-300">ideal_warmth</td>
+                  <td class="p-3 text-white">신뢰·배려</td>
+                  <td class="p-3 text-slate-400">성실함·배려를 크게 안 봄</td>
+                  <td class="p-3 text-slate-400">약속과 배려를 최우선으로 봄</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">ideal_vitality</td>
+                  <td class="p-3 text-white">매력·활발함</td>
+                  <td class="p-3 text-slate-400">외적 매력/텐션을 안 봄</td>
+                  <td class="p-3 text-slate-400">밝고 에너지 넘치는 분위기 선호</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-mono text-slate-300">ideal_status</td>
+                  <td class="p-3 text-white">능력·안정성</td>
+                  <td class="p-3 text-slate-400">조건을 거의 보지 않음</td>
+                  <td class="p-3 text-slate-400">직업·경제력 등 안정성 중시</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-semibold text-emerald-400">orientation</td>
+                  <td class="p-3 font-mono text-slate-300">seriousness</td>
+                  <td class="p-3 text-white">관계 진지도</td>
+                  <td class="p-3 text-slate-400">가볍게 알아가기</td>
+                  <td class="p-3 text-slate-400">진지하게 오래 만날 사람 모색</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- 동적 토픽 선정 알고리즘 -->
+        <div id="persona-topic-algo" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">동적 토픽 선택 알고리즘 (<code class="text-indigo-300">next_topic</code>)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            정해진 순서대로 묻지 않고, 이전 대화에서 채워진 차원 커버리지(<code class="text-slate-300">Coverage</code>)를 계산하여 <strong>가장 많은 빈 차원을 채울 수 있는 주제를 동적으로 선정</strong>합니다.
+          </p>
+
+          <pre class="rounded-xl border border-surface-border text-xs !bg-surface-code p-4"><code class="language-python"># app/features/persona/service.py: next_topic 발췌
+def next_topic(coverage: Coverage, turn_index: int, total_turns: int, used_topic_ids: list[str]) -> Topic | None:
+    empty = coverage.empty_dimensions()
+    remaining = total_turns - turn_index
+
+    # 1. 마지막 턴(턴 9)은 항상 클로징 주제(orientation)로 고정
+    if remaining == 1:
+        for t in TOPICS:
+            if t.is_closing and t.id not in used_topic_ids:
+                return t
+
+    def allowed(t: Topic) -> bool:
+        if t.id in used_topic_ids: return False
+        if t.is_closing: return False
+        # 첫 턴은 부담 없는 아이스브레이킹(Weight.LIGHT)만 허용
+        if turn_index == 0 and t.weight != Weight.LIGHT: return False
+        # 갈등 등 무거운 질문(HEAVY)은 중반(5턴 이후)부터 허용
+        if t.weight == Weight.HEAVY and turn_index < 5: return False
+        # 대화 마무리가 어두워지지 않도록 마지막 2턴 전에는 HEAVY 금지
+        if t.weight == Weight.HEAVY and remaining <= 2: return False
+        return True
+
+    candidates = [t for t in TOPICS if allowed(t)]
+    if not candidates:
+        # 안전망: 제약 때문에 후보가 비면 규칙을 완화하여 남은 주제 중 가벼운 순으로 선택
+        candidates = [t for t in TOPICS if t.id not in used_topic_ids and not t.is_closing]
+    if not candidates:
+        return None
+
+    # 빈 차원을 가장 많이 채우는 주제 우선(-len), 동점이면 무게가 가벼운 것 우선
+    return min(candidates, key=lambda t: (-len(set(t.covers) & empty), int(t.weight)))</code></pre>
+        </div>
+
+        <!-- 3중 에이전트 분리 -->
+        <div id="persona-agents" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">3중 에이전트 분리 원칙 (Conversation / Tagging / Extraction)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            대화와 가치관 추출을 하나의 LLM 호출로 묶지 않는 것이 프로젝트의 핵심 철학입니다. 한 번에 합치면 모델이 대화하느라 추출을 건너뛰거나, 추출을 신경 쓰느라 말투가 건조해집니다.
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="p-4 rounded-lg bg-surface-card border border-surface-border">
+              <div class="text-indigo-400 font-bold text-xs uppercase mb-1">ConversationAgent</div>
+              <div class="text-white font-semibold text-sm mb-2">소개팅 상대 "하루" 발화</div>
+              <p class="text-xs text-slate-400 leading-relaxed">
+                공감 멘트와 다음 질문을 자연스럽게 생성. 온보딩 질문 텍스트는 <code class="text-slate-300">segments</code>로 나누어 클라이언트가 말풍선을 분할 표시할 수 있게 반환.
+              </p>
+            </div>
+            <div class="p-4 rounded-lg bg-surface-card border border-surface-border">
+              <div class="text-purple-400 font-bold text-xs uppercase mb-1">TaggingAgent</div>
+              <div class="text-white font-semibold text-sm mb-2">턴별 경량 판정 (Fast)</div>
+              <p class="text-xs text-slate-400 leading-relaxed">
+                사용자의 답변이 질문에 맞는지(<code class="text-slate-300">off_topic</code>) 확인하고, 주 근거(primary)와 부 근거(secondary) 차원을 태깅하여 동적 커버리지 갱신.
+              </p>
+            </div>
+            <div class="p-4 rounded-lg bg-surface-card border border-surface-border">
+              <div class="text-pink-400 font-bold text-xs uppercase mb-1">ExtractionAgent</div>
+              <div class="text-white font-semibold text-sm mb-2">대화 전체 → 페르소나 초안</div>
+              <p class="text-xs text-slate-400 leading-relaxed">
+                10턴 대화 완료 후 호출. 15대 점수, 4대 텍스트 항목, 한 줄 요약(headline), 본문(body), 핵심 성향(traits)을 포괄 추출.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <!-- 답변 필터링 & 모순 검증 -->
+        <div id="persona-validation" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">코드 레벨의 엄격한 근거 필터링 & 모순 검증</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            LLM이 지시를 어기고 사용자가 답하지 않은 차원을 제멋대로 짐작해 채우는 현상을 방어하기 위해 <code class="text-indigo-300">service.py</code>에서 코드 레벨 검증을 수행합니다.
+          </p>
+
+          <pre class="rounded-xl border border-surface-border text-xs !bg-surface-code p-4"><code class="language-python"># app/features/persona/service.py: build_persona 발췌
+answered = await self._dimensions_from_answers(session) # 태깅된 primary 차원들만 수집
+raw = await self.extraction.extract(self._history(session), answered=answered)
+
+scores: dict[str, int | None] = {}
+confidence: dict[str, str] = {}
+for key in SCORED:
+    value = getattr(raw, key, None)
+    # 직접 답하지 않은 차원을 LLM이 임의로 채웠다면 즉시 제거하여 null(모름) 처리
+    if value is not None and key not in answered:
+        value = None
+    scores[key] = value
+    evidence = max(coverage.primary.get(key, 0), 1 if key in answered else 0)
+    confidence[key] = confidence_of(value is not None, evidence)
+
+# 모순 검증: 점수와 정반대되는 문장이 생성된 경우 서술만 제거하고 점수는 보존
+contradiction = narrative_contradiction(scores, narrative)
+if contradiction:
+    logger.warning("narrative contradicted scores (%s), dropping narrative", contradiction)
+    narrative = None</code></pre>
+        </div>
+
+        <!-- 턴 중복 방지 -->
+        <div id="persona-concurrency" class="p-4 rounded-lg bg-surface-card border border-surface-border">
+          <h4 class="text-sm font-bold text-white mb-1">턴 중복 방지 (Idempotency) 및 DB 레벨 격리</h4>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            클라이언트가 지연 등으로 직전 턴의 답변을 재전송하면 <code class="text-slate-300">turn_index &lt; session.turn_index</code> 조건을 감지하여 DB를 건드리지 않고 현재 대기 중인 질문을 재반환합니다. 또한 DB 테이블 레벨에서 <code class="text-slate-300">UniqueConstraint("session_id", "turn_index")</code>를 두어 동시성 요청 발생 시 늦게 도달한 쪽을 안전하게 차단합니다.
+          </p>
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- 3. 시뮬레이션 & 리포트 (Simulation) -->
+      <!-- ========================================================================= -->
+      <section id="simulation" class="mb-20 scroll-mt-24">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 font-bold border border-indigo-500/30">3</span>
+          <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">시뮬레이션 & 매칭 리포트 (app/features/simulation/)</h2>
+        </div>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+          두 사용자의 페르소나를 가상 공간에 대면시켜 10턴(왕복 20줄)의 가상 소개팅 대본을 생성하고 궁합 매칭 리포트를 도출합니다.
+          특히 <strong>"수학적 규칙 점수(No LLM) + LLM 1회 대본·서술 통합 생성"</strong>이라는 독창적인 2단계 하이브리드 파이프라인으로 설계되었습니다.
+        </p>
+
+        <!-- 규칙 점수 층 -->
+        <div id="sim-rule-layer" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">100% 결정론적 규칙 점수 산출식 (<code class="text-indigo-300">report.py</code>)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            점수를 LLM에게 맡기면 같은 페르소나라도 호출할 때마다 점수가 바뀌어 사용자 불신을 초래합니다. 시뮬레이션에서는 점수를 100% 결정론적 수식으로 산출합니다.
+          </p>
+
+          <pre class="rounded-xl border border-surface-border text-xs !bg-surface-code p-4"><code class="language-python"># app/features/simulation/report.py: dimension_score
+def dimension_score(fit: Fit, a: int, b: int) -> int | None:
+    if fit == Fit.SIMILAR:
+        # 유사형 (연락 빈도, 거리 두기 등): 차이가 적을수록 만점 (100 - |a - b|)
+        return 100 - abs(a - b)
+    if fit == Fit.BOTH_HIGH:
+        # 다다익선형 (표현력, 긍정성 등): 둘 다 높을수록 높은 점수 ((a + b) // 2)
+        return (a + b) // 2
+    if fit == Fit.BOTH_LOW:
+        # 갈등 부정형 (회피·철수, 감정적 맞대응 등): 둘 다 낮아야 안전 (100 - (a + b) // 2)
+        return 100 - (a + b) // 2
+    return None  # Fit.JUDGED: 이상형(ideal) 영역은 수치 비교가 불가능하므로 대본을 보고 LLM 판정</code></pre>
+          <div class="mt-3 p-3 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400">
+            <strong class="text-indigo-400">Null 처리 규칙:</strong> 두 사람 중 한 명이라도 특정 차원이 <code class="text-slate-200">null</code>(온보딩 미답변)인 경우 임의로 50점을 채우지 않고 <code class="text-slate-200">score=None</code>으로 처리하여 평균 산출에서 아예 제외합니다. (50점으로 채우면 둘 다 모를 때 SIMILAR 점수가 100점으로 왜곡되는 현상 방지)
+          </div>
+        </div>
+
+        <!-- 위험 조합 감지 -->
+        <div id="sim-risks" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">위험 조합(Risks) 감지 & 가중치 감점 체계</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            두 사람의 성향이 결합되었을 때 관계를 파괴할 수 있는 특정 조합(예: 한 쪽 회피 &ge; 65 + 상대방 불안 &ge; 65)을 사전 감지하여 전체 점수에서 페널티를 차감합니다.
+          </p>
+
+          <pre class="rounded-xl border border-surface-border text-xs !bg-surface-code p-4"><code class="language-python"># app/features/simulation/report.py: overall_score 발췌
+def overall_score(area_scores: dict[str, int | None], risks: list[Risk]) -> int:
+    # 5대 영역 가중치: intimacy(25%), communication(30%), conflict(25%), ideal(10%), orientation(10%)
+    weighted = [(s, AREA_WEIGHT[a]) for a, s in area_scores.items() if s is not None]
+    if not weighted:
+        return 50
+    base = sum(s * w for s, w in weighted) / sum(w for _, w in weighted)
+    # 감지된 모든 위험 요인의 패널티(penalty)를 합산 차감
+    return max(0, min(100, round(base) - sum(r.penalty for r in risks)))</code></pre>
+        </div>
+
+        <!-- LLM 1회 호출 -->
+        <div id="sim-one-call" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">LLM 1회 호출로 대본 + 리포트 동시 생성 (<code class="text-indigo-300">SimulationAgent</code>)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            대본 생성과 리포트 서술 작성을 분리하지 않고 단 한 번의 LLM JSON 호출로 처리합니다. 이를 통해 비용과 대기 시간을 절반으로 줄이며, 모델이 자신이 방금 작성한 대화 대본의 특정 구절을 <code class="text-slate-300">turn_index</code>로 정확하게 인용(Highlight)할 수 있습니다.
+          </p>
+        </div>
+
+        <!-- 대본 정규화 -->
+        <div id="sim-normalize" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">대본 정규화 엔진 (<code class="text-indigo-300">normalize_script</code>)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            LLM이 간혹 같은 화자의 대사를 연속으로 내보내거나 순서를 바꾸는 문제를 방어하는 후처리 로직입니다.
+          </p>
+          <pre class="rounded-xl border border-surface-border text-xs !bg-surface-code p-4"><code class="language-python"># app/features/simulation/service.py: normalize_script 발췌
+def normalize_script(lines: list[ScriptLine], turns: int) -> list[Turn]:
+    merged: list[ScriptLine] = []
+    for line in lines:
+        text = line.text.strip()
+        if not text: continue
+        # 같은 화자가 연속으로 말하면 한 줄로 병합하여 교대 턴 유지
+        if merged and merged[-1].speaker == line.speaker:
+            merged[-1] = ScriptLine(speaker=line.speaker, text=f"{merged[-1].text} {text}")
+        else:
+            merged.append(ScriptLine(speaker=line.speaker, text=text))
+
+    # A(요청자)가 먼저 대화를 시작하도록 첫 발화 보정
+    while merged and merged[0].speaker != "a":
+        merged.pop(0)
+
+    # 요청 턴 수(2 * turns)에 맞게 정확히 슬라이싱
+    want = turns * 2
+    if len(merged) > want:
+        merged = merged[:want]
+    return [Turn(index=i, speaker=line.speaker, text=line.text[:1000]) for i, line in enumerate(merged)]</code></pre>
+        </div>
+
+        <!-- 커넥션 풀 반환 & 인플라이트 락 -->
+        <div id="sim-concurrency" class="p-4 rounded-lg bg-surface-card border border-surface-border">
+          <h4 class="text-sm font-bold text-white mb-1">고성능 비동기 처리: 커넥션 풀 반환 & 인플라이트 락</h4>
+          <p class="text-xs text-slate-400 leading-relaxed mb-3">
+            대본+리포트 생성은 LLM 응답에 최대 30~60초가 소요됩니다. 만약 DB 트랜잭션을 연 채로 LLM을 기다리면 <code class="text-slate-300">asyncpg</code> 풀(기본 15~20개)이 즉시 고갈되어 전체 서버가 마비됩니다.
+          </p>
+          <div class="bg-surface-code p-3 rounded font-mono text-xs text-indigo-300">
+            me = await self._load("me", req.me_ref())<br>
+            partner = await self._load("partner", req.partner_ref())<br>
+            <span class="text-emerald-400 font-bold">await self.db.commit() # 조회 후 즉시 커넥션을 풀에 반환!</span><br>
+            async with _IN_FLIGHT_LOCK: # 동일 페르소나 쌍의 중복 호출 방지<br>
+            &nbsp;&nbsp;&nbsp;&nbsp;... LLM 호출 진행 (DB 커넥션 점유 없음) ...
+          </div>
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- 4. 1:1 연습 대화 (Practice) -->
+      <!-- ========================================================================= -->
+      <section id="practice" class="mb-20 scroll-mt-24">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 font-bold border border-indigo-500/30">4</span>
+          <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">1:1 연습 대화 (app/features/practice/)</h2>
+        </div>
+
+        <p class="text-slate-300 leading-relaxed mb-6">
+          사용자가 상대방의 확정된 페르소나와 실시간으로 카카오톡 소개팅 대화를 연습할 수 있는 기능입니다.
+          네트워크 환경과 클라이언트 요구사항에 맞추어 <strong>SSE 실시간 스트리밍</strong>과 <strong>단일 JSON 응답</strong>을 동시에 완벽 지원합니다.
+        </p>
+
+        <!-- SSE vs JSON 듀얼 구조 -->
+        <div id="practice-dual-api" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">SSE 스트리밍 vs JSON 응답 듀얼 아키텍처 (<code class="text-indigo-300">api.py</code>)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            서비스 레이어(<code class="text-slate-300">service.py</code>)는 항상 <code class="text-slate-300">AsyncIterator[(event, model)]</code> 제너레이터를 생산하고, API 레이어가 이를 SSE 텍스트 스트림(<code class="text-slate-300">_to_sse</code>) 또는 한 번에 모은 JSON(<code class="text-slate-300">collect_reply</code>)으로 직렬화합니다.
+          </p>
+
+          <div class="overflow-hidden rounded-xl border border-surface-border">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-surface-card text-slate-300 font-semibold border-b border-surface-border">
+                <tr>
+                  <th class="p-3">작업</th>
+                  <th class="p-3">일반 JSON 엔드포인트</th>
+                  <th class="p-3">SSE 스트리밍 엔드포인트</th>
+                  <th class="p-3">설명</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-surface-border bg-slate-900/50">
+                <tr>
+                  <td class="p-3 font-semibold text-white">첫 인사</td>
+                  <td class="p-3 font-mono text-indigo-400">POST /{id}/opening</td>
+                  <td class="p-3 font-mono text-purple-400">POST /{id}/opening/stream</td>
+                  <td class="p-3 text-slate-400">상대 페르소나가 먼저 인사를 건넴</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-semibold text-white">답변 전송</td>
+                  <td class="p-3 font-mono text-indigo-400">POST /{id}/messages</td>
+                  <td class="p-3 font-mono text-purple-400">POST /{id}/messages/stream</td>
+                  <td class="p-3 text-slate-400">내 메시지 저장 후 상대 답변 생성</td>
+                </tr>
+                <tr>
+                  <td class="p-3 font-semibold text-white">답변 재시도</td>
+                  <td class="p-3 font-mono text-indigo-400">POST /{id}/retry</td>
+                  <td class="p-3 font-mono text-purple-400">POST /{id}/retry/stream</td>
+                  <td class="p-3 text-slate-400">끊긴 마지막 내 메시지에 답변만 다시 수신</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- request 스코프 DB 세션 수명 -->
+        <div id="practice-session-scope" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">request 스코프 DB 세션 수명 제어 (FastAPI Dependency Scope)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            FastAPI의 기본 <code class="text-slate-300">Depends(get_db)</code>는 라우트 함수가 반환되는 즉시 DB 세션을 닫습니다. 하지만 SSE 스트리밍은 라우트가 <code class="text-slate-300">StreamingResponse</code>를 반환한 후에도 제너레이터가 한참 동안 실행되면서 완료 시점에 상대 답변을 DB에 커밋해야 합니다.
+          </p>
+
+          <pre class="rounded-xl border border-surface-border text-xs !bg-surface-code p-4"><code class="language-python"># app/features/practice/api.py 발췌
+# 일반(JSON) 요청용 의존성: 함수 완료 시 세션 정리
+def get_service(db: AsyncSession = Depends(get_db)) -> PracticeService:
+    return PracticeService(db)
+
+# SSE 스트리밍 요청용 의존성: HTTP 응답 스트림이 완전히 끝날 때까지 세션을 유지
+def get_stream_service(db: AsyncSession = Depends(get_db, scope="request")) -> PracticeService:
+    return PracticeService(db)</code></pre>
+        </div>
+
+        <!-- 선저장 후스트리밍 & /retry -->
+        <div id="practice-save-first" class="mb-8">
+          <h3 class="text-lg font-bold text-white mb-2">선저장 후스트리밍 (Save-First) & 멱등적 재시도 (/retry)</h3>
+          <p class="text-sm text-slate-400 mb-4">
+            사용자 경험 보호를 위해 내 메시지를 DB에 <strong>먼저 커밋</strong>한 뒤 상대방의 스트리밍을 시작합니다.
+          </p>
+          <ul class="text-xs text-slate-300 space-y-2 list-disc list-inside bg-surface-card p-4 rounded-lg border border-surface-border">
+            <li><strong>네트워크 중단 방어:</strong> LLM 스트리밍 도중 통신이 끊겨도 내 메시지는 이미 안전하게 저장되어 있으므로 새로고침해도 화면에서 사라지지 않습니다.</li>
+            <li><strong>오염 방지:</strong> 스트리밍 도중 끊긴 불완전한 조각(반 토막 답변)은 DB에 쓰지 않고 즉시 버려 다음 대화 맥락이 오염되는 것을 방지합니다.</li>
+            <li><strong><code class="text-indigo-300">/retry</code> 엔드포인트:</strong> 답변이 누락된 마지막 메시지를 감지하여 사용자가 같은 말을 다시 타이핑할 필요 없이 상대 답변만 다시 생성합니다.</li>
+          </ul>
+        </div>
+
+        <!-- Anthropic 첫 메시지 제약 대응 -->
+        <div id="practice-anthropic" class="p-4 rounded-lg bg-surface-card border border-surface-border">
+          <h4 class="text-sm font-bold text-white mb-1">Anthropic SDK 첫 메시지 user 제약 우회 로직</h4>
+          <p class="text-xs text-slate-400 leading-relaxed mb-3">
+            Anthropic Claude 모델은 메시지 배열의 첫 번째 요소가 무조건 <code class="text-slate-300">role: "user"</code>이어야 합니다. 상대방이 먼저 인사를 건넨 세션은 히스토리 첫 항목이 <code class="text-slate-300">assistant</code>가 되어 API 오류가 발생합니다.
+          </p>
+          <pre class="rounded-xl border border-surface-border text-xs !bg-surface-code p-4"><code class="language-python"># app/features/practice/service.py: _history 발췌
+msgs = [{"role": "user" if m.role == "user" else "assistant", "content": m.content}
+        for m in session.messages[-HISTORY_WINDOW:]]
+
+# 첫 메시지가 assistant면 인사 지시문을 가상 user 메시지로 맨 앞에 주입!
+if msgs and msgs[0]["role"] == "assistant":
+    msgs.insert(0, {"role": "user", "content": OPENING_INSTRUCTION})</code></pre>
+        </div>
+      </section>
+
+      <!-- ========================================================================= -->
+      <!-- 5. 핵심 엔지니어링 패턴 총정리 -->
+      <!-- ========================================================================= -->
+      <section id="engineering" class="mb-20 scroll-mt-24">
+        <div class="flex items-center gap-3 mb-6">
+          <span class="flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-600/20 text-indigo-400 font-bold border border-indigo-500/30">5</span>
+          <h2 class="text-2xl md:text-3xl font-bold text-white tracking-tight">핵심 엔지니어링 패턴 총정리</h2>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+          
+          <!-- Lookup & Profile -->
+          <div id="eng-lookup" class="p-5 rounded-xl bg-surface-card border border-surface-border">
+            <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-indigo-400"></span> 도메인 간 페르소나 격리 (<code class="text-indigo-300">lookup.py</code> & <code class="text-indigo-300">profile.py</code>)
+            </h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+              시뮬레이션과 연습대화는 온보딩 서비스 내부 구현을 직접 참조하지 않고, <code class="text-slate-200">load_persona(db, ref)</code> 단일 진입점만을 통해 페르소나를 읽어옵니다.
+            </p>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              또한 <code class="text-slate-200">profile.py</code>의 <code class="text-slate-200">describe()</code> 함수는 점수표(숫자)를 LLM이 연기할 수 있는 자연어 프로필 문장으로 변환합니다. 이때 사용자가 입력한 <strong>MBTI는 말투 힌트(<code class="text-slate-300">MBTI_TONE</code>)로만 약하게 사용</strong>되며, 온보딩 대화에서 검증된 답변 성향이 항상 최우선시됩니다.
+            </p>
+          </div>
+
+          <!-- Langfuse 관측성 -->
+          <div id="eng-observability" class="p-5 rounded-xl bg-surface-card border border-surface-border">
+            <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-purple-400"></span> 엔터프라이즈 Langfuse 분산 관측성 (<code class="text-indigo-300">observability.py</code>)
+            </h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+              개별 비즈니스 코드가 Langfuse 예약어를 직접 핸들링하지 않도록 <code class="text-slate-200">build_langfuse_metadata</code> 팩토리를 제공합니다.
+            </p>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              모든 LLM 호출에는 <code class="text-slate-300">feature</code>, <code class="text-slate-300">operation</code>, <code class="text-slate-300">user_id</code>, <code class="text-slate-300">session_id</code>가 일관되게 주입되며, 컨텍스트 매니저(<code class="text-slate-300">propagate_langfuse_metadata</code>)를 통해 하위 트레이스로 안전하게 전파됩니다.
+            </p>
+          </div>
+
+          <!-- Graceful Fallback -->
+          <div id="eng-fallback" class="p-5 rounded-xl bg-surface-card border border-surface-border">
+            <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-emerald-400"></span> 견고한 장애 격리 (Graceful Fallback)
+            </h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+              외부 LLM API(OpenRouter, Anthropic 등)가 일시적 장애를 겪더라도 서비스가 중단되지 않는 3중 안전장치가 구축되어 있습니다.
+            </p>
+            <ul class="text-xs text-slate-400 space-y-1 list-disc list-inside">
+              <li><strong>온보딩:</strong> LLM 추출 실패 시 선택지 기반 규칙 초안(<code class="text-slate-300">fallback_extraction</code>) 자동 생성.</li>
+              <li><strong>시뮬레이션:</strong> LLM 타임아웃 시 규칙 점수 기반 템플릿 서술(<code class="text-slate-300">_template_narrative</code>) 즉시 조립.</li>
+              <li><strong>연습대화:</strong> 첫 조각 수신 실패 시 안전 폴백 인사말(<code class="text-slate-300">FALLBACK_REPLY</code>) 전송.</li>
+            </ul>
+          </div>
+
+          <!-- 로컬 플레이그라운드 -->
+          <div id="eng-playground" class="p-5 rounded-xl bg-surface-card border border-surface-border">
+            <h3 class="text-base font-bold text-white mb-2 flex items-center gap-2">
+              <span class="w-2 h-2 rounded-full bg-amber-400"></span> 무침습 로컬 플레이그라운드 (<code class="text-indigo-300">dev/</code>)
+            </h3>
+            <p class="text-xs text-slate-400 leading-relaxed mb-3">
+              개발 및 테스트용 <code class="text-slate-200">dev/</code> 모듈은 프로덕션 코드(<code class="text-slate-200">app/</code>)를 단 한 줄도 수정하지 않습니다.
+            </p>
+            <p class="text-xs text-slate-400 leading-relaxed">
+              FastAPI의 <code class="text-slate-300">dependency_overrides[get_db]</code>를 통해 SQLite 비동기 인메모리 DB로 교체하고, 모듈 속성 바인딩(<code class="text-slate-300">bind_call</code>, <code class="text-slate-300">bind_stream</code>)을 통해 요청 헤더의 Gemini/Anthropic 키로 LLM 엔진을 런타임에 동적 교체합니다.
+            </p>
+          </div>
+
+        </div>
+
+        <!-- 최종 요약 박스 -->
+        <div class="gradient-border p-6 border border-indigo-500/30">
+          <h3 class="text-lg font-bold text-white mb-2 flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            아키텍처 설계 핵심 요약
+          </h3>
+          <p class="text-xs text-slate-300 leading-relaxed">
+            별이삼샵 AI API는 비즈니스 로직과 LLM 생성 책임을 철저히 분리함으로써, <strong>LLM의 비결정론적 특성을 최소화하고 시스템의 신뢰성과 응답성을 극대화</strong>한 프로덕션 급 아키텍처입니다. 특히 점수 산정의 결정론적 보장, DB 커넥션 풀 선제적 반환, FastAPI 생명주기를 고려한 SSE 스트리밍 설계는 AI 서비스 엔지니어링의 모범적인 패턴을 보여줍니다.
+          </p>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+</body>
+</html>
