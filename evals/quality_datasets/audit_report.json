@@ -1,0 +1,124 @@
+{
+  "ok": true,
+  "datasetSplits": {
+    "persona_onboarding_conversation": {
+      "calibration": 12,
+      "regression": 36,
+      "blind_holdout": 12
+    },
+    "persona_onboarding_tagging": {
+      "calibration": 16,
+      "regression": 48,
+      "blind_holdout": 16
+    },
+    "persona_build": {
+      "calibration": 12,
+      "regression": 36,
+      "blind_holdout": 12
+    },
+    "practice_reply": {
+      "calibration": 12,
+      "regression": 36,
+      "blind_holdout": 12
+    },
+    "simulation_run": {
+      "calibration": 7,
+      "regression": 22,
+      "blind_holdout": 7
+    },
+    "simulation_report_preview": {
+      "calibration": 5,
+      "regression": 14,
+      "blind_holdout": 5
+    }
+  },
+  "total": 320,
+  "holdoutStimulusCrossSplitExactSentenceCount": 0,
+  "sentenceCollisions": {},
+  "holdoutStimulusCrossSplitApproximatePairCount": 0,
+  "approximateCollisions": [],
+  "rewrittenHoldoutVerification": {
+    "caseCount": 25,
+    "caseIds": [
+      "persona_onboarding_tagging-074",
+      "persona_build-007",
+      "persona_build-008",
+      "persona_build-017",
+      "persona_build-018",
+      "persona_build-027",
+      "persona_build-028",
+      "persona_build-042",
+      "persona_build-044",
+      "persona_build-045",
+      "practice_reply-020",
+      "practice_reply-021",
+      "practice_reply-022",
+      "practice_reply-023",
+      "practice_reply-024",
+      "practice_reply-056",
+      "practice_reply-057",
+      "practice_reply-058",
+      "practice_reply-059",
+      "practice_reply-060",
+      "simulation_run-032",
+      "simulation_report_preview-014",
+      "simulation_report_preview-015",
+      "simulation_report_preview-016",
+      "simulation_report_preview-021"
+    ],
+    "collidingCaseIds": [],
+    "collisionCount": 0
+  },
+  "approximationPolicy": {
+    "normalization": "NFKC/casefold/문장부호·공백 제거",
+    "minimumCharacters": 20,
+    "minimumDistinctCharacters": 8,
+    "sequenceRatioAtLeast": 0.76,
+    "characterTrigramDiceAtLeast": 0.45,
+    "minimumMatchedCharacters": 18,
+    "fixedContractExemptions": [
+      "안녕하세요, 저는 하루예요"
+    ],
+    "shortSentences": "근사 검사 제외, 정확 일치 검사는 유지",
+    "semanticGuarantee": false
+  },
+  "familyLeakCount": 0,
+  "declaredStimulusFamilyLeakCount": 0,
+  "offTopicPositiveCounts": {
+    "calibration": 2,
+    "regression": 4,
+    "blind_holdout": 2
+  },
+  "secondaryNonemptyCounts": {
+    "calibration": 5,
+    "regression": 12,
+    "blind_holdout": 3
+  },
+  "shortAnswerOneToThreeCharacterCounts": {
+    "regression": 3,
+    "blind_holdout": 3,
+    "calibration": 2
+  },
+  "jokeCounts": {
+    "blind_holdout": 1,
+    "calibration": 1,
+    "regression": 1
+  },
+  "abusiveOffTopicCounts": {
+    "regression": 1,
+    "blind_holdout": 1,
+    "calibration": 1
+  },
+  "previewPersonaConsistencyChecked": 48,
+  "practicePersonaConsistencyChecked": 60,
+  "uniqueRubrics": {
+    "persona_onboarding_conversation": 58,
+    "persona_onboarding_tagging": 80,
+    "persona_build": 60,
+    "practice_reply": 60,
+    "simulation_run": 36,
+    "simulation_report_preview": 24
+  },
+  "errors": [],
+  "scope": "전체 발화와 문장 단위의 정확 일치 및 정규화 후 SequenceMatcher/문자 3-gram 교차 검사를 수행한다. 고정 intro만 정확 검사에서 제외하며 짧은 관용문은 근사 검사에서 제외한다. 의미 동등성 전부의 자동 증명을 주장하지 않는다."
+}
