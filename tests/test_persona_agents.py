@@ -140,22 +140,55 @@ def _assert_template(u):
     assert u.text == " ".join(s.text for s in u.segments)
 
 
-def test_first_turn_semantic_violations_fall_back_to_full_template(monkeypatch):
+def test_first_turn_repairs_only_the_segment_that_breaks_a_rule(monkeypatch):
+    """운영 사례(#87): LLM 은 1.19초에 정상 응답했는데 answer_prompt 의 물음표 하나 때문에 다섯 항목을 다 버렸다.
+    어긋난 항목만 템플릿 문장으로 바꾸고 나머지 LLM 문장은 살린다."""
     import json
 
-    bad = [
-        _valid_parts(intro="안녕하세요, 하루입니다."),
-        _valid_parts(reason="가볍게 이야기해 보려고요."),  # nickname 없음
-        _valid_parts(reason="민수님, 오늘 어때요."),  # 알아가고 싶다는 의미 없음
-        _valid_parts(question="주말엔 보통 뭐 하세요"),  # 물음표 없음
-        _valid_parts(question="주말엔 뭐 하세요? 평일은요?"),  # 복수 물음표
-        _valid_parts(answer_prompt="민수님은 어떠세요?"),  # 두 번째 질문
-        _valid_parts(self_disclosure="저는 늦잠 자요. 민수님은요?"),
-        _valid_parts(reason="민수님을 알아가고 싶은데 괜찮죠?"),
-        _valid_parts(intro="   "),  # 공백
-        _valid_parts(question=5),  # 타입 오류
+    parts = _valid_parts(answer_prompt="민수님은 어떤 편이신가요? 편하게 얘기해주세요.")
+
+    u = _generate(monkeypatch, 0, reply=json.dumps(parts, ensure_ascii=False))
+
+    assert u.source == "llm"
+    assert [(s.type, s.text) for s in u.segments] == [
+        ("intro", INTRO),
+        ("reason", parts["reason"]),
+        ("question", parts["question"]),
+        ("self_disclosure", parts["self_disclosure"]),
+        ("answer_prompt", "민수님 얘기도 편하게 들려주세요."),
     ]
-    for parts in bad:
+
+
+@pytest.mark.parametrize(
+    ("broken", "repaired"),
+    [
+        ({"intro": "안녕하세요, 하루입니다."}, ("intro", INTRO)),
+        ({"reason": "가볍게 이야기해 보려고요."}, ("reason", "민수님을 알아가고 싶어서 가볍게 몇 가지 여쭤보려고요.")),
+        ({"reason": "민수님, 오늘 어때요."}, ("reason", "민수님을 알아가고 싶어서 가볍게 몇 가지 여쭤보려고요.")),
+        ({"question": "주말엔 보통 뭐 하세요"}, ("question", "약속 없는 주말은 보통 어떻게 보내세요?")),
+        ({"question": "주말엔 뭐 하세요? 평일은요?"}, ("question", "약속 없는 주말은 보통 어떻게 보내세요?")),
+        ({"self_disclosure": "저는 늦잠 자요. 민수님은요?"}, ("self_disclosure", "저는 늦잠부터 자는 편이에요")),
+    ],
+    ids=["intro", "reason-no-nickname", "reason-no-meaning", "question-none", "question-two", "disclosure-asks"],
+)
+def test_each_rule_violation_repairs_only_its_segment(monkeypatch, broken, repaired):
+    import json
+
+    parts = _valid_parts(**broken)
+
+    u = _generate(monkeypatch, 0, reply=json.dumps(parts, ensure_ascii=False))
+
+    assert u.source == "llm"
+    expected = [(t, parts[t]) for t in FIRST_TYPES]
+    expected[FIRST_TYPES.index(repaired[0])] = repaired
+    assert [(s.type, s.text) for s in u.segments] == expected
+
+
+def test_first_turn_blank_or_wrong_type_segment_falls_back_to_full_template(monkeypatch):
+    """항목이 비었거나 문자열이 아니면 응답 구조가 깨진 것 — 전체를 템플릿으로."""
+    import json
+
+    for parts in (_valid_parts(intro="   "), _valid_parts(question=5)):
         _assert_template(_generate(monkeypatch, 0, reply=json.dumps(parts, ensure_ascii=False)))
 
 
@@ -340,3 +373,22 @@ def test_first_turn_fallback_reads_naturally(monkeypatch):
         ("self_disclosure", "저는 늦잠부터 자는 편이에요"),
         ("answer_prompt", "민수님 얘기도 편하게 들려주세요."),
     ]
+
+
+def test_later_turns_wait_at_least_five_seconds(monkeypatch):
+    """운영 사례(#87): 2턴 이후 질문 생성이 정확히 2.50초에서 끊겨 기본 질문(seed)으로 떨어졌다."""
+    import asyncio
+
+    from app.features.persona import agents
+
+    seen = {}
+
+    async def fake_call(**kwargs):
+        seen.update(kwargs)
+        return "좋네요. 그럼 연락은 자주 하는 편이에요?"
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+
+    asyncio.run(ConversationAgent().generate(history=[], topic=_topic(), turn_index=3, total_turns=10, nickname="민수"))
+
+    assert seen["timeout"] >= 5.0
