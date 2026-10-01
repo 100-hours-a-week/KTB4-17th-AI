@@ -42,9 +42,11 @@ class FakeTagging(TaggingAgent):
     def __init__(self, *results):
         self.results = list(results)
         self.seen = []
+        self.timeouts = []
 
-    async def tag(self, question, answer, *, trace_metadata=None):
+    async def tag(self, question, answer, *, timeout=None, trace_metadata=None):
         self.seen.append(answer)
+        self.timeouts.append(timeout)
         return self.results.pop(0)
 
 
@@ -222,6 +224,19 @@ def test_answer_whose_tagging_failed_is_tagged_again_at_build():
 
     assert tagger.seen == ["그냥 집에서 쉬어요"]
     assert (draft.routine, draft.date_prefer) == (["집에서 쉬기"], [])
+
+
+def test_retagging_at_build_waits_longer_than_onboarding_tagging():
+    """/build 는 사용자가 결과를 기다리는 단계라 온보딩 중(답마다 바로 다음 질문)보다 넉넉히 기다린다 (#80)."""
+    from app.core.config import get_settings
+
+    tagger = FakeTagging(Tags(primary=["routine"]))
+
+    _build(RawExtraction(routine=["집에서 쉬기"]), weekend={"answer": "그냥 쉬어요", "tags": None}, tagger=tagger)
+
+    settings = get_settings()
+    assert tagger.timeouts == [settings.persona_retag_timeout_s]
+    assert settings.persona_retag_timeout_s > settings.onboarding_tag_timeout_s
 
 
 def test_answer_that_cannot_be_tagged_even_at_build_counts_for_nothing():

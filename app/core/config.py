@@ -84,7 +84,10 @@ class Settings(BaseSettings):
 
     # ── 기능별 LLM 요청 제한 시간(초) ──────────────────────────
     # 온보딩 태그 추출 타임아웃
-    onboarding_tag_timeout_s: float = 1.5
+    # 1.5초였을 때 운영 태깅 호출이 전부 끊겼다 (#80). 답마다 다음 질문 전에 도는 호출이라 너무 늘리지는 않는다
+    onboarding_tag_timeout_s: float = 4.0
+    # /build 때 온보딩 중 실패한 답을 다시 태깅하는 타임아웃. 결과를 기다리는 단계라 더 넉넉히
+    persona_retag_timeout_s: float = 8.0
     # 온보딩 대화 추천 문구 생성 타임아웃
     onboarding_phrase_timeout_s: float = 2.5
     # 페르소나 프로필 종합 추출 타임아웃
