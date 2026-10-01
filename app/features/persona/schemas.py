@@ -161,7 +161,7 @@ TOPICS: list[Topic] = [
     Topic(
         id="interests",
         weight=Weight.LIGHT,
-        opener="저는 요즘 밤 산책에 빠져서 시간을 제일 많이 써요.",
+        opener="저는 요즘 밤 산책에 빠져있어요.",
         covers=("interests",),
         intent="요즘 시간을 많이 쓰는 취미·관심사와 그게 좋은 이유",
         seed="요즘 시간을 가장 많이 쓰는 취미나 관심사가 뭐예요?",
@@ -169,7 +169,7 @@ TOPICS: list[Topic] = [
     Topic(
         id="weekend",
         weight=Weight.LIGHT,
-        opener="저는 약속 없는 주말이면 늦잠이 먼저예요.",
+        opener="저같은 경우는 약속 없는 주말이면 베이킹하는 걸 좋아해서 자주 빵을 만들어요.",
         covers=("routine", "date_prefer", "date_avoid"),
         intent="약속 없는 주말을 보내는 방식 + 하고 싶은 데이트 하나, 피하고 싶은 것 하나",
         seed="아무 약속 없는 주말은 보통 어떻게 보내세요?",
@@ -239,7 +239,7 @@ TOPICS: list[Topic] = [
         id="orientation",
         weight=Weight.LIGHT,
         is_closing=True,
-        opener="오늘 얘기 재밌었어요. 마지막으로 하나만.",
+        opener="오늘 얘기 재밌었어요. ",
         covers=("seriousness",),
         also_touches=("assurances", "openness"),
         intent="지금 원하는 관계의 온도",
