@@ -3,6 +3,7 @@ import asyncio
 import pytest
 from conftest import seed_persona, with_db
 
+from app.features.persona.models import OnboardingSession
 from app.features.practice.agents import FALLBACK_REPLY, OPENING_INSTRUCTION, LLMError, PartnerAgent
 from app.features.practice.schemas import PracticeStartRequest
 from app.features.practice.service import (
@@ -304,6 +305,57 @@ def test_nickname_is_used_when_no_my_persona():
         return await _start(factory, nickname="직접입력")
 
     assert _run(scenario).my_nickname == "직접입력"
+
+
+def test_ongoing_session_reflects_updated_onboarding_nickname():
+    async def scenario(factory):
+        start_res = await _start(factory, me_user_id="u-me")
+        sid = start_res.session_id
+        assert start_res.my_nickname == "민수"
+        assert start_res.partner.nickname == "지수"
+
+        # 온보딩 세션의 닉네임을 변경
+        async with factory() as db:
+            session_me = await db.get(OnboardingSession, "s-me")
+            session_partner = await db.get(OnboardingSession, "s-partner")
+            assert session_me is not None and session_partner is not None
+            session_me.nickname = "새민수"
+            session_partner.nickname = "새지수"
+            await db.commit()
+
+        # 진행 중인 세션에서 _system 호출 시 최신 닉네임 반영 및 세션 동기화 확인
+        async with factory() as db:
+            svc = PracticeService(db)
+            session = await svc.repo.get_session(sid)
+            system_prompt = await svc._system(session)
+            assert "새민수" in system_prompt
+            assert "새지수" in system_prompt
+            assert session.my_nickname == "새민수"
+            assert session.partner_nickname == "새지수"
+
+            # get() 및 list_for_user()에서도 최신 닉네임 반환 확인
+            detail = await svc.get(session)
+            assert detail.my_nickname == "새민수"
+            assert detail.partner.nickname == "새지수"
+
+            summaries = await svc.list_for_user("u-me", limit=10)
+            assert summaries[0].my_nickname == "새민수"
+            assert summaries[0].partner.nickname == "새지수"
+
+        # 실제 메시지 스트리밍 후 DB에 세션 닉네임이 영속화되었는지 검증
+        async with factory() as db:
+            svc = PracticeService(db)
+            svc.agent = FakePartner(chunks=("반가워요 새민수님!",))
+            session = await svc.repo.get_session(sid)
+            await _collect(svc.stream_reply(session, "안녕"))
+
+        async with factory() as db:
+            svc = PracticeService(db)
+            persisted = await svc.repo.get_session(sid)
+            assert persisted.my_nickname == "새민수"
+            assert persisted.partner_nickname == "새지수"
+
+    _run(scenario)
 
 
 # ── 동시 요청 ─────────────────────────────────────────

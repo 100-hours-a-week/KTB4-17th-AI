@@ -639,3 +639,17 @@ class PersonaBrief(BaseModel):
     version: int = 1
     headline: str | None = None
     accuracy: int = 0
+
+
+class UpdateNicknameRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    user_id: str = Field(min_length=1, max_length=64)
+    nickname: str = Field(min_length=1, max_length=20)
+
+
+class UpdateNicknameResponse(BaseModel):
+    user_id: str
+    nickname: str
+    updated_sessions: int
+    updated_at: datetime
