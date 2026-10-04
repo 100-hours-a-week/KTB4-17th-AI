@@ -50,11 +50,10 @@ def test_dataset_shape_unchanged():
         "persona_build": 60,
         "practice_reply": 70,
         "simulation_run": 36,
-        "simulation_report_preview": 24,
     }
     assert {n: len(rows(n)) for n in expected} == expected
     splits = Counter(r["metadata"]["split"] for n in expected for r in rows(n))
-    assert (splits["calibration"], splits["regression"], splits["blind_holdout"]) == (66, 198, 66)
+    assert (splits["calibration"], splits["regression"], splits["blind_holdout"]) == (61, 184, 61)
 
 
 @pytest.mark.parametrize("row", rows("simulation_run"), ids=cid)
@@ -79,12 +78,7 @@ def test_simulation_fault_retry_contract(row):
         assert calls == 1
 
 
-def _persona_rows():
-    for name in ("simulation_run", "simulation_report_preview"):
-        yield from rows(name)
-
-
-@pytest.mark.parametrize("row", list(_persona_rows()), ids=cid)
+@pytest.mark.parametrize("row", rows("simulation_run"), ids=cid)
 def test_unknown_persona_scores_are_null(row):
     """신뢰도 LOW 이고 근거 없는 차원은 50 이 아니라 null 이다."""
     for key in ("persona_a", "persona_b"):
@@ -94,7 +88,7 @@ def test_unknown_persona_scores_are_null(row):
         assert not stale, f"{key}: 근거 없는 50 이 남아 있다 {stale}"
 
 
-@pytest.mark.parametrize("row", list(_persona_rows()), ids=cid)
+@pytest.mark.parametrize("row", rows("simulation_run"), ids=cid)
 def test_rule_oracle_matches_app(row):
     inp, oracle = row["input"], row["expectedOutput"]["ruleOracle"]
     pa, pb = as_persona(inp["persona_a"]), as_persona(inp["persona_b"])
@@ -143,10 +137,9 @@ def test_build_textual_fields_follow_answered_filter(row):
 
 
 def _all_personas():
-    for name in ("simulation_run", "simulation_report_preview"):
-        for row in rows(name):
-            for key in ("persona_a", "persona_b"):
-                yield pytest.param(row["input"][key], id=f"{cid(row)}-{key}")
+    for row in rows("simulation_run"):
+        for key in ("persona_a", "persona_b"):
+            yield pytest.param(row["input"][key], id=f"{cid(row)}-{key}")
     for row in rows("practice_reply"):
         yield pytest.param(row["input"]["partner"], id=f"{cid(row)}-partner")
 
@@ -158,7 +151,7 @@ def test_null_score_is_always_low_confidence(persona):
     assert not bad
 
 
-@pytest.mark.parametrize("row", list(_persona_rows()), ids=cid)
+@pytest.mark.parametrize("row", rows("simulation_run"), ids=cid)
 def test_risk_penalty_dropped_is_flagged(row):
     oracle = row["expectedOutput"]["ruleOracle"]
     flags = row["metadata"]["reviewFlags"]
@@ -378,31 +371,6 @@ def test_simulation_kind_counts():
     assert kinds == {"language_quality": 18, "code_behavior": 18}
 
 
-@pytest.mark.parametrize("row", rows("simulation_report_preview"), ids=cid)
-def test_preview_scoring_by_evaluation_kind(row):
-    ex, meta, inp = row["expectedOutput"], row["metadata"], row["input"]
-    code_keys = (
-        "candidateNarrative",
-        "candidateOutput",
-        "ruleProbe",
-        "faultInjection",
-        "serviceProbe",
-        "requestProbe",
-        "storedHistory",
-    )
-    is_code = (not inp["useLlm"]) or any(k in inp for k in code_keys)
-    assert meta["evaluationKind"] == ("code_behavior" if is_code else "language_quality")
-    metrics = ex["autoMetrics"]
-    assert metrics["applies"] is True
-    if is_code:
-        assert metrics["kind"] == "template_or_candidate_normalization"
-    else:
-        assert metrics["formatChecks"]["highlightTurnIndices"] == ex["highlightContract"]["validTurnIndices"]
-        assert ex["rubric"]["role"] == "auxiliary"
-    # 리포트는 분석 문서라 몰입 기준을 적용하지 않는다
-    assert "immersionContract" not in ex
-
-
 def test_every_dataset_has_evaluation_kind():
     for name in (
         "persona_onboarding_conversation",
@@ -410,6 +378,5 @@ def test_every_dataset_has_evaluation_kind():
         "persona_build",
         "practice_reply",
         "simulation_run",
-        "simulation_report_preview",
     ):
         assert all("evaluationKind" in r["metadata"] for r in rows(name)), name

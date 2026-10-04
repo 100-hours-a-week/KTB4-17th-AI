@@ -21,7 +21,6 @@ DATASETS = [
     ("persona_build", "페르소나 build"),
     ("practice_reply", "연습대화"),
     ("simulation_run", "시뮬레이션 대본"),
-    ("simulation_report_preview", "리포트 preview"),
 ]
 
 

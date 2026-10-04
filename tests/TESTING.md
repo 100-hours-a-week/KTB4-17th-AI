@@ -48,7 +48,6 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - 페르소나 없음 404 (커밋 안 함), LLM 실패 503 + 롤백
 - 없는 시뮬레이션 404, 저장된 리포트 조회
 - 목록은 `user_id`/`persona_id` 중 정확히 하나
-- `/report/preview?use_llm=false` → 템플릿 서술
 
 ### ② LLM 파싱·검증 (21개)
 
@@ -58,7 +57,6 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - 대본 + 리포트 파싱, 모르는 키는 무시
 - 요청 턴 수·토큰 예산(`3000 + 300×turns`)이 프롬프트에 반영
 - LLM 에러 / JSON 아님 / 한 줄짜리 대본 / 모르는 화자 / 리포트 없음 → 모두 `SimulationFailed`
-- ReportAgent: 서술 파싱, 대화록 없을 때 안내 문구, 헤드라인 60자 초과 → `LLMError`
 
 **practice** (`test_practice_agents.py`, 5)
 - 빈 조각(`None`, `""`, choices 없음)은 건너뛰고 텍스트만 스트리밍
@@ -206,7 +204,7 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 ## 온보딩 — 답변에 근거한 특성만 · MBTI 말투 · 모름은 null (red → green)
 
 합의한 seam 네 곳에서만 테스트한다: `/build` 결과(`build_draft`), 페르소나 불러오기(`load_persona`),
-프로필 문장(`describe`), 궁합 계산(`build_report`). 가짜는 LLM 경계(`_call`, 추출·태깅 에이전트)에만 둔다.
+프로필 문장(`describe`), 궁합 계산(`assemble_report`). 가짜는 LLM 경계(`_call`, 추출·태깅 에이전트)에만 둔다.
 
 - **답변에 근거한 차원만** (`tests/test_persona_build_fallback.py`)
   - 질문이 겨눈 차원(`topic.covers`)이 아니라 태깅이 **그 답변**에서 짚은 차원(`tags.primary`)만 인정

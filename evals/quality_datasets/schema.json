@@ -23,8 +23,7 @@
             "persona_tagging",
             "persona_build",
             "practice_reply",
-            "simulation_run",
-            "simulation_report_preview"
+            "simulation_run"
           ]
         }
       }
@@ -182,8 +181,7 @@
             "persona_onboarding_tagging",
             "persona_build",
             "practice_reply",
-            "simulation_run",
-            "simulation_report_preview"
+            "simulation_run"
           ]
         },
         "split": {
@@ -399,37 +397,6 @@
             "properties": {
               "task": {
                 "const": "simulation_run"
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "properties": {
-          "metadata": {
-            "properties": {
-              "dataset": {
-                "const": "simulation_report_preview"
-              }
-            }
-          }
-        }
-      },
-      "then": {
-        "properties": {
-          "input": {
-            "required": [
-              "task",
-              "persona_a",
-              "persona_b",
-              "transcript",
-              "useLlm"
-            ],
-            "properties": {
-              "task": {
-                "const": "simulation_report_preview"
               }
             }
           }

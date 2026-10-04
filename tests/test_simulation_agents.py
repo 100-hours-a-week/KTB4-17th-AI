@@ -5,8 +5,8 @@ import pytest
 
 from app.features.persona.schemas import PersonaResponse
 from app.features.simulation import agents
-from app.features.simulation.agents import LLMError, ReportAgent, SimulationAgent, SimulationFailed
-from app.features.simulation.schemas import ReportNarrative, Transcript
+from app.features.simulation.agents import LLMError, SimulationAgent, SimulationFailed
+from app.features.simulation.schemas import ReportNarrative
 
 
 def _llm_returns(monkeypatch, text):
@@ -371,29 +371,6 @@ def test_simulation_bad_llm_output_is_simulation_failed(monkeypatch, reply):
         _run_simulation()
 
 
-def _write_report(transcript=None):
-    return asyncio.run(
-        ReportAgent().write(
-            persona_a=PERSONA,
-            persona_b=PERSONA,
-            transcript=transcript or Transcript(),
-            name_a="민수",
-            name_b="지수",
-            area_scores={},
-            dim_scores={},
-        )
-    )
-
-
-def test_report_agent_parses_narrative(monkeypatch):
-    _llm_returns(monkeypatch, json.dumps({**NARRATIVE, "ideal_fit": {"ideal_warmth": 80}}, ensure_ascii=False))
-
-    narrative = _write_report()
-
-    assert narrative.headline == "연락 리듬이 맞는 두 사람"
-    assert narrative.ideal_fit == {"ideal_warmth": 80}
-
-
 def test_ideal_fit_with_null_value_does_not_raise():
     """실제로 관측된 사례: 근거 없는 차원을 키를 빼는 대신 null 로 채워 보낸다. 검증에서 안 터져야 한다."""
     payload = {**NARRATIVE, "ideal_fit": {"ideal_warmth": 80, "ideal_status": None}}
@@ -401,21 +378,6 @@ def test_ideal_fit_with_null_value_does_not_raise():
     narrative = ReportNarrative.model_validate(payload)
 
     assert narrative.ideal_fit == {"ideal_warmth": 80, "ideal_status": None}
-
-
-def test_report_agent_says_when_there_is_no_transcript(monkeypatch):
-    seen = _llm_returns(monkeypatch, json.dumps(NARRATIVE, ensure_ascii=False))
-
-    _write_report()
-
-    assert "(대화록 없음 — 페르소나만으로 서술)" in seen["messages"][0]["content"]
-
-
-def test_report_agent_invalid_narrative_is_llm_error(monkeypatch):
-    _llm_returns(monkeypatch, json.dumps({"headline": "가" * 61, "summary": "요약"}))
-
-    with pytest.raises(LLMError):
-        _write_report()
 
 
 # ── 화자 뒤바뀜 ─────────────────────────────────────────

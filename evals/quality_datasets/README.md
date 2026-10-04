@@ -1,6 +1,6 @@
-# 오프라인 품질 데이터셋 v1.12.0
+# 오프라인 품질 데이터셋 v1.13.0
 
-현재 persona 온보딩·태깅·build, practice, simulation 코드 및 품질 데이터셋 기획서를 근거로 작성한 **합성 입력 330건과 평가 계약 초안**이다. 운영 대화·개인정보·API 키를 사용하지 않았다. 파일을 만드는 동안 외부 네트워크, OpenRouter, 모델 API를 호출하지 않는다.
+현재 persona 온보딩·태깅·build, practice, simulation 코드 및 품질 데이터셋 기획서를 근거로 작성한 **합성 입력 306건과 평가 계약 초안**이다. 운영 대화·개인정보·API 키를 사용하지 않았다. 파일을 만드는 동안 외부 네트워크, OpenRouter, 모델 API를 호출하지 않는다.
 
 ## 구성
 
@@ -11,8 +11,7 @@
 | `persona_build` | 60 | 12 | 36 | 12 |
 | `practice_reply` | 70 | 14 | 42 | 14 |
 | `simulation_run` | 36 | 7 | 22 | 7 |
-| `simulation_report_preview` | 24 | 5 | 14 | 5 |
-| 합계 | 330 | 66 | 198 | 66 |
+| 합계 | 306 | 61 | 184 | 61 |
 
 각 줄은 `input`, `expectedOutput`, `metadata`를 갖는다. `schema.json`은 Draft 2020-12 공통 구조와 데이터셋별 필수 입력을 정의한다. `manifest.json`에는 파일·생성기·근거 소스의 SHA-256, 분포, 누수 검사 결과, 전역 family 배정이 있다.
 
@@ -39,7 +38,7 @@ python3 evals/quality_datasets/audit_quality_datasets.py
 - `hardAssertions`는 원하는 품질 계약이다. `codeBoundary`는 주어진 후보 출력·상태에서 **현재 코드의 동작**이다. 둘이 다를 때 `reviewFlags`와 설명에 공백을 기록한다. 현재 코드가 허용한다고 품질 성공으로 처리하면 안 된다.
 - build `rawModel`의 근거 없는 점수 키 생략과 `postService`의 미확인 차원 null(`unknownScores`)·confidence·accuracy를 분리한다. 서비스는 답변에서 근거가 확인된 차원만 값을 남긴다. 기계적 후보 출력 검사는 `mechanical_oracle_not_semantic_label`로 구별한다. 점수의 의미는 `acceptableRanges`라는 검토 대기 범위이며 정확한 단일 정답으로 강요하지 않는다.
 - 시뮬레이션 `ruleOracle`은 `pre_llm_rules_ideal_unjudged` 단계다. 이상형 세 차원은 미판정 null이며 실제 생성 대화로 채우면 영역·총점을 다시 계산해야 한다. 입력 점수 누락은 50이 아니라 null(모름)이며 그 차원의 규칙 점수도 null이다. 백엔드 계약(#63) 때문에 화면 표시값 `dimensionDisplay`만 50이다. 모든 영역이 비어 총점 50이 되는 `overall_score` 직접 호출 검사와 구분한다.
-- 고정 preview의 인용 후보는 원문을 그대로 담고 `ideal_*`의 판단 불확실성을 남겼다. LLM 실패/seed/fallback/template은 회복성 성공과 별개로 모델 품질 성공에 포함하지 않는다.
+- LLM 실패/seed/fallback/template은 회복성 성공과 별개로 모델 품질 성공에 포함하지 않는다.
 
 ## 출처와 검토 상태
 
@@ -49,7 +48,7 @@ python3 evals/quality_datasets/audit_quality_datasets.py
 
 ## 분할과 누수 방지
 
-같은 원형의 high/low 태깅과 build 파생은 `evidence-*` family에 묶었다. 동일 persona pair의 simulation과 report-preview는 같은 family에 묶되 family별 항목 수를 조절하여 각 Dataset도 20/60/20(36건은 7/22/7, 24건은 5/14/5)으로 맞췄다. 대화 주제 및 practice 프로필 변형은 각각 한 family다. `splitGroup=familyId`이며 전역 family와 prototype의 split 이동이 없다. `caseId`는 데이터셋과 안정적인 작성 순번이다. 중복을 피하려 입력에 무의미한 case ID를 덧붙이지 않는다.
+같은 원형의 high/low 태깅과 build 파생은 `evidence-*` family에 묶었다. 동일 persona pair의 simulation은 같은 family에 묶되 family별 항목 수를 조절하여 각 Dataset도 20/60/20(36건은 7/22/7)으로 맞췄다. 대화 주제 및 practice 프로필 변형은 각각 한 family다. `splitGroup=familyId`이며 전역 family와 prototype의 split 이동이 없다. `caseId`는 데이터셋과 안정적인 작성 순번이다. 중복을 피하려 입력에 무의미한 case ID를 덧붙이지 않는다.
 
 `blind_holdout`은 데이터 분할 표식이다. 같은 저장소에 평문으로 제공되므로 접근 통제된 진짜 비공개 holdout을 보장하지 않는다. 프롬프트 작성자가 본 이후에는 새 원형을 독립 작성하여 봉인해야 한다. 자체 audit는 입력 발화·인용·후보 출력의 전체 문자열과 개별 문장을 검사한다. 정확 일치는 공백·종결 부호를 정규화하고 한 글자 답도 포함한다. 코드로 고정된 첫 인사 한 문장만 예외다. 근사 검사는 NFKC·문장부호·공백 정규화 뒤 SequenceMatcher 비율 0.76 이상, 문자 3-gram Dice 0.45 이상, 공통 문자 18자 이상을 동시에 요구한다. 20자 미만 관용문과 단일 문자 반복 길이 fixture는 근사 검사에서 제외한다. 실제 사례와 오탐 대조군을 단위 테스트로 확인한다. 이 검사는 문장 구조 유사를 찾는 휴리스틱이며 모든 의미 동등성을 증명하지는 않는다.
 
@@ -58,6 +57,8 @@ v1.2에서는 지적된 holdout 25건을 사건·문장 구조·대화 행위가
 태깅의 간접 근거 9건은 기록·관찰·선택의 정황을 각각 따로 작성하고 보수적인 빈 secondary도 허용한다. split마다 짧은 답·농담·욕설/불성실 답을 배치하여 주제 내 판단 유보와 무관 답변을 구분한다. holdout에는 관계 점검 뒤 따뜻한 분위기, 갈등 이탈 중 거절 불안, 경제 안정 선호와 가족 소개 생각이라는 서로 다른 간접 라벨을 둔다. 부족한 답변 안에 내부 차원 이름을 넣지 않는다.
 
 온보딩의 turn0 9건은 모두 weekend이고, history가 있는 51건은 첫 assistant 메시지에 실제 고정 intro를 포함하며 weekend 문답으로 시작한다. 첫 인사 파서·실패 fixture는 서로 다른 조건을 검사한다. 마지막 관계 방향 질문에는 코드가 요구하는 세 선택지, 진지하게 만날 사람·편하게 알아가기·아직 잘 모르겠어요를 자연스럽게 제시한다.
+
+v1.13에서는 `/report/preview` API와 리포트 단독 생성 경로(ReportAgent)를 앱에서 제거하면서 `simulation_report_preview` 데이터셋 24건을 뺐다. 나머지 다섯 데이터셋의 JSONL은 바꾸지 않았다. 아래 v1.12 이전 기록의 preview 언급은 당시 기록이다.
 
 v1.12에서는 리포트 preview의 채점 방식을 정했다. LLM 서술 케이스는 인용 원문 일치·하이라이트 번호·이상형 범위·규칙 점수 불변·총점 재계산을 자동 지표(`autoMetrics.formatChecks`)로 판정하고 설명 서술의 질만 1/3/5점으로 사람이 본다(`rubric.role=auxiliary`). 템플릿·후보 검사는 `code_behavior`다. 이 리포트는 분석 문서라 몰입(20~30대 말투) 기준은 적용하지 않는다. 짧은 대화록·카테고리 편중·빈약한 프로필은 한계로 명시했다.
 
@@ -79,9 +80,9 @@ v1.4에서는 v1.3 생성 이후 바뀐 앱 코드에 맞춰 기대값만 정정
 
 v1.3에서는 검토에서 막힌 항목만 고쳤다. low_confidence와 missing_scores의 데이트 기피 항목은 실제 상황으로 바꿨고, 문장 골격이 같던 build 044, practice 024·060, preview 016, tagging 013·034·054를 다른 사건으로 다시 썼다. 짧은 무성 답 011·019·063·075는 질문 관련 답으로 두되, 스키마 주석의 무관 답변 해석도 허용 대안으로 남겼다.
 
-build 일반 30건은 별도로 작성한 3~4턴 대화에서 두 사건과 취미·일과·데이트 근거를 분리한다. 질문에는 내부 차원 이름을 넣지 않는다. build 033의 아직 시도하지 않은 연락 계획은 필수 점수 근거로 강제하지 않는다. practice 60개 및 preview 48개 페르소나는 열다섯 score/confidence 키와 accuracy_of 공식에 맞는 정확도를 가진다.
+build 일반 30건은 별도로 작성한 3~4턴 대화에서 두 사건과 취미·일과·데이트 근거를 분리한다. 질문에는 내부 차원 이름을 넣지 않는다. build 033의 아직 시도하지 않은 연락 계획은 필수 점수 근거로 강제하지 않는다. practice 60개 페르소나는 열다섯 score/confidence 키와 accuracy_of 공식에 맞는 정확도를 가진다.
 
-preview는 이상형 외 차원과 위험만 고정한다. 온정의 허용범위 또는 null을 반영한 총점·등급의 가능한 값은 `idealRecalculationOracle`로 기록한다. 케이스별 가능한 총점 집합과 등급 구간은 각 항목의 `idealRecalculationOracle`에 있다. 주입 후보와 template 실행은 별도 코드 경계 계약을 따른다. 모든 데이터셋의 루브릭은 내부 slug나 객체 repr 대신 사례의 판정 이유·실제 발화·금지 조건을 명시한다.
+모든 데이터셋의 루브릭은 내부 slug나 객체 repr 대신 사례의 판정 이유·실제 발화·금지 조건을 명시한다.
 
 ## 발견한 현재 코드와 품질 계약의 차이
 
@@ -89,7 +90,7 @@ preview는 이상형 외 차원과 위험만 고정한다. 온정의 허용범�
 - build headline은 프롬프트 40자와 schema 60자, summary title/content는 20/40자와 40/200자로 다르다.
 - practice는 오류 없이 빈 스트림이 끝나면 빈 답변을 저장할 수 있다.
 - simulation은 요청보다 짧아도 정규화 후 두 줄 이상이면 서비스가 허용한다. 화자 병합과 자르기는 모델 원본 품질을 가릴 수 있다.
-- run은 highlight 범위만 필터링하고 quote 일치는 검사하지 않는다. preview 조립은 index와 quote 모두 검사하지 않는다.
+- run은 highlight 범위만 필터링하고 quote 일치는 검사하지 않는다.
 - ReportNarrative의 ideal_fit은 현재 값의 0~100 범위 제약이 없다.
 - 위험 caution을 뒤에 붙인 후 `[:5]`로 자르므로 기존 caution 5개가 있으면 위험 문장이 유실될 수 있다.
 

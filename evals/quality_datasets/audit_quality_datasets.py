@@ -18,7 +18,6 @@ EXPECTED = {
     "persona_build": (12, 36, 12),
     "practice_reply": (14, 42, 14),
     "simulation_run": (7, 22, 7),
-    "simulation_report_preview": (5, 14, 5),
 }
 DIMENSIONS = {
     "avoidance",
@@ -44,7 +43,6 @@ REWRITTEN_HOLDOUT = {
     "persona_build": [7, 8, 17, 18, 27, 28, 42, 44, 45],
     "practice_reply": [*range(20, 25), *range(56, 61)],
     "simulation_run": [32],
-    "simulation_report_preview": [14, 15, 16, 21],
 }
 
 
@@ -199,25 +197,17 @@ def audit() -> dict:
             or inp["historyTopicIds"][0] != "weekend"
         ):
             errors.append(f"history 실제 intro/weekend 누락: {row['metadata']['caseId']}")
-    persona_count = 0
     practice_count = 0
-    for row in [*rows["simulation_report_preview"], *rows["practice_reply"]]:
-        keys = ("partner",) if row["metadata"]["dataset"] == "practice_reply" else ("persona_a", "persona_b")
-        for key in keys:
-            p = row["input"][key]
-            if set(p["scores"]) != DIMENSIONS or set(p["confidence"]) != DIMENSIONS:
-                errors.append(f"15차원 누락: {row['metadata']['caseId']}/{key}")
-            accuracy = round(
-                100
-                * sum({"LOW": 0.0, "MEDIUM": 0.6, "HIGH": 1.0}[p["confidence"].get(d, "LOW")] for d in DIMENSIONS)
-                / 15
-            )
-            if p["accuracy"] != accuracy:
-                errors.append(f"accuracy 불일치: {row['metadata']['caseId']}/{key}")
-            if key == "partner":
-                practice_count += 1
-            else:
-                persona_count += 1
+    for row in rows["practice_reply"]:
+        p = row["input"]["partner"]
+        if set(p["scores"]) != DIMENSIONS or set(p["confidence"]) != DIMENSIONS:
+            errors.append(f"15차원 누락: {row['metadata']['caseId']}/partner")
+        accuracy = round(
+            100 * sum({"LOW": 0.0, "MEDIUM": 0.6, "HIGH": 1.0}[p["confidence"].get(d, "LOW")] for d in DIMENSIONS) / 15
+        )
+        if p["accuracy"] != accuracy:
+            errors.append(f"accuracy 불일치: {row['metadata']['caseId']}/partner")
+        practice_count += 1
     affected = {case for collision in near for case in collision["holdoutCases"]}
     affected.update(
         o["caseId"] for occurrences in leaked.values() for o in occurrences if o["split"] == "blind_holdout"
@@ -260,7 +250,6 @@ def audit() -> dict:
         "shortAnswerOneToThreeCharacterCounts": dict(short_answers),
         "jokeCounts": dict(jokes),
         "abusiveOffTopicCounts": dict(abusive),
-        "previewPersonaConsistencyChecked": persona_count,
         "practicePersonaConsistencyChecked": practice_count,
         "uniqueRubrics": {
             name: len(
