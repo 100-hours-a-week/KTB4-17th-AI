@@ -497,3 +497,123 @@ def test_first_script_is_used_when_regeneration_for_mixup_fails(monkeypatch, sec
 
     assert len(calls) == 2
     assert out.transcript[1].text == "반가워요. 지수님은 주말에 뭐 하세요?"
+
+
+def _fake_cut_off_response(monkeypatch):
+    """OpenRouter 가 끊긴 응답에 붙이는 필드(provider, choice.error, native_finish_reason)까지 흉내 낸다."""
+    from types import SimpleNamespace
+
+    choice = SimpleNamespace(
+        message=SimpleNamespace(content='{"transcript": [{"speaker": "a", "text": "안녕'),
+        finish_reason="error",
+        native_finish_reason="OTHER",
+        error={
+            "code": 502,
+            "message": "upstream disconnected " + "x" * 600,
+            "metadata": {"raw": "INTERNAL: stream reset", "provider_name": "Google AI Studio"},
+        },
+    )
+    resp = SimpleNamespace(id="gen-abc", provider="Google AI Studio", choices=[choice], usage=None)
+
+    class FakeCompletions:
+        async def create(self, **kwargs):
+            return resp
+
+    monkeypatch.setattr(
+        agents, "_get_client", lambda: SimpleNamespace(chat=SimpleNamespace(completions=FakeCompletions()))
+    )
+
+
+def test_call_cut_off_records_provider_error_detail(monkeypatch, caplog):
+    """끊긴 사유를 로그·Langfuse 에 남긴다. 503 응답에 실리는 예외 메시지에는 공급자 문구를 넣지 않는다."""
+    from types import SimpleNamespace
+
+    _fake_cut_off_response(monkeypatch)
+    recorded = []
+    monkeypatch.setattr(
+        agents, "get_client", lambda: SimpleNamespace(update_current_span=lambda **kw: recorded.append(kw))
+    )
+
+    with caplog.at_level("WARNING", logger=agents.__name__), pytest.raises(LLMError) as exc:
+        asyncio.run(agents._call(system="s", messages=[], max_tokens=10, timeout=5))
+
+    assert exc.value.reason == "upstream_error"
+    assert exc.value.retryable is True
+    assert "upstream disconnected" not in str(exc.value)
+    detail = recorded[0]["metadata"]["provider_error"]
+    assert detail["generation_id"] == "gen-abc"
+    assert detail["provider"] == "Google AI Studio"
+    assert detail["native_finish_reason"] == "OTHER"
+    assert detail["error_code"] == 502
+    assert len(detail["error_message"]) == 500
+    assert "INTERNAL: stream reset" in detail["error_metadata"]
+    assert "gen-abc" in caplog.text and "OTHER" in caplog.text
+
+
+def test_provider_error_given_as_plain_string_keeps_its_message():
+    from types import SimpleNamespace
+
+    choice = SimpleNamespace(error="upstream disconnected")
+    detail = agents._provider_error_detail(SimpleNamespace(), choice)
+
+    assert detail["error_message"] == "upstream disconnected"
+    assert detail["error_code"] is None
+
+
+def test_call_cut_off_still_fails_cleanly_when_langfuse_recording_breaks(monkeypatch):
+    _fake_cut_off_response(monkeypatch)
+
+    def broken():
+        raise RuntimeError("langfuse down")
+
+    monkeypatch.setattr(agents, "get_client", broken)
+
+    with pytest.raises(LLMError) as exc:
+        asyncio.run(agents._call(system="s", messages=[], max_tokens=10, timeout=5))
+
+    assert exc.value.reason == "upstream_error"
+
+
+def test_call_cut_off_without_error_body_still_has_detail_keys(monkeypatch):
+    """choice.error 가 없는 응답(기존 _fake_client)도 그대로 upstream_error 다."""
+    _fake_client(monkeypatch, content='{"transcript": [', finish_reason="error")
+    monkeypatch.setattr(agents, "_record_provider_error", lambda detail: None)
+
+    with pytest.raises(LLMError) as exc:
+        asyncio.run(agents._call(system="s", messages=[], max_tokens=10, timeout=5))
+
+    assert exc.value.retryable is True
+
+
+def test_simulation_retries_once_when_provider_cuts_off(monkeypatch):
+    """운영 사례(2026-10-02): 생성 도중 끊긴 요청이 몇 초 뒤 같은 입력으로 성공했다."""
+    cut = LLMError("provider error mid-generation", reason="upstream_error", retryable=True)
+    calls = _llm_returns_sequence(monkeypatch, [cut, GOOD_SCRIPT])
+
+    out = _run_simulation()
+
+    assert len(calls) == 2
+    assert out.report.headline == NARRATIVE["headline"]
+    assert calls[1]["timeout"] <= calls[0]["timeout"]
+
+
+def test_simulation_gives_up_after_second_provider_cut_off(monkeypatch):
+    cut = LLMError("provider error mid-generation", reason="upstream_error", retryable=True)
+    calls = _llm_returns_sequence(monkeypatch, [cut, cut])
+
+    with pytest.raises(SimulationFailed) as exc:
+        _run_simulation()
+
+    assert len(calls) == 2
+    assert exc.value.reason == "upstream_error"
+
+
+def test_simulation_does_not_retry_upstream_status_error(monkeypatch):
+    """4xx/5xx 는 SDK 가 이미 재시도했다 — 같은 upstream_error 라도 다시 보내지 않는다."""
+    calls = _llm_returns_sequence(monkeypatch, [LLMError("upstream error 502", reason="upstream_error"), GOOD_SCRIPT])
+
+    with pytest.raises(SimulationFailed) as exc:
+        _run_simulation()
+
+    assert len(calls) == 1
+    assert exc.value.reason == "upstream_error"

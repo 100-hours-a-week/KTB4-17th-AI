@@ -22,7 +22,7 @@ import re
 import time
 from functools import lru_cache
 
-from langfuse import observe
+from langfuse import get_client, observe
 from langfuse.openai import AsyncOpenAI
 from openai import APIStatusError
 from pydantic import ValidationError
@@ -65,12 +65,16 @@ class LLMError(Exception):
     reason 은 SimulationFailed 가 그대로 물려받아 API 503 응답에 실린다 —
     클라이언트가 "그냥 재시도"(timeout)와 "다른 조치가 필요"(그 외)를 구분할 수 있게.
 
-    reason: timeout · upstream_error(LLM 서버 4xx/5xx) · truncated(max_tokens 에서 잘림)
-            · invalid_json · llm_error(그 외)"""
+    reason: timeout · upstream_error(LLM 서버 4xx/5xx, 생성 도중 끊김) · truncated(max_tokens 에서 잘림)
+            · invalid_json · llm_error(그 외)
 
-    def __init__(self, message: str, *, reason: str = "llm_error") -> None:
+    retryable: 같은 요청을 바로 다시 보내면 될 수 있는 실패. reason 은 API 계약이라 그대로 두고
+    재시도 여부만 따로 표시한다 — 생성 도중 끊김은 upstream_error 지만 4xx/5xx 와 달리 SDK 가 재시도하지 않았다."""
+
+    def __init__(self, message: str, *, reason: str = "llm_error", retryable: bool = False) -> None:
         super().__init__(message)
         self.reason = reason
+        self.retryable = retryable
 
 
 # 동시에 진행 중인 LLM 호출 수를 settings.simulation_max_inflight 로 제한한다.
@@ -135,11 +139,44 @@ async def _call(
         raise LLMError(f"output truncated at max_tokens={max_tokens}", reason="truncated")
     if finish_reason == "error":
         # HTTP 200 이어도 공급자가 생성 도중 끊은 경우다. 반쪽 출력을 파싱하면 invalid_json 으로 잘못 분류된다 (#77)
-        logger.warning("llm %s: provider error mid-generation, tail=%r", name, text[-200:])
-        raise LLMError("provider error mid-generation (finish_reason=error)", reason="upstream_error")
+        # OpenRouter 는 200 을 먼저 보내 버려서 끊긴 사유를 본문(choice.error, native_finish_reason)에만 싣는다.
+        # 사유는 503 응답 메시지에 넣지 않고 로그·Langfuse 에만 남긴다
+        detail = _provider_error_detail(resp, choice)
+        logger.warning("llm %s: provider error mid-generation detail=%s tail=%r", name, detail, text[-200:])
+        _record_provider_error(detail)
+        raise LLMError("provider error mid-generation (finish_reason=error)", reason="upstream_error", retryable=True)
     if not text:
         raise LLMError("empty response")
     return text
+
+
+def _provider_error_detail(resp, choice) -> dict:
+    """끊긴 응답에 OpenRouter 가 붙여 준 사유. SDK 모델에 없는 필드라 getattr 로 읽는다."""
+    error = getattr(choice, "error", None)
+    if isinstance(error, str):
+        error = {"message": error}
+    elif error is not None and not isinstance(error, dict):
+        error = {"code": getattr(error, "code", None), "message": getattr(error, "message", None)}
+    error = error or {}
+    message = error.get("message")
+    # metadata 에는 공급자가 보낸 원문(raw)이 온다 — message 가 "Provider returned error" 뿐일 때 실제 사유는 여기 있다
+    raw = error.get("metadata")
+    return {
+        "generation_id": getattr(resp, "id", None),
+        "provider": getattr(resp, "provider", None),
+        "native_finish_reason": getattr(choice, "native_finish_reason", None),
+        "error_code": error.get("code"),
+        "error_message": str(message)[:500] if message is not None else None,
+        "error_metadata": json.dumps(raw, ensure_ascii=False, default=str)[:500] if raw is not None else None,
+    }
+
+
+def _record_provider_error(detail: dict) -> None:
+    # 관측 실패가 재시도·503 흐름을 바꾸면 안 된다
+    try:
+        get_client().update_current_span(metadata={"provider_error": detail})
+    except Exception:
+        logger.debug("failed to record provider error on langfuse span", exc_info=True)
 
 
 async def _call_json(**kwargs) -> dict:
@@ -366,8 +403,10 @@ class SimulationAgent:
                     reason = e.reason
                     # 출력이 깨지거나 잘린 건 운이다 — 같은 요청을 한 번만 더. 전체 시간은 처음 timeout 안에서.
                     # 남은 시간이 1/3 도 안 되면 재시도해도 또 타임아웃이라 바로 실패시킨다.
+                    # 생성 도중 끊김(retryable)은 운영에서 몇 초 뒤 같은 요청이 성공했다 — 같은 규칙으로 한 번만 더.
                     remaining = deadline - time.monotonic()
-                    if attempt == 1 and reason in _RETRYABLE and remaining > total / 3:
+                    retryable = reason in _RETRYABLE or getattr(e, "retryable", False)
+                    if attempt == 1 and retryable and remaining > total / 3:
                         logger.warning("simulation-run retry: reason=%s remaining=%.1fs", reason, remaining)
                         if reason == "truncated":
                             max_tokens = int(max_tokens * 1.5)
