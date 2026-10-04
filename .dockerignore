@@ -16,6 +16,10 @@ dist/
 #  CI
 .git/
 .github/
+node_modules/
+package.json
+package-lock.json
+release.config.cjs
 
 # IDE
 .idea/
