@@ -34,6 +34,10 @@ EXPECTED_DOCUMENTED_ENDPOINTS = {
     ("GET", "/ai/api/v1/simulation"),
     ("GET", "/ai/api/v1/simulation/{simulation_id}"),
     ("GET", "/ai/api/v1/simulation/{simulation_id}/report"),
+    ("POST", "/ai/api/v1/profile-trust/photos/primary/frontal-check"),
+    ("POST", "/ai/api/v1/profile-trust/photos/primary/synthetic-check"),
+    ("POST", "/ai/api/v1/profile-trust/verifications/challenges"),
+    ("POST", "/ai/api/v1/profile-trust/verifications/complete"),
 }
 
 

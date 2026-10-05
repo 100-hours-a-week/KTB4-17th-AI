@@ -39,6 +39,11 @@ docs/*
 docs/v1docs/*
 !docs/v1docs/langfuse-adoption-plan.md
 !docs/v1docs/langfuse-metadata-guide.md
+!docs/v2docs/
+
+# 얼굴 인증 런타임 모델은 scripts/download_models.py 로 받는다
+models/*
+!models/README.md
 .memsearch
 .claude/
 trouble
