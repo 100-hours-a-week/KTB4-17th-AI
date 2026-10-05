@@ -131,8 +131,9 @@ SYSTEM_TEMPLATE = """\
 """
 
 ME_SECTION = """\
-## {me}님에 대해 참고할 것 (이미 아는 척은 하지 말고, 화제를 고를 때만)
+## 대화 상대 {me}님 (기본 정보만)
 {me_profile}
+이 정보만 압니다. {me}님의 취미·일상·성향은 대화에서 직접 들은 것만 씁니다.
 """
 
 OPENING_INSTRUCTION = (
@@ -141,6 +142,14 @@ OPENING_INSTRUCTION = (
 )
 
 FALLBACK_REPLY = "아, 잠깐 딴생각했어요 ㅎㅎ 방금 얘기 한 번만 더 해줄래요?"
+
+
+def _me_basics(name: str, me: PersonaResponse) -> str:
+    """상대 역할에게 주는 내 정보 — 이름·MBTI만. 관심사·일상·성향은 대화로 알아가야 한다."""
+    lines = [f"- 이름: {name}"]
+    if me.mbti:
+        lines.append(f"- MBTI: {me.mbti}")
+    return "\n".join(lines)
 
 
 def _with_ieyo(name: str) -> str:
@@ -178,7 +187,7 @@ class PartnerAgent:
     ) -> str:
         me_section = ""
         if me is not None:
-            me_section = ME_SECTION.format(me=my_name, me_profile=describe(my_name, me)) + "\n"
+            me_section = ME_SECTION.format(me=my_name, me_profile=_me_basics(my_name, me)) + "\n"
         return SYSTEM_TEMPLATE.format(
             partner=partner_name,
             me=my_name,
