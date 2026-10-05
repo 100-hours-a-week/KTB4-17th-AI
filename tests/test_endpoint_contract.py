@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
@@ -8,9 +9,11 @@ from app.core.db import get_db
 from app.features.persona import api as persona_api
 from app.features.persona.schemas import PersonaResponse
 from app.main import app
+from tests.conftest import with_db
 
 EXPECTED_DOCUMENTED_ENDPOINTS = {
     ("GET", "/health"),
+    ("GET", "/health/ready"),
     ("POST", "/ai/api/v1/persona/nickname"),
     ("POST", "/ai/api/v1/persona/onboarding/start"),
     ("POST", "/ai/api/v1/persona/onboarding/{session_id}/answer"),
@@ -56,6 +59,45 @@ def test_health_is_reachable_on_public_and_proxy_paths():
 
     assert client.get("/health").json() == {"status": "ok"}
     assert client.get("/ai/api/health").json() == {"status": "ok"}
+
+
+def test_readiness_reports_ok_when_database_answers():
+    async def scenario(factory):
+        async def override_db():
+            async with factory() as db:
+                yield db
+
+        app.dependency_overrides[get_db] = override_db
+        try:
+            client = TestClient(app)
+            return client.get("/health/ready"), client.get("/ai/api/health/ready")
+        finally:
+            app.dependency_overrides.pop(get_db, None)
+
+    public, proxied = asyncio.run(with_db(scenario))
+
+    assert public.status_code == 200
+    assert public.json() == {"status": "ok", "database": "ok"}
+    assert proxied.json() == {"status": "ok", "database": "ok"}
+
+
+def test_readiness_returns_503_without_leaking_error_when_database_fails():
+    class BrokenSession:
+        async def execute(self, *_args, **_kwargs):
+            raise OSError("connect to postgresql://ktb:secret@db:5432 refused")
+
+    async def override_db():
+        yield BrokenSession()
+
+    app.dependency_overrides[get_db] = override_db
+    try:
+        response = TestClient(app).get("/health/ready")
+    finally:
+        app.dependency_overrides.pop(get_db, None)
+
+    assert response.status_code == 503
+    assert response.json() == {"status": "unavailable", "database": "error"}
+    assert "secret" not in response.text
 
 
 def _persona_read_client():

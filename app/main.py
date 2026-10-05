@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -20,9 +21,13 @@ sentry_sdk.init(
 # uvicorn 로거는 자기 핸들러가 있고 propagate=False 라 중복되지 않는다.
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
-from fastapi import APIRouter, FastAPI
+from fastapi import APIRouter, Depends, FastAPI
+from fastapi.responses import JSONResponse
 from langfuse import get_client
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.db import get_db
 from app.features.persona.api import router as persona_router
 from app.features.practice.api import router as practice_router
 from app.features.simulation.api import router as simulation_router
@@ -74,6 +79,29 @@ api_router.include_router(simulation_router)
 async def health_check() -> dict[str, str]:
     """서버 정상 가동 여부를 확인하는 헬스 체크 엔드포인트."""
     return {"status": "ok"}
+
+
+logger = logging.getLogger(__name__)
+
+# 배포 직후 DB 접속을 확인하는 용도라 오래 기다리지 않는다
+DB_READY_TIMEOUT_S = 3.0
+
+
+@app.get("/health/ready", status_code=200, summary="DB 연결 확인", tags=["health"])
+@api_router.get("/health/ready", status_code=200, summary="DB 연결 확인", include_in_schema=False)
+async def readiness_check(db: AsyncSession = Depends(get_db)):
+    """DATABASE_URL 로 실제 접속해 SELECT 1 을 실행한다. 실패하면 503.
+
+    /health 는 프로세스만 살아 있으면 ok 라 DB 주소가 틀려도 배포가 정상으로 보인다.
+    """
+    try:
+        async with asyncio.timeout(DB_READY_TIMEOUT_S):
+            await db.execute(text("SELECT 1"))
+    except Exception:
+        # 접속 정보가 응답에 섞이지 않도록 원인은 로그로만 남긴다
+        logger.exception("readiness: database check failed")
+        return JSONResponse(status_code=503, content={"status": "unavailable", "database": "error"})
+    return {"status": "ok", "database": "ok"}
 
 
 # Sentry 연동 확인용. 이벤트 수신을 확인한 뒤 제거한다.
