@@ -1,7 +1,6 @@
 """LLM (simulation).
 
   - SimulationAgent : 두 페르소나 + 규칙 점수 → 대본(N턴 왕복) + 리포트 서술.  **호출 1회**
-  - ReportAgent     : 대화록 + 두 페르소나 + 규칙 점수 → 서술만. /report/preview 용 (대화록을 밖에서 줄 때)
 
 점수는 여기서 만들지 않는다. 규칙으로 이미 나온 점수를 LLM에 "설명할 재료"로 준다.
 LLM이 점수를 다시 매기면 규칙과 서술이 어긋나서 사용자가 헷갈린다.
@@ -44,7 +43,7 @@ from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.profile import describe
 from app.features.persona.schemas import SCORED, PersonaResponse
 
-from .schemas import AREAS, DIMENSIONS_BY_AREA, RULES, Fit, ReportNarrative, ScriptOutput, Transcript
+from .schemas import AREAS, DIMENSIONS_BY_AREA, RULES, Fit, ScriptOutput
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +59,7 @@ def _get_client() -> AsyncOpenAI:
 
 
 class LLMError(Exception):
-    """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다.
+    """호출 실패. SimulationAgent.run 이 잡아서 재시도하거나 SimulationFailed 로 올린다.
 
     reason 은 SimulationFailed 가 그대로 물려받아 API 503 응답에 실린다 —
     클라이언트가 "그냥 재시도"(timeout)와 "다른 조치가 필요"(그 외)를 구분할 수 있게.
@@ -211,27 +210,6 @@ def _rules_section() -> str:
             how = "대화록으로 판정" if rule.fit == Fit.JUDGED else f"규칙: {rule.fit.value}"
             lines.append(f"- {d} ({SCORED[d].label}) — {how}. {rule.why}")
     return "\n".join(lines)
-
-
-def _persona_section(name: str, p: PersonaResponse) -> str:
-    scored = ", ".join(f"{d}={'?' if p.scores.get(d) is None else p.scores[d]}" for d in SCORED)
-    head = p.narrative.headline if p.narrative else "(서술 없음)"
-    return (
-        f"## {name}\n"
-        f"MBTI: {p.mbti or '-'} (참고만. 점수·대화록이 우선)\n"
-        f"한 줄: {head}\n"
-        f"점수: {scored}\n"
-        f"관심사: {', '.join(p.interests) or '-'}\n"
-        f"선호 데이트: {', '.join(p.date_prefer) or '-'} / 피함: {', '.join(p.date_avoid) or '-'}\n"
-        f"근거 부족(LOW): {', '.join(d for d, c in p.confidence.items() if c == 'LOW') or '없음'}"
-    )
-
-
-def _transcript_section(t: Transcript, name_a: str, name_b: str) -> str:
-    if not t.turns:
-        return "(대화록 없음 — 페르소나만으로 서술)"
-    names = {"a": name_a, "b": name_b}
-    return "\n".join(f"[{turn.index}] {names[turn.speaker]}: {turn.text}" for turn in t.turns)
 
 
 def _scores_section(area_scores: dict[str, int | None], dim_scores: dict[str, int | None]) -> str:
@@ -610,111 +588,3 @@ def _validate_output(
     )
     full_text = "\n".join([*(line.text for line in script.transcript), report_text])
     return result, full_text
-
-
-# ══ 2. 리포트만 — 대화록을 밖에서 줄 때 (/report/preview) ═══
-
-SYSTEM = f"""당신은 소개팅 매칭 리포트를 쓰는 작가입니다.
-두 사람의 성향 점수(이미 계산됨)와 가상 소개팅 대화록을 읽고, 두 사람이 서로 얼마나 맞는지 설명합니다.
-
-원칙:
-{_REPORT_RULES}
-
-출력은 JSON 하나만:
-{_REPORT_SHAPE}"""
-
-
-class ReportAgent:
-    @observe(name="simulation-report-preview-workflow", capture_input=False, capture_output=False)
-    async def write(
-        self,
-        *,
-        persona_a: PersonaResponse,
-        persona_b: PersonaResponse,
-        transcript: Transcript,
-        name_a: str,
-        name_b: str,
-        area_scores: dict[str, int | None],
-        dim_scores: dict[str, int | None],
-        trace_metadata: LangfuseMetadata | None = None,
-        db: AsyncSession | None = None,
-        user_key: str | None = None,
-        session_id: str | None = None,
-    ) -> ReportNarrative:
-        """실패하면 LLMError. 호출부(report.build_report)가 템플릿으로 폴백한다."""
-        user = "\n\n".join(
-            [
-                "# 궁합 규칙\n" + _rules_section(),
-                _persona_section(name_a, persona_a),
-                _persona_section(name_b, persona_b),
-                "# 계산된 점수\n" + _scores_section(area_scores, dim_scores),
-                "# 대화록\n" + _transcript_section(transcript, name_a, name_b),
-            ]
-        )
-        with propagate_langfuse_metadata(trace_metadata):
-            data = await _call_json(
-                system=SYSTEM,
-                messages=[{"role": "user", "content": user}],
-                max_tokens=1800,
-                timeout=get_settings().simulation_narrative_timeout_s,
-                name="simulation-report-preview",
-                metadata=trace_metadata,
-            )
-        try:
-            narrative = ReportNarrative.model_validate(data)
-        except ValidationError as e:
-            raise LLMError(f"invalid narrative: {e}") from e
-        mode = effective_mode(user_key)
-        if mode != "off":
-            text = " ".join(
-                [
-                    narrative.headline,
-                    narrative.summary,
-                    *narrative.area_comments.values(),
-                    *narrative.strengths,
-                    *narrative.cautions,
-                    narrative.date_comment,
-                ]
-            )
-            checked = validate(
-                text,
-                GuardrailContext(
-                    surface="simulation_report",
-                    speaker_name=name_a,
-                    partner_name=name_b,
-                    task="report",
-                    style="report",
-                    max_chars=4000,
-                ),
-            )
-            bad = checked.grade in {Grade.RETRYABLE, Grade.BLOCK}
-            result = ValidationResult(
-                status="SHADOW_FAIL"
-                if bad and mode == "shadow"
-                else "FALLBACK"
-                if bad
-                else "WARN"
-                if checked.grade == Grade.WARN
-                else "PASS",
-                grade=checked.grade,
-                initial_grade=checked.grade,
-                regenerated=False,
-                violations=checked.violations,
-                latency_ms=checked.latency_ms,
-            )
-            if db:
-                await record_guardrail(
-                    db,
-                    feature="simulation",
-                    operation="report",
-                    session_id=session_id,
-                    user_id=user_key,
-                    mode=mode,
-                    result=result,
-                    initial_text=text,
-                )
-            if bad and mode == "enforce":
-                self.last_validation = result
-                raise LLMError("report guardrail validation failed", reason="guardrail")
-            narrative.validation = result
-        return narrative

@@ -43,7 +43,6 @@ DS_INFO = {
     "persona_build": ("페르소나 build", "페르소나 build: 온보딩 대화에서 점수·서술 생성"),
     "practice_reply": ("연습대화", "연습대화: 저장된 페르소나로 다음 답변 생성"),
     "simulation_run": ("시뮬레이션 대본", "시뮬레이션: 두 페르소나의 대본과 리포트"),
-    "simulation_report_preview": ("리포트 preview", "시뮬레이션: 고정 대화록에 대한 리포트 서술"),
 }
 COMMON_EXPECTED = {
     "hardAssertions",
@@ -699,7 +698,7 @@ def sec_split(manifest, datasets, integ, readme: str) -> str:
         )
     return (
         "<p>같은 원형에서 나온 케이스가 서로 다른 split에 있으면, calibration에서 맞춘 프롬프트가 holdout 점수를 부풀립니다. "
-        "그래서 <strong>family 단위로 분할</strong>합니다. 같은 high/low 태깅과 build 파생, 같은 페르소나 쌍의 시뮬레이션과 preview는 한 family이고 <code>splitGroup=familyId</code>입니다.</p>"
+        "그래서 <strong>family 단위로 분할</strong>합니다. 같은 high/low 태깅과 build 파생, 같은 페르소나 쌍의 시뮬레이션은 한 family이고 <code>splitGroup=familyId</code>입니다.</p>"
         + scroll_table(["split", "케이스 수", "family 수"], fam_rows, num_cols=(1, 2))
         + '<div class="callout ok"><strong>이 문서를 만들며 JSONL에서 직접 확인한 값</strong>: family %d개, 여러 split에 걸친 family %d개, 중복 caseId %d건, 중복 input %d건.</div>'
         % (integ["families"], integ["leaks"], integ["dupIds"], integ["dupInputs"])

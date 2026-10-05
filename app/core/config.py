@@ -99,8 +99,6 @@ class Settings(BaseSettings):
     practice_timeout_s: float = 12.0
     # 시뮬레이션 대본+리포트 1회 호출 타임아웃 (SimulationAgent.run)
     simulation_script_timeout_s: float = 120.0
-    # /report/preview 의 서술만 생성하는 호출 타임아웃 (ReportAgent.write)
-    simulation_narrative_timeout_s: float = 60.0
 
 
 @lru_cache

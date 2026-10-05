@@ -184,7 +184,6 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 | GET | `/v1/simulation/{id}` | 저장된 시뮬레이션 (대본 + 리포트). |
 | GET | `/v1/simulation/{id}/report` | 리포트만. |
 | GET | `/v1/simulation?user_id=…` | 내 시뮬레이션 목록. |
-| POST | `/v1/simulation/report/preview` | 페르소나 둘 + 대화록을 직접 넣어 리포트만 (프론트 형식 확인용). |
 
 연습대화 API:
 
@@ -247,7 +246,7 @@ app/
     │   ├── api.py
     │   ├── service.py      # 페르소나 로드 → 규칙 점수 → LLM 1회(대본+서술) → 조립·저장
     │   ├── report.py       # 점수 층(규칙) · 리포트 조립
-    │   ├── agents.py       # SimulationAgent(대본+서술 1회) · ReportAgent(서술만)
+    │   ├── agents.py       # SimulationAgent(대본+서술 1회)
     │   ├── repository.py / models.py / schemas.py
     └── practice/           # 상대 페르소나와의 연습 대화 (SSE)
         ├── api.py          # SSE 직렬화. DB 세션은 scope="request"

@@ -75,5 +75,5 @@ def test_stimulus_extraction_keeps_short_answers_and_omits_source_topic_contract
 def test_saved_corpus_passes_independent_audit():
     result = audit_module.audit()
     assert result["ok"], result["errors"]
-    assert result["rewrittenHoldoutVerification"]["caseCount"] == 25
+    assert result["rewrittenHoldoutVerification"]["caseCount"] == 21
     assert result["rewrittenHoldoutVerification"]["collisionCount"] == 0

@@ -62,21 +62,14 @@ from app.features.persona.service import (  # noqa: E402
 from app.features.practice.agents import FALLBACK_REPLY, PartnerAgent  # noqa: E402
 from app.features.practice.schemas import PracticeMessageRequest  # noqa: E402
 from app.features.simulation.agents import (  # noqa: E402
-    ReportAgent,
     SimulationAgent,
     _self_addressed_lines,
     _validate_script,
 )
 from app.features.simulation.report import (  # noqa: E402
-    assemble_report,
-    build_report,
     score_layer,
-    template_narrative,
 )
 from app.features.simulation.schemas import (  # noqa: E402
-    ReportInput,
-    ReportNarrative,
-    Transcript,
     grade_of,
 )
 
@@ -86,7 +79,6 @@ DATASETS = (
     "quality/persona/build",
     "quality/practice/reply",
     "quality/simulation/run",
-    "quality/simulation/report-preview",
 )
 
 FEATURES = {
@@ -95,7 +87,6 @@ FEATURES = {
     "persona_build": ("persona", "extraction"),
     "practice_reply": ("practice", "reply"),
     "simulation_run": ("simulation", "run"),
-    "simulation_report_preview": ("simulation", "report-preview"),
 }
 
 EMOJI_RE = re.compile(
@@ -521,60 +512,6 @@ async def _simulation(item: Any) -> dict[str, Any]:
     return _result(script.model_dump(mode="json"), checks=checks, mode="model")
 
 
-async def _preview(item: Any) -> dict[str, Any]:
-    inp = item.input
-    expected = item.expected_output
-    pa = PersonaResponse.model_validate(inp["persona_a"])
-    pb = PersonaResponse.model_validate(inp["persona_b"])
-    transcript = Transcript.model_validate(inp["transcript"])
-    report_input = ReportInput(
-        persona_a=pa,
-        persona_b=pb,
-        transcript=transcript,
-        nickname_a=inp["nickname_a"],
-        nickname_b=inp["nickname_b"],
-    )
-
-    if not inp["useLlm"]:
-        report = assemble_report(report_input, template_narrative(pa, pb), "template")
-        oracle = expected["ruleOracle"]
-        actual = {
-            "narrativeSource": report.narrative_source,
-            "qualitySuccess": False,
-            "ruleScoresPreserved": (
-                report.overall.score == oracle["overallScore"] and report.overall.grade.value == oracle["overallGrade"]
-            ),
-        }
-        contract = expected["faultContract"]
-        return _result(actual, checks={"fixtureContract": _fixture_match(actual, contract)}, mode="fixture")
-
-    if candidate := inp.get("candidateNarrative"):
-        narrative = ReportNarrative.model_validate(candidate)
-        report = assemble_report(report_input, narrative, "llm")
-        actual = {
-            "schemaAccepted": True,
-            "assembleReportPreservesHighlight": bool(report.highlights)
-            and report.highlights[0].quote == candidate["highlights"][0]["quote"],
-            "qualitySuccess": False,
-        }
-        contract = expected["codeBoundary"]
-        return _result(actual, checks={"fixtureContract": _fixture_match(actual, contract)}, mode="fixture")
-
-    report = await build_report(
-        report_input,
-        ReportAgent(),
-        trace_metadata=_trace_metadata(item, "simulation_report_preview"),
-    )
-    raw_turns = {turn.index: turn.text for turn in transcript.turns}
-    quote_checks = [raw_turns.get(highlight.turn_index) == highlight.quote for highlight in report.highlights]
-    checks = {
-        "reportPresent": bool(report.overall.headline and report.overall.summary),
-        "highlightCount": len(report.highlights) <= expected["highlightContract"]["maxItems"],
-        "highlightQuotes": all(quote_checks),
-    }
-    return _result(report.model_dump(mode="json"), checks=checks, mode="model")
-
-
 async def run_item(*, item: Any, **_: Any) -> dict[str, Any]:
     task = item.input.get("task")
     try:
@@ -588,8 +525,6 @@ async def run_item(*, item: Any, **_: Any) -> dict[str, Any]:
             return await _practice(item)
         if task == "simulation_run":
             return await _simulation(item)
-        if task == "simulation_report_preview":
-            return await _preview(item)
         return _error(ValueError(f"unsupported task: {task}"), mode="adapter")
     except Exception as exc:  # Experiment must keep the remaining calibration cases running.
         return _error(exc, mode="model")

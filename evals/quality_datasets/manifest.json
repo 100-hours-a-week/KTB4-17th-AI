@@ -1,5 +1,5 @@
 {
-  "version": "1.12.0",
+  "version": "1.13.0",
   "generationMethod": "astra-xhigh-v1",
   "generator": "scripts/generate_quality_datasets.py",
   "generatorSha256": "e5fd76ef6337aa7518d175cb0040cdbcd200c92085007ab4846c181362dcfe60",
@@ -13,8 +13,8 @@
   "langfuseUploadStatus": "not_run",
   "holdoutAccessStatus": "plaintext_not_sealed",
   "integrity": {
-    "uniqueCaseIds": 330,
-    "uniqueInputs": 330,
+    "uniqueCaseIds": 306,
+    "uniqueInputs": 306,
     "splitGroupLeakCount": 0,
     "familyLeakCount": 0,
     "prototypeLeakCount": 0,
@@ -44,19 +44,14 @@
         "calibration": 7,
         "regression": 22,
         "blind_holdout": 7
-      },
-      "simulation_report_preview": {
-        "calibration": 5,
-        "regression": 14,
-        "blind_holdout": 5
       }
     },
     "splits": {
-      "calibration": 66,
-      "regression": 198,
-      "blind_holdout": 66
+      "calibration": 61,
+      "regression": 184,
+      "blind_holdout": 61
     },
-    "total": 330
+    "total": 306
   },
   "sourceSha256": {
     "docs/v1docs/langfuse-quality-dataset-plan.md": "c4957bc84c11b2db362df16b83c7be4c25dfa95e85299d7d9793aad9e9e7263a",
@@ -95,17 +90,13 @@
       "sha256": "ecced919771ae7d603e7f52c1cd56a90ccf58def88a550f7af0298187fd214eb",
       "bytes": 286994
     },
-    "simulation_report_preview.jsonl": {
-      "sha256": "6a59c14d09ec479a8c32d99cdb54b1b5e6b4cba72af179e63de502f5b524c4a2",
-      "bytes": 207362
-    },
     "schema.json": {
-      "sha256": "18797e1931b32ae65a06abd807bbc7527cb548514aa5c8adf21ef2f7a36c29c3",
-      "bytes": 9602
+      "sha256": "8bb41a46603a608f28f2c41dfcf56b76555a203862d7c956e2d135e2fa8efd48",
+      "bytes": 8882
     },
     "README.md": {
-      "sha256": "37be634b90a86941e7c9ebe48ea99c5515c4913ef868e44fc814f087928adb3c",
-      "bytes": 16373
+      "sha256": "a87f6831cf6e8be70e1d8c086b46b0f1df6f228293d38848891e1ce71e106b61",
+      "bytes": 16028
     }
   },
   "datasets": {
@@ -294,41 +285,6 @@
         "plan_code_difference": 1,
         "legacy_row_state_value_with_low_confidence": 3,
         "known_code_gap_quote_not_checked": 1
-      }
-    },
-    "simulation_report_preview": {
-      "count": 24,
-      "splits": {
-        "calibration": 5,
-        "regression": 14,
-        "blind_holdout": 5
-      },
-      "categories": {
-        "fixed_transcript": 12,
-        "template_no_llm": 1,
-        "timeout_template": 1,
-        "explicit_null_under_conflict": 1,
-        "highlight_bad_index": 1,
-        "ideal_out_of_range": 1,
-        "highlight_bad_quote": 1,
-        "ideal_null": 1,
-        "risk_caution_truncation": 1,
-        "rule_grade_boundary": 1,
-        "low_accuracy": 1,
-        "no_transcript": 1,
-        "defaulted_persona_scores": 1
-      },
-      "difficulties": {
-        "medium": 12,
-        "hard": 12
-      },
-      "reviewFlags": {
-        "human_anchor_pending": 24,
-        "ideal_label_human_review_pending": 24,
-        "known_code_gap_preview_highlight": 2,
-        "known_code_gap_ideal_range": 1,
-        "known_code_gap_risk_caution_truncation": 1,
-        "legacy_row_state_value_with_low_confidence": 3
       }
     }
   },
@@ -973,9 +929,7 @@
       "caseIds": [
         "simulation_run-001",
         "simulation_run-002",
-        "simulation_run-003",
-        "simulation_report_preview-001",
-        "simulation_report_preview-002"
+        "simulation_run-003"
       ]
     },
     "simulation-pair-opposite_rhythm": {
@@ -984,17 +938,13 @@
         "simulation_run-004",
         "simulation_run-005",
         "simulation_run-006",
-        "simulation_run-007",
-        "simulation_report_preview-003",
-        "simulation_report_preview-004",
-        "simulation_report_preview-005"
+        "simulation_run-007"
       ]
     },
     "simulation-pair-both_high_odd": {
       "split": "calibration",
       "caseIds": [
-        "simulation_run-008",
-        "simulation_report_preview-006"
+        "simulation_run-008"
       ]
     },
     "simulation-pair-both_low_odd": {
@@ -1003,10 +953,7 @@
         "simulation_run-009",
         "simulation_run-010",
         "simulation_run-011",
-        "simulation_run-012",
-        "simulation_report_preview-007",
-        "simulation_report_preview-008",
-        "simulation_report_preview-009"
+        "simulation_run-012"
       ]
     },
     "simulation-pair-pursue_64": {
@@ -1014,9 +961,7 @@
       "caseIds": [
         "simulation_run-013",
         "simulation_run-014",
-        "simulation_run-015",
-        "simulation_report_preview-010",
-        "simulation_report_preview-011"
+        "simulation_run-015"
       ]
     },
     "simulation-pair-pursue_65": {
@@ -1025,16 +970,13 @@
         "simulation_run-016",
         "simulation_run-017",
         "simulation_run-018",
-        "simulation_run-019",
-        "simulation_report_preview-012",
-        "simulation_report_preview-013"
+        "simulation_run-019"
       ]
     },
     "simulation-pair-attack_64": {
       "split": "blind_holdout",
       "caseIds": [
-        "simulation_run-020",
-        "simulation_report_preview-014"
+        "simulation_run-020"
       ]
     },
     "simulation-pair-attack_65": {
@@ -1042,9 +984,7 @@
       "caseIds": [
         "simulation_run-021",
         "simulation_run-022",
-        "simulation_run-023",
-        "simulation_report_preview-015",
-        "simulation_report_preview-016"
+        "simulation_run-023"
       ]
     },
     "simulation-pair-yield_65": {
@@ -1053,9 +993,7 @@
         "simulation_run-024",
         "simulation_run-025",
         "simulation_run-026",
-        "simulation_run-027",
-        "simulation_report_preview-017",
-        "simulation_report_preview-018"
+        "simulation_run-027"
       ]
     },
     "simulation-pair-all_risks": {
@@ -1063,9 +1001,7 @@
       "caseIds": [
         "simulation_run-028",
         "simulation_run-029",
-        "simulation_run-030",
-        "simulation_report_preview-019",
-        "simulation_report_preview-020"
+        "simulation_run-030"
       ]
     },
     "simulation-pair-low_confidence": {
@@ -1073,9 +1009,7 @@
       "caseIds": [
         "simulation_run-031",
         "simulation_run-032",
-        "simulation_run-033",
-        "simulation_report_preview-021",
-        "simulation_report_preview-022"
+        "simulation_run-033"
       ]
     },
     "simulation-pair-missing_scores": {
@@ -1083,9 +1017,7 @@
       "caseIds": [
         "simulation_run-034",
         "simulation_run-035",
-        "simulation_run-036",
-        "simulation_report_preview-023",
-        "simulation_report_preview-024"
+        "simulation_run-036"
       ]
     }
   },
@@ -1100,7 +1032,6 @@
     "페르소나 build는 성향 차원 하나가 통째로 한 분할에만 있고(차원당 높음·낮음 2건), 차원별 표본이 2건뿐이다. 점수 허용 범위(높음 70~95, 낮음 5~30)는 사람 검토 전 초안이다",
     "연습대화는 상대 프로필이 매우 빈약하고(정확도 13 이하, 온보딩을 마친 실제 사용자보다 훨씬 낮음), 내 프로필(me)이 전 문제에서 비어 있으며, 대화 이력이 짧다(대부분 3개 메시지, 실제 상한은 40개). 풍부한 프로필·내 프로필 참조·긴 대화 이어가기는 검사하지 않는다",
     "시뮬레이션 대본은 24개 카테고리가 분할마다 치우쳐 있고(위험 경계 64는 calibration, 65는 regression 등) 프로필 쌍이 12개뿐이며, 23문제는 아는 성향이 2개뿐이다. 분할별 점수 차이에는 카테고리 차이가 섞인다",
-    "리포트 preview는 대화록이 6줄 위주(최대 8줄)라 실제 최대 30줄에서 인용을 고르는 능력은 검사하지 않고, 프로필이 빈약하며, 특수 카테고리가 1건씩 분할에 흩어져 있다",
     "온보딩 태깅 카테고리가 분할마다 치우쳐 있다(인용 지시 실행 4건은 blind_holdout에만, 근거 부족 5건은 regression에만). 분할별 점수 차이에는 카테고리 차이가 섞인다"
   ]
 }

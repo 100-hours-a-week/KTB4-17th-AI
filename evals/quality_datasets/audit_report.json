@@ -17,28 +17,23 @@
       "blind_holdout": 12
     },
     "practice_reply": {
-      "calibration": 12,
-      "regression": 36,
-      "blind_holdout": 12
+      "calibration": 14,
+      "regression": 42,
+      "blind_holdout": 14
     },
     "simulation_run": {
       "calibration": 7,
       "regression": 22,
       "blind_holdout": 7
-    },
-    "simulation_report_preview": {
-      "calibration": 5,
-      "regression": 14,
-      "blind_holdout": 5
     }
   },
-  "total": 320,
+  "total": 306,
   "holdoutStimulusCrossSplitExactSentenceCount": 0,
   "sentenceCollisions": {},
   "holdoutStimulusCrossSplitApproximatePairCount": 0,
   "approximateCollisions": [],
   "rewrittenHoldoutVerification": {
-    "caseCount": 25,
+    "caseCount": 21,
     "caseIds": [
       "persona_onboarding_tagging-074",
       "persona_build-007",
@@ -60,11 +55,7 @@
       "practice_reply-058",
       "practice_reply-059",
       "practice_reply-060",
-      "simulation_run-032",
-      "simulation_report_preview-014",
-      "simulation_report_preview-015",
-      "simulation_report_preview-016",
-      "simulation_report_preview-021"
+      "simulation_run-032"
     ],
     "collidingCaseIds": [],
     "collisionCount": 0
@@ -109,15 +100,13 @@
     "blind_holdout": 1,
     "calibration": 1
   },
-  "previewPersonaConsistencyChecked": 48,
-  "practicePersonaConsistencyChecked": 60,
+  "practicePersonaConsistencyChecked": 70,
   "uniqueRubrics": {
     "persona_onboarding_conversation": 58,
     "persona_onboarding_tagging": 80,
     "persona_build": 60,
-    "practice_reply": 60,
-    "simulation_run": 36,
-    "simulation_report_preview": 24
+    "practice_reply": 70,
+    "simulation_run": 36
   },
   "errors": [],
   "scope": "전체 발화와 문장 단위의 정확 일치 및 정규화 후 SequenceMatcher/문자 3-gram 교차 검사를 수행한다. 고정 intro만 정확 검사에서 제외하며 짧은 관용문은 근사 검사에서 제외한다. 의미 동등성 전부의 자동 증명을 주장하지 않는다."
