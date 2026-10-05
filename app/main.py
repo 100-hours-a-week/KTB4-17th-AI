@@ -23,9 +23,14 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 from fastapi import APIRouter, FastAPI
 from langfuse import get_client
 
+from app.core.config import get_settings
+from app.devtools.api import router as devtools_router
+from app.features.face_verification.api import router as face_verification_router
 from app.features.persona.api import router as persona_router
 from app.features.practice.api import router as practice_router
+from app.features.primary_photo.api import router as primary_photo_router
 from app.features.simulation.api import router as simulation_router
+from app.features.synthetic_detection.api import router as synthetic_detection_router
 
 description = """
 별이삼샵 어플리케이션의 AI API입니다.
@@ -39,6 +44,9 @@ TAGS_METADATA = [
     {"name": "persona", "description": "사용자 정보를 바탕으로 AI 페르소나를 생성하고 조회합니다."},
     {"name": "practice", "description": "페르소나와의 연습 대화 메시지를 처리합니다."},
     {"name": "simulation", "description": "두 페르소나 간의 대화를 시뮬레이션하고 결과를 반환합니다."},
+    {"name": "primary-photo", "description": "대표사진의 정면·품질을 검사합니다."},
+    {"name": "synthetic-detection", "description": "대표사진의 AI 생성 위험을 검사합니다."},
+    {"name": "face-verification", "description": "라이브니스와 동일인 여부를 확인합니다."},
 ]
 
 
@@ -67,6 +75,9 @@ api_router = APIRouter(prefix="/ai/api")
 api_router.include_router(persona_router)
 api_router.include_router(practice_router)
 api_router.include_router(simulation_router)
+api_router.include_router(primary_photo_router)
+api_router.include_router(synthetic_detection_router)
+api_router.include_router(face_verification_router)
 
 
 @app.get("/health", status_code=200, summary="헬스 체크", tags=["health"])
@@ -83,3 +94,5 @@ async def trigger_error():
 
 
 app.include_router(api_router)
+if get_settings().enable_test_ui:
+    app.include_router(devtools_router)

@@ -7,8 +7,9 @@ OpenRouter 및 로컬 서빙 LLM(vLLM, Ollama 등)을 모두 지원하도록 설
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -99,6 +100,81 @@ class Settings(BaseSettings):
     practice_timeout_s: float = 12.0
     # 시뮬레이션 대본+리포트 1회 호출 타임아웃 (SimulationAgent.run)
     simulation_script_timeout_s: float = 120.0
+
+    # ── 프로필 신뢰(대표사진 심사·얼굴 인증) ──────────────────────────
+    # /test 브라우저 테스트 페이지. 운영에서는 꺼 둔다
+    enable_test_ui: bool = Field(default=False, validation_alias="ENABLE_TEST_UI")
+
+    yunet_model_path: Path = Field(
+        default=Path("models/face_detection_yunet_2023mar.onnx"),
+        validation_alias="YUNET_MODEL_PATH",
+    )
+    lbf_model_path: Path = Field(default=Path("models/lbfmodel.yaml"), validation_alias="LBF_MODEL_PATH")
+    sface_model_path: Path = Field(
+        default=Path("models/face_recognition_sface_2021dec.onnx"),
+        validation_alias="SFACE_MODEL_PATH",
+    )
+    synthetic_model_path: Path = Field(
+        default=Path("models/community_forensics_vit_int8.onnx"),
+        validation_alias="SYNTHETIC_MODEL_PATH",
+    )
+    c2pa_trust_anchors_path: Path | None = Field(default=None, validation_alias="C2PA_TRUST_ANCHORS_PATH")
+
+    max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, validation_alias="MAX_IMAGE_BYTES")
+    max_video_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, validation_alias="MAX_VIDEO_BYTES")
+    min_image_edge_px: int = Field(default=160, ge=64, validation_alias="MIN_IMAGE_EDGE_PX")
+    min_blur_variance: float = Field(default=8.0, ge=0, validation_alias="MIN_BLUR_VARIANCE")
+    masked_face_max_blur_variance: float = Field(
+        default=20.0,
+        ge=0,
+        validation_alias="MASKED_FACE_MAX_BLUR_VARIANCE",
+    )
+    masked_face_min_overlay_ratio: float = Field(
+        default=0.35,
+        ge=0,
+        le=1,
+        validation_alias="MASKED_FACE_MIN_OVERLAY_RATIO",
+    )
+    background_face_max_relative_area: float = Field(
+        default=0.15,
+        ge=0,
+        le=1,
+        validation_alias="BACKGROUND_FACE_MAX_RELATIVE_AREA",
+    )
+    min_brightness: float = Field(default=45.0, ge=0, le=255, validation_alias="MIN_BRIGHTNESS")
+    max_brightness: float = Field(default=215.0, ge=0, le=255, validation_alias="MAX_BRIGHTNESS")
+    max_abs_yaw_deg: float = Field(default=20.0, gt=0, validation_alias="MAX_ABS_YAW_DEG")
+    max_abs_pitch_deg: float = Field(default=18.0, gt=0, validation_alias="MAX_ABS_PITCH_DEG")
+    max_abs_roll_deg: float = Field(default=22.0, gt=0, validation_alias="MAX_ABS_ROLL_DEG")
+
+    synthetic_risk_threshold: float = Field(default=0.70, gt=0, lt=1, validation_alias="SYNTHETIC_RISK_THRESHOLD")
+    pixel_art_min_axis_ratio: float = Field(
+        default=0.45,
+        ge=0,
+        le=1,
+        validation_alias="PIXEL_ART_MIN_AXIS_RATIO",
+    )
+    pixel_art_min_edge_density: float = Field(
+        default=0.07,
+        ge=0,
+        le=1,
+        validation_alias="PIXEL_ART_MIN_EDGE_DENSITY",
+    )
+    face_match_threshold: float = Field(default=0.42, gt=-1, lt=1, validation_alias="FACE_MATCH_THRESHOLD")
+    liveness_max_abs_yaw_deg: float = Field(default=25.0, gt=0, validation_alias="LIVENESS_MAX_ABS_YAW_DEG")
+    liveness_max_abs_pitch_deg: float = Field(default=25.0, gt=0, validation_alias="LIVENESS_MAX_ABS_PITCH_DEG")
+    liveness_max_abs_roll_deg: float = Field(default=40.0, gt=0, validation_alias="LIVENESS_MAX_ABS_ROLL_DEG")
+
+    liveness_token_secret: str = Field(
+        default="replace-with-at-least-32-random-characters",
+        validation_alias="LIVENESS_TOKEN_SECRET",
+    )
+    liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
+
+    @field_validator("c2pa_trust_anchors_path", mode="before")
+    @classmethod
+    def empty_path_is_none(cls, value: object) -> object:
+        return None if value == "" else value
 
 
 @lru_cache
