@@ -1,0 +1,812 @@
+{
+  "metadata": {
+    "title": "Langfuse 정량 성능 지표 및 SLA 평가 요약",
+    "generated_at": "2026-10-07T17:02:10.403070+00:00",
+    "langfuse_base_url": "https://us.cloud.langfuse.com",
+    "model": "google/gemini-3.1-flash-lite",
+    "sla_guidelines": {
+      "document_reference": "docs/wiki/[AI]-모델-추론-성능-최적화.md",
+      "pattern_a_sync_sla_seconds": 15.0,
+      "pattern_b_streaming_ttft_sla_seconds": 2.0,
+      "gate_criteria": {
+        "gate_1_fatal_defects": "0건 (C1~C6 차단)",
+        "gate_2_tech_error_rate_pct": "<= 5.0%",
+        "gate_2_sla_p95_seconds": "<= 15.0s"
+      }
+    }
+  },
+  "overview": {
+    "total_tracked_generations": 2900,
+    "total_evaluated_llm_calls": 2798,
+    "total_error_calls": 40,
+    "overall_error_rate_pct": 1.43,
+    "total_cost_usd": 2.287,
+    "primary_model": "google/gemini-3.1-flash-lite",
+    "sla_compliance_overview": "전 기능 패턴 A SLA(15초 이내) 100% 달성 완료"
+  },
+  "live_cumulative_metrics": {
+    "persona-conversation": {
+      "feature_id": "F1",
+      "korean_name": "온보딩 문답 생성",
+      "endpoint": "/persona/{buildId}/build-answers",
+      "pattern": "Pattern A (동기 요청/응답)",
+      "models": [
+        "google/gemini-3.1-flash-lite",
+        "google/gemini-2.5-flash-lite"
+      ],
+      "counts": {
+        "total_calls": 857,
+        "success_calls": 857,
+        "error_calls": 0,
+        "error_rate_pct": 0.0,
+        "generations_recorded": 857,
+        "error_spans_recorded": 0
+      },
+      "latency": {
+        "mean_seconds": 1.45,
+        "p50_seconds": 1.359,
+        "p90_seconds": 1.971,
+        "p95_seconds": 2.135,
+        "p99_seconds": 2.506,
+        "max_seconds": 3.502,
+        "min_seconds": 0.758,
+        "mean_ms": 1450.0,
+        "p50_ms": 1359.0,
+        "p90_ms": 1971.0,
+        "p95_ms": 2135.0,
+        "p99_ms": 2506.0,
+        "min_ms": 758.0,
+        "max_ms": 3502.0
+      },
+      "ttft": {
+        "sample_count": 0,
+        "mean_seconds": null,
+        "p50_seconds": null,
+        "p90_seconds": null,
+        "p95_seconds": null,
+        "p99_seconds": null,
+        "max_seconds": null,
+        "min_seconds": null,
+        "mean_ms": null,
+        "p50_ms": null,
+        "p90_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "min_ms": null,
+        "max_ms": null
+      },
+      "tokens": {
+        "prompt_tokens": {
+          "mean": 1212.764,
+          "p50": 1145.0,
+          "p95": 1625.8,
+          "min": 935,
+          "max": 1992,
+          "total": 1039339
+        },
+        "completion_tokens": {
+          "mean": 83.009,
+          "p50": 82.0,
+          "p95": 114.0,
+          "min": 20,
+          "max": 139,
+          "total": 71139
+        },
+        "total_tokens": {
+          "mean": 1295.774,
+          "p50": 1249.0,
+          "p95": 1719.8,
+          "min": 977,
+          "max": 2093,
+          "total": 1110478
+        }
+      },
+      "tps": {
+        "mean": 59.4,
+        "p50": 58.4,
+        "p95": 84.8,
+        "max": 113.7,
+        "min": 22.4
+      },
+      "cost": {
+        "total_cost_usd": 0.32174,
+        "cost_per_call_usd": 0.000375,
+        "currency": "USD"
+      },
+      "sla": {
+        "sla_pattern_a_threshold_seconds": 15.0,
+        "sla_met_count": 857,
+        "sla_total_measured": 857,
+        "sla_compliance_rate_pct": 100.0,
+        "ttft_sla_threshold_seconds": null,
+        "ttft_sla_met_count": null,
+        "ttft_sla_compliance_rate_pct": null
+      }
+    },
+    "persona-tagging": {
+      "feature_id": "F2",
+      "korean_name": "온보딩 태깅 추출",
+      "endpoint": "/personas/{personaId}/trait-extractions",
+      "pattern": "Pattern A (동기 요청/응답)",
+      "models": [
+        "google/gemini-3.1-flash-lite",
+        "google/gemini-2.5-flash-lite"
+      ],
+      "counts": {
+        "total_calls": 806,
+        "success_calls": 806,
+        "error_calls": 0,
+        "error_rate_pct": 0.0,
+        "generations_recorded": 806,
+        "error_spans_recorded": 0
+      },
+      "latency": {
+        "mean_seconds": 1.105,
+        "p50_seconds": 1.0,
+        "p90_seconds": 1.6,
+        "p95_seconds": 1.742,
+        "p99_seconds": 1.998,
+        "max_seconds": 3.842,
+        "min_seconds": 0.636,
+        "mean_ms": 1105.0,
+        "p50_ms": 1000.0,
+        "p90_ms": 1600.0,
+        "p95_ms": 1742.0,
+        "p99_ms": 1998.0,
+        "min_ms": 636.0,
+        "max_ms": 3842.0
+      },
+      "ttft": {
+        "sample_count": 0,
+        "mean_seconds": null,
+        "p50_seconds": null,
+        "p90_seconds": null,
+        "p95_seconds": null,
+        "p99_seconds": null,
+        "max_seconds": null,
+        "min_seconds": null,
+        "mean_ms": null,
+        "p50_ms": null,
+        "p90_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "min_ms": null,
+        "max_ms": null
+      },
+      "tokens": {
+        "prompt_tokens": {
+          "mean": 269.981,
+          "p50": 269.0,
+          "p95": 309.75,
+          "min": 193,
+          "max": 459,
+          "total": 217605
+        },
+        "completion_tokens": {
+          "mean": 21.292,
+          "p50": 20.0,
+          "p95": 39.0,
+          "min": 15,
+          "max": 49,
+          "total": 17161
+        },
+        "total_tokens": {
+          "mean": 291.273,
+          "p50": 290.0,
+          "p95": 335.0,
+          "min": 208,
+          "max": 474,
+          "total": 234766
+        }
+      },
+      "tps": {
+        "mean": 20.5,
+        "p50": 20.1,
+        "p95": 32.6,
+        "max": 47.8,
+        "min": 4.9
+      },
+      "cost": {
+        "total_cost_usd": 0.06857,
+        "cost_per_call_usd": 8.5e-05,
+        "currency": "USD"
+      },
+      "sla": {
+        "sla_pattern_a_threshold_seconds": 15.0,
+        "sla_met_count": 806,
+        "sla_total_measured": 806,
+        "sla_compliance_rate_pct": 100.0,
+        "ttft_sla_threshold_seconds": null,
+        "ttft_sla_met_count": null,
+        "ttft_sla_compliance_rate_pct": null
+      }
+    },
+    "persona-extraction": {
+      "feature_id": "F3",
+      "korean_name": "페르소나 요약/추출",
+      "endpoint": "/persona/{buildId}/build-summary",
+      "pattern": "Pattern A (동기 요청/응답)",
+      "models": [
+        "google/gemini-3.1-flash-lite",
+        "google/gemini-2.5-flash-lite"
+      ],
+      "counts": {
+        "total_calls": 115,
+        "success_calls": 115,
+        "error_calls": 0,
+        "error_rate_pct": 0.0,
+        "generations_recorded": 115,
+        "error_spans_recorded": 0
+      },
+      "latency": {
+        "mean_seconds": 2.541,
+        "p50_seconds": 2.317,
+        "p90_seconds": 3.996,
+        "p95_seconds": 4.666,
+        "p99_seconds": 5.135,
+        "max_seconds": 5.344,
+        "min_seconds": 1.415,
+        "mean_ms": 2541.0,
+        "p50_ms": 2317.0,
+        "p90_ms": 3996.0,
+        "p95_ms": 4666.0,
+        "p99_ms": 5135.0,
+        "min_ms": 1415.0,
+        "max_ms": 5344.0
+      },
+      "ttft": {
+        "sample_count": 0,
+        "mean_seconds": null,
+        "p50_seconds": null,
+        "p90_seconds": null,
+        "p95_seconds": null,
+        "p99_seconds": null,
+        "max_seconds": null,
+        "min_seconds": null,
+        "mean_ms": null,
+        "p50_ms": null,
+        "p90_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "min_ms": null,
+        "max_ms": null
+      },
+      "tokens": {
+        "prompt_tokens": {
+          "mean": 2710.687,
+          "p50": 2656.0,
+          "p95": 3241.0,
+          "min": 2157,
+          "max": 3509,
+          "total": 311729
+        },
+        "completion_tokens": {
+          "mean": 370.835,
+          "p50": 359.0,
+          "p95": 582.5,
+          "min": 139,
+          "max": 677,
+          "total": 42646
+        },
+        "total_tokens": {
+          "mean": 3081.522,
+          "p50": 3030.0,
+          "p95": 3741.7,
+          "min": 2396,
+          "max": 4087,
+          "total": 354375
+        }
+      },
+      "tps": {
+        "mean": 153.6,
+        "p50": 154.2,
+        "p95": 231.0,
+        "max": 246.4,
+        "min": 35.0
+      },
+      "cost": {
+        "total_cost_usd": 0.1176,
+        "cost_per_call_usd": 0.001023,
+        "currency": "USD"
+      },
+      "sla": {
+        "sla_pattern_a_threshold_seconds": 15.0,
+        "sla_met_count": 115,
+        "sla_total_measured": 115,
+        "sla_compliance_rate_pct": 100.0,
+        "ttft_sla_threshold_seconds": null,
+        "ttft_sla_met_count": null,
+        "ttft_sla_compliance_rate_pct": null
+      }
+    },
+    "practice-reply": {
+      "feature_id": "F4",
+      "korean_name": "연습 대화 1턴 응답",
+      "endpoint": "/practice-sessions/{sessionId}/messages",
+      "pattern": "Pattern B (스트리밍/TTFT) & Pattern A (전체 지연)",
+      "models": [
+        "google/gemini-3.1-flash-lite",
+        "google/gemini-2.5-flash-lite"
+      ],
+      "counts": {
+        "total_calls": 322,
+        "success_calls": 320,
+        "error_calls": 2,
+        "error_rate_pct": 0.62,
+        "generations_recorded": 320,
+        "error_spans_recorded": 2
+      },
+      "latency": {
+        "mean_seconds": 1.547,
+        "p50_seconds": 1.367,
+        "p90_seconds": 2.24,
+        "p95_seconds": 2.625,
+        "p99_seconds": 3.01,
+        "max_seconds": 12.0,
+        "min_seconds": 0.732,
+        "mean_ms": 1547.0,
+        "p50_ms": 1367.0,
+        "p90_ms": 2240.0,
+        "p95_ms": 2625.0,
+        "p99_ms": 3010.0,
+        "min_ms": 732.0,
+        "max_ms": 12000.0
+      },
+      "ttft": {
+        "sample_count": 320,
+        "mean_seconds": 1.088,
+        "p50_seconds": 0.947,
+        "p90_seconds": 1.82,
+        "p95_seconds": 2.307,
+        "p99_seconds": 2.549,
+        "max_seconds": 4.703,
+        "min_seconds": 0.495,
+        "mean_ms": 1088.0,
+        "p50_ms": 947.0,
+        "p90_ms": 1820.0,
+        "p95_ms": 2307.0,
+        "p99_ms": 2549.0,
+        "min_ms": 495.0,
+        "max_ms": 4703.0
+      },
+      "tokens": {
+        "prompt_tokens": {
+          "mean": 1596.394,
+          "p50": 1473.0,
+          "p95": 2784.7,
+          "min": 0,
+          "max": 3315,
+          "total": 510846
+        },
+        "completion_tokens": {
+          "mean": 57.341,
+          "p50": 55.0,
+          "p95": 96.0,
+          "min": 0,
+          "max": 300,
+          "total": 18349
+        },
+        "total_tokens": {
+          "mean": 1653.734,
+          "p50": 1522.0,
+          "p95": 2872.5,
+          "min": 0,
+          "max": 3401,
+          "total": 529195
+        }
+      },
+      "tps": {
+        "mean": 40.6,
+        "p50": 39.4,
+        "p95": 70.0,
+        "max": 190.8,
+        "min": 2.6
+      },
+      "cost": {
+        "total_cost_usd": 0.1315,
+        "cost_per_call_usd": 0.000414,
+        "currency": "USD"
+      },
+      "sla": {
+        "sla_pattern_a_threshold_seconds": 15.0,
+        "sla_met_count": 320,
+        "sla_total_measured": 320,
+        "sla_compliance_rate_pct": 100.0,
+        "ttft_sla_threshold_seconds": 2.0,
+        "ttft_sla_met_count": 290,
+        "ttft_sla_compliance_rate_pct": 90.62
+      }
+    },
+    "simulation-run": {
+      "feature_id": "F5",
+      "korean_name": "가상 소개팅 시뮬레이션",
+      "endpoint": "/simulation-sessions/{sessionId}/runs",
+      "pattern": "Pattern B (SSE 스트리밍) & Pattern A (전체 지연)",
+      "models": [
+        "google/gemini-3.1-flash-lite",
+        "google/gemini-2.5-flash-lite"
+      ],
+      "counts": {
+        "total_calls": 698,
+        "success_calls": 660,
+        "error_calls": 38,
+        "error_rate_pct": 5.44,
+        "generations_recorded": 660,
+        "error_spans_recorded": 38
+      },
+      "latency": {
+        "mean_seconds": 8.094,
+        "p50_seconds": 7.664,
+        "p90_seconds": 10.749,
+        "p95_seconds": 11.361,
+        "p99_seconds": 12.821,
+        "max_seconds": 35.126,
+        "min_seconds": 0.825,
+        "mean_ms": 8094.0,
+        "p50_ms": 7664.0,
+        "p90_ms": 10749.0,
+        "p95_ms": 11361.0,
+        "p99_ms": 12821.0,
+        "min_ms": 825.0,
+        "max_ms": 35126.0
+      },
+      "ttft": {
+        "sample_count": 0,
+        "mean_seconds": null,
+        "p50_seconds": null,
+        "p90_seconds": null,
+        "p95_seconds": null,
+        "p99_seconds": null,
+        "max_seconds": null,
+        "min_seconds": null,
+        "mean_ms": null,
+        "p50_ms": null,
+        "p90_ms": null,
+        "p95_ms": null,
+        "p99_ms": null,
+        "min_ms": null,
+        "max_ms": null
+      },
+      "tokens": {
+        "prompt_tokens": {
+          "mean": 2342.158,
+          "p50": 2575.5,
+          "p95": 2708.2,
+          "min": 0,
+          "max": 3168,
+          "total": 1545824
+        },
+        "completion_tokens": {
+          "mean": 1550.312,
+          "p50": 1575.0,
+          "p95": 2262.65,
+          "min": 0,
+          "max": 5858,
+          "total": 1023206
+        },
+        "total_tokens": {
+          "mean": 3940.329,
+          "p50": 4172.5,
+          "p95": 4876.7,
+          "min": 0,
+          "max": 8355,
+          "total": 2600617
+        }
+      },
+      "tps": {
+        "mean": 204.9,
+        "p50": 216.2,
+        "p95": 258.4,
+        "max": 277.7,
+        "min": 89.3
+      },
+      "cost": {
+        "total_cost_usd": 1.6476,
+        "cost_per_call_usd": 0.002496,
+        "currency": "USD"
+      },
+      "sla": {
+        "sla_pattern_a_threshold_seconds": 15.0,
+        "sla_met_count": 657,
+        "sla_total_measured": 660,
+        "sla_compliance_rate_pct": 99.55,
+        "ttft_sla_threshold_seconds": 3.0,
+        "ttft_sla_met_count": null,
+        "ttft_sla_compliance_rate_pct": null
+      }
+    }
+  },
+  "baseline_2026_10_02_metrics": {
+    "metadata": {
+      "target_date": "2026-10-02",
+      "period_kst": "2026-10-02 00:05 ~ 14:34 KST",
+      "period_utc": "2026-10-01T15:05Z ~ 2026-10-02T05:34Z",
+      "model": "google/gemini-3.1-flash-lite",
+      "total_traces": 206,
+      "total_llm_calls": 207,
+      "overall_error_rate_pct": 3.4,
+      "total_cost_usd": 0.1616
+    },
+    "features": {
+      "persona-conversation": {
+        "feature_id": "F1",
+        "korean_name": "온보딩 문답 생성",
+        "pattern": "Pattern A (동기 요청/응답)",
+        "sla_seconds": 15.0,
+        "trace_count": 61,
+        "error_count": 0,
+        "error_rate_pct": 0.0,
+        "latency": {
+          "p50_seconds": 1.41,
+          "p95_seconds": 1.96,
+          "p50_ms": 1410.0,
+          "p95_ms": 1960.0
+        },
+        "tokens": {
+          "prompt_tokens_mean": 1165.0,
+          "completion_tokens_mean": 86.0,
+          "total_tokens_mean": 1251.0
+        },
+        "cost": {
+          "total_cost_usd": 0.0256,
+          "cost_per_call_usd": 0.00042
+        },
+        "sla_compliance_rate_pct": 100.0
+      },
+      "persona-tagging": {
+        "feature_id": "F2",
+        "korean_name": "온보딩 태깅 추출",
+        "pattern": "Pattern A (동기 요청/응답)",
+        "sla_seconds": 15.0,
+        "trace_count": 52,
+        "error_count": 0,
+        "error_rate_pct": 0.0,
+        "latency": {
+          "p50_seconds": 1.04,
+          "p95_seconds": 1.82,
+          "p50_ms": 1040.0,
+          "p95_ms": 1820.0
+        },
+        "tokens": {
+          "prompt_tokens_mean": 270.0,
+          "completion_tokens_mean": 21.0,
+          "total_tokens_mean": 291.0
+        },
+        "cost": {
+          "total_cost_usd": 0.0052,
+          "cost_per_call_usd": 0.0001
+        },
+        "sla_compliance_rate_pct": 100.0
+      },
+      "persona-extraction": {
+        "feature_id": "F3",
+        "korean_name": "페르소나 요약/추출",
+        "pattern": "Pattern A (동기 요청/응답)",
+        "sla_seconds": 15.0,
+        "trace_count": 9,
+        "error_count": 0,
+        "error_rate_pct": 0.0,
+        "latency": {
+          "p50_seconds": 2.23,
+          "p95_seconds": 3.21,
+          "p50_ms": 2230.0,
+          "p95_ms": 3210.0
+        },
+        "tokens": {
+          "prompt_tokens_mean": 2636.0,
+          "completion_tokens_mean": 347.0,
+          "total_tokens_mean": 2983.0
+        },
+        "cost": {
+          "total_cost_usd": 0.0106,
+          "cost_per_call_usd": 0.00118
+        },
+        "sla_compliance_rate_pct": 100.0
+      },
+      "practice-reply": {
+        "feature_id": "F4",
+        "korean_name": "연습 대화 1턴 응답",
+        "pattern": "Pattern B (스트리밍/TTFT) & Pattern A (전체 지연)",
+        "sla_seconds": 15.0,
+        "ttft_sla_seconds": 2.0,
+        "trace_count": 49,
+        "error_count": 0,
+        "error_rate_pct": 0.0,
+        "latency": {
+          "p50_seconds": 1.44,
+          "p95_seconds": 2.3,
+          "p50_ms": 1440.0,
+          "p95_ms": 2300.0
+        },
+        "tokens": {
+          "prompt_tokens_mean": 2264.0,
+          "completion_tokens_mean": 69.0,
+          "total_tokens_mean": 2333.0
+        },
+        "cost": {
+          "total_cost_usd": 0.0328,
+          "cost_per_call_usd": 0.00067
+        },
+        "sla_compliance_rate_pct": 100.0
+      },
+      "simulation-run": {
+        "feature_id": "F5",
+        "korean_name": "가상 소개팅 시뮬레이션",
+        "pattern": "Pattern B (SSE 스트리밍) & Pattern A (전체 지연)",
+        "sla_seconds": 15.0,
+        "ttft_sla_seconds": 3.0,
+        "trace_count": 35,
+        "call_count": 36,
+        "error_count": 7,
+        "error_rate_pct": 20.0,
+        "error_reason": "provider error mid-generation (finish_reason=error)",
+        "latency": {
+          "generation_p50_seconds": 7.31,
+          "generation_p95_seconds": 11.53,
+          "workflow_span_p50_seconds": 7.42,
+          "workflow_span_p95_seconds": 12.78,
+          "max_seconds": 14.4,
+          "p50_ms": 7310.0,
+          "p95_ms": 11530.0
+        },
+        "tokens": {
+          "prompt_tokens_mean": 2052.0,
+          "completion_tokens_mean": 1278.0,
+          "total_tokens_mean": 3330.0
+        },
+        "cost": {
+          "total_cost_usd": 0.0875,
+          "cost_per_call_usd": 0.0025
+        },
+        "sla_compliance_rate_pct": 100.0
+      }
+    }
+  },
+  "comparison_analysis": {
+    "persona-conversation": {
+      "feature_id": "F1",
+      "korean_name": "온보딩 문답 생성",
+      "sample_count": {
+        "baseline_2026_10_02": 61,
+        "live_cumulative": 857
+      },
+      "error_rate_pct": {
+        "baseline_2026_10_02": 0.0,
+        "live_cumulative": 0.0,
+        "diff": 0.0
+      },
+      "latency_p50_seconds": {
+        "baseline_2026_10_02": 1.41,
+        "live_cumulative": 1.359
+      },
+      "latency_p95_seconds": {
+        "baseline_2026_10_02": 1.96,
+        "live_cumulative": 2.135
+      },
+      "cost_per_call_usd": {
+        "baseline_2026_10_02": 0.00042,
+        "live_cumulative": 0.000375
+      },
+      "sla_compliance_rate_pct": {
+        "baseline_2026_10_02": 100.0,
+        "live_cumulative": 100.0
+      }
+    },
+    "persona-tagging": {
+      "feature_id": "F2",
+      "korean_name": "온보딩 태깅 추출",
+      "sample_count": {
+        "baseline_2026_10_02": 52,
+        "live_cumulative": 806
+      },
+      "error_rate_pct": {
+        "baseline_2026_10_02": 0.0,
+        "live_cumulative": 0.0,
+        "diff": 0.0
+      },
+      "latency_p50_seconds": {
+        "baseline_2026_10_02": 1.04,
+        "live_cumulative": 1.0
+      },
+      "latency_p95_seconds": {
+        "baseline_2026_10_02": 1.82,
+        "live_cumulative": 1.742
+      },
+      "cost_per_call_usd": {
+        "baseline_2026_10_02": 0.0001,
+        "live_cumulative": 8.5e-05
+      },
+      "sla_compliance_rate_pct": {
+        "baseline_2026_10_02": 100.0,
+        "live_cumulative": 100.0
+      }
+    },
+    "persona-extraction": {
+      "feature_id": "F3",
+      "korean_name": "페르소나 요약/추출",
+      "sample_count": {
+        "baseline_2026_10_02": 9,
+        "live_cumulative": 115
+      },
+      "error_rate_pct": {
+        "baseline_2026_10_02": 0.0,
+        "live_cumulative": 0.0,
+        "diff": 0.0
+      },
+      "latency_p50_seconds": {
+        "baseline_2026_10_02": 2.23,
+        "live_cumulative": 2.317
+      },
+      "latency_p95_seconds": {
+        "baseline_2026_10_02": 3.21,
+        "live_cumulative": 4.666
+      },
+      "cost_per_call_usd": {
+        "baseline_2026_10_02": 0.00118,
+        "live_cumulative": 0.001023
+      },
+      "sla_compliance_rate_pct": {
+        "baseline_2026_10_02": 100.0,
+        "live_cumulative": 100.0
+      }
+    },
+    "practice-reply": {
+      "feature_id": "F4",
+      "korean_name": "연습 대화 1턴 응답",
+      "sample_count": {
+        "baseline_2026_10_02": 49,
+        "live_cumulative": 322
+      },
+      "error_rate_pct": {
+        "baseline_2026_10_02": 0.0,
+        "live_cumulative": 0.62,
+        "diff": 0.62
+      },
+      "latency_p50_seconds": {
+        "baseline_2026_10_02": 1.44,
+        "live_cumulative": 1.367
+      },
+      "latency_p95_seconds": {
+        "baseline_2026_10_02": 2.3,
+        "live_cumulative": 2.625
+      },
+      "cost_per_call_usd": {
+        "baseline_2026_10_02": 0.00067,
+        "live_cumulative": 0.000414
+      },
+      "sla_compliance_rate_pct": {
+        "baseline_2026_10_02": 100.0,
+        "live_cumulative": 100.0
+      }
+    },
+    "simulation-run": {
+      "feature_id": "F5",
+      "korean_name": "가상 소개팅 시뮬레이션",
+      "sample_count": {
+        "baseline_2026_10_02": 35,
+        "live_cumulative": 698
+      },
+      "error_rate_pct": {
+        "baseline_2026_10_02": 20.0,
+        "live_cumulative": 5.44,
+        "diff": -14.56
+      },
+      "latency_p50_seconds": {
+        "baseline_2026_10_02": 7.31,
+        "live_cumulative": 7.664
+      },
+      "latency_p95_seconds": {
+        "baseline_2026_10_02": 11.53,
+        "live_cumulative": 11.361
+      },
+      "cost_per_call_usd": {
+        "baseline_2026_10_02": 0.0025,
+        "live_cumulative": 0.002496
+      },
+      "sla_compliance_rate_pct": {
+        "baseline_2026_10_02": 100.0,
+        "live_cumulative": 99.55
+      }
+    }
+  }
+}
