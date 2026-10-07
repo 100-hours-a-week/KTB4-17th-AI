@@ -137,18 +137,22 @@ class ChatEndService:
 
         ok = False
         if result is not None:
-            # 재생성 실패(LLMError)는 엔진이 잡아 fallback 으로 바꾼다
+            # 재생성 실패(LLMError)는 엔진이 잡아 fallback 으로 바꾼다.
+            # 재생성 결과로 result 를 바꿔 둬야 응답 문장과 end_reason 이 같은 생성에서 나온다
             async def regenerate(notice: str) -> str:
-                return (await generate(notice)).ai_response
+                nonlocal result
+                result = await generate(notice)
+                return result.ai_response
 
+            initial_text = result.ai_response  # 추적에는 재생성 전 문장을 남긴다
             checked = await apply_text(
-                result.ai_response,
+                initial_text,
                 _guardrail_ctx(req.recent_messages),
                 user_key=req.user_id,
                 regenerate=regenerate,
                 fallback=fallback,
             )
-            await self._record("message", req.delegation_id, req.user_id, checked, result.ai_response)
+            await self._record("message", req.delegation_id, req.user_id, checked, initial_text)
             ok = not _is_fallback(checked)
 
         if ok and result is not None:

@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -158,10 +159,18 @@ JSON 하나만 출력한다: {{"ai_response": "메시지", "end_reason": "종료
 COPY_NOTICE = "\n\n[다시 쓰기] 방금 결과가 <초안> 문장과 똑같았다. 같은 뜻을 상대의 최근 말에 맞춰 다른 문장으로 쓴다."
 
 
+_BLOCK_TAG = re.compile(r"<\s*/?\s*(?:대화|초안)\s*>")
+
+
+# 인용 블록에 넣을 텍스트. 블록 태그를 지워 블록을 닫지 못하게 하고, 줄바꿈을 한 칸으로 바꿔 "나: …" 같은 화자 줄을 위조하지 못하게 한다
+def _quote(text: str) -> str:
+    return normalize(_BLOCK_TAG.sub(" ", text))
+
+
 # 대화를 인용 블록으로. 요청자=나, 상대=상대
 def _transcript(recent: list[RecentMessage]) -> str:
     label = {Speaker.REQUESTER: "나", Speaker.TARGET: "상대"}
-    lines = "\n".join(f"{label[m.speaker]}: {m.content}" for m in recent)
+    lines = "\n".join(f"{label[m.speaker]}: {_quote(m.content)}" for m in recent)
     return f"<대화>\n{lines}\n</대화>"
 
 
@@ -234,7 +243,7 @@ class EndMessageAgent:
     ) -> EndMessage:
         """최종 종료 메시지. 초안을 그대로 베끼면 한 번만 다시 쓰고, 그래도 같으면 받아들인다.
         실패하면 LLMError — 호출부(service)가 FAILED 로 바꾼다. notice 는 가드레일 교정 문구."""
-        drafts_block = "<초안>\n" + "\n".join(f"- {e}" for e in endings) + "\n</초안>"
+        drafts_block = "<초안>\n" + "\n".join(f"- {_quote(e)}" for e in endings) + "\n</초안>"
         content = f"[톤] {TONE[end_type]}\n\n{_transcript(recent)}\n\n{drafts_block}{notice}"
         result = await self._once(content, metadata)
         if normalize(result.ai_response) in {normalize(e) for e in endings}:

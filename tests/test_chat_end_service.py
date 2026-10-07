@@ -130,10 +130,27 @@ def test_create_message_guardrail_regenerates_retryable(monkeypatch):
     _fake_call(
         monkeypatch,
         [
+            json.dumps({"ai_response": "저는 AI입니다. 고마웠어요.", "end_reason": "처음 사유"}, ensure_ascii=False),
+            json.dumps({"ai_response": "그동안 고마웠어요.", "end_reason": "다시 쓴 사유"}, ensure_ascii=False),
+        ],
+    )
+    res, _, messages, _ = _run(lambda s: s.create_message(_message_req()))
+    assert res.status is ChatEndStatus.SUCCESS
+    assert res.ai_response == "그동안 고마웠어요."
+    # 응답 문장과 사유는 같은(재생성된) 결과에서 나와야 한다
+    assert res.end_reason == "다시 쓴 사유"
+    assert messages[0].end_reason == "다시 쓴 사유"
+
+
+def test_guardrail_trace_keeps_text_before_regeneration(monkeypatch):
+    monkeypatch.setenv("GUARDRAIL_MODE", "enforce")
+    _fake_call(
+        monkeypatch,
+        [
             json.dumps({"ai_response": "저는 AI입니다. 고마웠어요.", "end_reason": "r"}, ensure_ascii=False),
             json.dumps({"ai_response": "그동안 고마웠어요.", "end_reason": "r"}, ensure_ascii=False),
         ],
     )
-    res, _, _, _ = _run(lambda s: s.create_message(_message_req()))
-    assert res.status is ChatEndStatus.SUCCESS
-    assert res.ai_response == "그동안 고마웠어요."
+    _, _, _, traces = _run(lambda s: s.create_message(_message_req()))
+    message_traces = [t for t in traces if t.operation == "message"]
+    assert [t.initial_response_text for t in message_traces] == ["저는 AI입니다. 고마웠어요."]
