@@ -7,7 +7,7 @@ on:
 
 jobs:
   feature_ci:
-    name: AI feature validation
+    name: AI feature validation #러너 =우분투
     runs-on: ubuntu-latest
 
     permissions:
@@ -24,7 +24,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --all-groups --locked
+        run: uv sync --all-groups --locked # 가상환경에 의존성 설치, 갱신 없으면 기존 의존성 그대로 실행
 
       - name: Lint
         run: uv run ruff check .
@@ -33,7 +33,19 @@ jobs:
         run: uv run ruff format --check .
 
       - name: Dependency Vulnerability Check
-        run: uvx pip-audit .
+        run: uvx pip-audit . #현재 프로젝트 의존성 상에서 알려진 보안 취약점이 있는지 검사함.
+
+
+      #현재 테스트코드가 /test 안에 혼재되어 있어 파일명으로 구분함.
+      #단위 테스트 
+      - name: Unit Test
+        run: uv run pytest --ignore-glob='tests/test_*_api.py'
+
+
+      #핵심 기능 -api테스트
+      - name: API Test
+        run: uv run pytest tests/test_*_api.py
+
 
       - name: Build
         run: uv run python -m compileall -q .
