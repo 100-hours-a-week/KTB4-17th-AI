@@ -179,14 +179,18 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주지 않습니다. 시뮬레이션·연습대화에서 페르소나를 연기할 때 **말투 힌트**로만 약하게 쓰입니다 (`app/features/persona/profile.py` 의 `MBTI_TONE`).
 시뮬레이션과 연습대화에서는 확정된 페르소나만 사용할 수 있습니다.
 
-시뮬레이션 API:
+시뮬레이션 API. `POST /v1/simulation` 은 한 줄씩 대화를 만든 뒤, 끝날 때까지 기다렸다가 대본과 리포트를 201로 한 번에 돌려줍니다. 상대는 `partner_user_id` 이고, `turns` 를 생략하면 10왕복입니다.
 
 | 메서드 | 경로 | 역할 |
 | --- | --- | --- |
-| POST | `/v1/simulation` | `{me, partner, turns=10}` → 두 페르소나가 `turns` 왕복 대화한 대본과 매칭 리포트. LLM 1회. 저장됨. 한쪽이라도 모르는(`null`) 차원은 궁합 계산에서 빠집니다. |
-| GET | `/v1/simulation/{id}` | 저장된 시뮬레이션 (대본 + 리포트). |
-| GET | `/v1/simulation/{id}/report` | 리포트만. |
+| POST | `/v1/simulation` | `{me_user_id, partner_user_id, turns=10}` → 대화가 끝나면 대본과 매칭 리포트. |
+| GET | `/v1/simulation/{id}` | 실행 상태와 저장된 줄. |
+| GET | `/v1/simulation/{id}/report` | 리포트를 한 번 감싼 응답. |
+| GET | `/v1/simulation/{id}/events` | 저장된 줄을 한 줄씩 받는 스트림. |
 | GET | `/v1/simulation?user_id=…` | 내 시뮬레이션 목록. |
+| POST | `/v1/simulation/{id}/resume` | 멈춘 실행을 다시 시작. 202 `{simulation_id}`. |
+
+예전 한 호출 시뮬레이션은 `/v1/simulation_old` 입니다.
 
 연습대화 API:
 
