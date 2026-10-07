@@ -100,6 +100,13 @@ class Settings(BaseSettings):
     practice_timeout_s: float = 12.0
     # 시뮬레이션 대본+리포트 1회 호출 타임아웃 (SimulationAgent.run)
     simulation_script_timeout_s: float = 120.0
+    # 마이그레이션 리포트 서술만 생성하는 호출 타임아웃
+    simulation_narrative_timeout_s: float = 60.0
+    simulation_migration_attempt_timeout_s: float = 20.0
+    simulation_migration_slot_timeout_s: float = 30.0
+    simulation_migration_stale_s: float = 120.0
+    simulation_migration_max_runs: int = 2
+    simulation_migration_max_event_streams: int = 8
 
     # ── 프로필 신뢰(대표사진 심사·얼굴 인증) ──────────────────────────
     # /test 브라우저 테스트 페이지. 운영에서는 꺼 둔다

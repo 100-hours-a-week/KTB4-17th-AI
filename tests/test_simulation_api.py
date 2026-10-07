@@ -75,7 +75,7 @@ def _client(run_error=None):
 def test_run_returns_201_and_commits():
     client, calls = _client()
 
-    res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_persona_id": "pb_002"})
+    res = client.post("/v1/simulation_old", json={"me_user_id": "u1", "partner_persona_id": "pb_002"})
 
     assert res.status_code == 201
     assert res.json()["simulation_id"] == "sim_demo"
@@ -85,7 +85,7 @@ def test_run_returns_201_and_commits():
 def test_run_without_partner_is_422():
     client, calls = _client()
 
-    res = client.post("/v1/simulation", json={"me_user_id": "u1"})
+    res = client.post("/v1/simulation_old", json={"me_user_id": "u1"})
 
     assert res.status_code == 422
     assert calls == []
@@ -95,7 +95,7 @@ def test_run_with_two_partner_refs_is_422():
     client, calls = _client()
 
     res = client.post(
-        "/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2", "partner_persona_id": "pb_002"}
+        "/v1/simulation_old", json={"me_user_id": "u1", "partner_user_id": "u2", "partner_persona_id": "pb_002"}
     )
 
     assert res.status_code == 422
@@ -106,14 +106,14 @@ def test_run_turns_out_of_range_is_422():
     client, _ = _client()
 
     for turns in (2, 16):
-        res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2", "turns": turns})
+        res = client.post("/v1/simulation_old", json={"me_user_id": "u1", "partner_user_id": "u2", "turns": turns})
         assert res.status_code == 422
 
 
 def test_run_with_missing_persona_is_404_without_commit():
     client, calls = _client(run_error=PersonaNotFound("partner", PersonaRef(user_id="u2")))
 
-    res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
+    res = client.post("/v1/simulation_old", json={"me_user_id": "u1", "partner_user_id": "u2"})
 
     assert res.status_code == 404
     assert res.json()["detail"].startswith("partner: 확정된 페르소나가 없어요 (u2)")
@@ -123,7 +123,7 @@ def test_run_with_missing_persona_is_404_without_commit():
 def test_run_llm_failure_is_503_with_reason_and_rolls_back():
     client, calls = _client(run_error=SimulationFailed("timeout", reason="timeout"))
 
-    res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
+    res = client.post("/v1/simulation_old", json={"me_user_id": "u1", "partner_user_id": "u2"})
 
     assert res.status_code == 503
     assert res.json()["detail"] == {"message": "simulation failed: timeout", "reason": "timeout"}
@@ -134,7 +134,7 @@ def test_run_llm_failure_is_503_with_reason_and_rolls_back():
 def test_run_already_running_is_409():
     client, calls = _client(run_error=SimulationAlreadyRunning(frozenset({"pa", "pb"})))
 
-    res = client.post("/v1/simulation", json={"me_user_id": "u1", "partner_user_id": "u2"})
+    res = client.post("/v1/simulation_old", json={"me_user_id": "u1", "partner_user_id": "u2"})
 
     assert res.status_code == 409
     assert "이미 처리 중" in res.json()["detail"]
@@ -145,7 +145,7 @@ def test_list_with_no_ref_or_two_refs_has_query_specific_message():
     client, _ = _client()
 
     for params in ({}, {"user_id": "u1", "persona_id": "p1"}):
-        res = client.get("/v1/simulation", params=params)
+        res = client.get("/v1/simulation_old", params=params)
         assert res.status_code == 422
         assert res.json()["detail"] == "user_id 또는 persona_id 중 하나만 지정하세요"
 
@@ -153,14 +153,14 @@ def test_list_with_no_ref_or_two_refs_has_query_specific_message():
 def test_get_unknown_simulation_is_404():
     client, _ = _client()
 
-    assert client.get("/v1/simulation/nope").status_code == 404
-    assert client.get("/v1/simulation/nope/report").status_code == 404
+    assert client.get("/v1/simulation_old/nope").status_code == 404
+    assert client.get("/v1/simulation_old/nope/report").status_code == 404
 
 
 def test_get_simulation_returns_stored_result():
     client, _ = _client()
 
-    res = client.get("/v1/simulation/sim_demo")
+    res = client.get("/v1/simulation_old/sim_demo")
 
     assert res.status_code == 200
     assert res.json()["simulation_id"] == "sim_demo"
@@ -169,7 +169,7 @@ def test_get_simulation_returns_stored_result():
 def test_get_report_returns_stored_report():
     client, _ = _client()
 
-    res = client.get("/v1/simulation/sim_demo/report")
+    res = client.get("/v1/simulation_old/sim_demo/report")
 
     assert res.status_code == 200
     assert res.json()["overall"]["score"] == 62
@@ -178,7 +178,7 @@ def test_get_report_returns_stored_report():
 def test_list_requires_exactly_one_of_user_or_persona():
     client, calls = _client()
 
-    assert client.get("/v1/simulation").status_code == 422
-    assert client.get("/v1/simulation?user_id=u1&persona_id=p1").status_code == 422
-    assert client.get("/v1/simulation?user_id=u1").status_code == 200
+    assert client.get("/v1/simulation_old").status_code == 422
+    assert client.get("/v1/simulation_old?user_id=u1&persona_id=p1").status_code == 422
+    assert client.get("/v1/simulation_old?user_id=u1").status_code == 200
     assert calls == [("list", "u1")]

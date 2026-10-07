@@ -26,6 +26,12 @@ htmlcov/
 # 로컬 실행 산출물
 *.log
 
+# 화자 혼동 측정과 로컬 리뷰 산출물. 제품 경로가 아니다.
+scripts/measure_confusion.py
+scripts/judge_confusion.py
+llm_prompt_context_guide.html
+evals/review/langfuse_prod_eval_2026-10-02.html
+
 # dev 플레이그라운드 SQLite
 *.db
 

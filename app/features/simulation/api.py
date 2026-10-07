@@ -1,10 +1,10 @@
 """라우터. 검증과 상태코드만 담당하고 로직은 service/report 로 넘긴다.
 
-POST /v1/simulation                 : 내 페르소나 × 상대 페르소나 → 10턴 대본 + 매칭 리포트 (LLM 1회). 저장됨
-                                       같은 페르소나 조합이 이미 처리 중이면 409, 실패하면 503(+reason)
-GET  /v1/simulation/{id}            : 저장된 시뮬레이션 (대본 + 리포트)
-GET  /v1/simulation/{id}/report     : 리포트만
-GET  /v1/simulation?user_id=…       : 내 시뮬레이션 목록
+POST /v1/simulation_old                 : 내 페르소나 × 상대 페르소나 → 10턴 대본 + 매칭 리포트 (LLM 1회). 저장됨
+                                          같은 페르소나 조합이 이미 처리 중이면 409, 실패하면 503(+reason)
+GET  /v1/simulation_old/{id}            : 저장된 시뮬레이션 (대본 + 리포트)
+GET  /v1/simulation_old/{id}/report     : 리포트만
+GET  /v1/simulation_old?user_id=…       : 내 시뮬레이션 목록
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ from .service import (
     SimulationService,
 )
 
-router = APIRouter(prefix="/v1/simulation", tags=["simulation"])
+router = APIRouter(prefix="/v1/simulation_old", tags=["simulation_old"])
 
 
 def get_service(db: AsyncSession = Depends(get_db)) -> SimulationService:
