@@ -48,6 +48,7 @@ class GuardrailContext(BaseModel):
         "simulation_line",
         "simulation_report",
         "persona_narrative",
+        "chat_end_message",
     ]
     speaker_name: str
     partner_name: str | None = None
