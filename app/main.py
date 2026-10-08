@@ -28,6 +28,7 @@ from app.devtools.api import router as devtools_router
 from app.features.chat_end.api import router as chat_end_router
 from app.features.face_verification.api import router as face_verification_router
 from app.features.persona.api import router as persona_router
+from app.features.persona_extraction.api import router as persona_extraction_router
 from app.features.practice.api import router as practice_router
 from app.features.primary_photo.api import router as primary_photo_router
 from app.features.simulation.api import router as simulation_router
@@ -45,6 +46,10 @@ description = """
 
 TAGS_METADATA = [
     {"name": "persona", "description": "사용자 정보를 바탕으로 AI 페르소나를 생성하고 조회합니다."},
+    {
+        "name": "persona-extraction",
+        "description": "실제 대화(연습대화·카카오톡)에서 대화 스타일을 추출하고 반영합니다.",
+    },
     {"name": "practice", "description": "페르소나와의 연습 대화 메시지를 처리합니다."},
     {"name": "chat-end", "description": "채팅을 마무리하는 메시지 초안과 최종 종료 메시지를 만듭니다."},
     {
@@ -84,6 +89,7 @@ app = FastAPI(
 )
 api_router = APIRouter(prefix="/ai/api")
 api_router.include_router(persona_router)
+api_router.include_router(persona_extraction_router)
 api_router.include_router(practice_router)
 api_router.include_router(chat_end_router)
 api_router.include_router(simulation_router)

@@ -112,6 +112,9 @@ class PersonaRecord(Base):
     confidence: Mapped[dict] = mapped_column(JSON)  # {차원: "LOW"}
     narrative: Mapped[dict | None] = mapped_column(JSON)  # headline/body/traits
     summaries: Mapped[list | None] = mapped_column(JSON)  # area별 [{category, title, content}]
+    # 실제 대화(연습대화·카카오톡)에서 뽑은 말투·대화 습관 (schemas.ConversationStyle).
+    # 온보딩 빌드 버전은 None — 온보딩으로 재빌드하면 추출 반영분을 초기화하기로 했다 (2026-10-05)
+    conversation_style: Mapped[dict | None] = mapped_column(JSON)
 
     # 같은 세션에서 재빌드할 때마다 새 행. 이전 행을 가리켜 "뭐가 바뀌었나"를 계산한다.
     version: Mapped[int] = mapped_column(Integer, default=1)
@@ -121,7 +124,7 @@ class PersonaRecord(Base):
     is_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     mbti: Mapped[str | None] = mapped_column(String(4))
-    # "llm" | "fallback" — 추출 LLM 이 실패해 규칙으로 만든 초안이면 fallback. 다음 /build 때 LLM 으로 다시 시도한다
+    # "llm" | "fallback" | "practice" | "kakao" | "reset" — 추출 또는 리셋 버전 포함
     source: Mapped[str] = mapped_column(String(8), default="llm", server_default="llm")
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

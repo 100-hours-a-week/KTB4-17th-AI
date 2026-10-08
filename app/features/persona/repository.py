@@ -282,3 +282,75 @@ class PersonaRepository:
         session.status = "completed"
         await self.db.flush()
         return record, previous
+
+    async def save_extracted_version(
+        self,
+        base: PersonaRecord,
+        *,
+        source: str,
+        scores: dict,
+        confidence: dict,
+        narrative: dict | None,
+        conversation_style: dict,
+    ) -> PersonaRecord:
+        """실제 대화 추출 버전을 확정 상태로 추가한다 (사용자 확인 없이 — 2026-10-05 결정).
+
+        관심사·카드·MBTI 는 base 그대로. version 은 같은 온보딩 세션의 최신(미확정 초안 포함) 다음 번호,
+        previous_id 는 base — "무엇을 고쳐서 만들었나"를 가리킨다."""
+        latest = await self.latest_persona(base.session_id)
+        record = PersonaRecord(
+            session_id=base.session_id,
+            user_id=base.user_id,
+            scores=scores,
+            texts=base.texts,
+            confidence=confidence,
+            narrative=narrative,
+            summaries=base.summaries,
+            conversation_style=conversation_style,
+            version=(latest.version if latest else base.version) + 1,
+            previous_id=base.id,
+            is_confirmed=True,
+            confirmed_at=datetime.now(UTC),
+            mbti=base.mbti,
+            source=source,
+        )
+        self.db.add(record)
+        await self.db.flush()
+        return record
+
+    async def base_onboarding_persona(self, session_id: str) -> PersonaRecord | None:
+        """대화 추출이 적용되기 전 최초 온보딩 확정 페르소나 (점수·신뢰도 복원용)."""
+        stmt = (
+            select(PersonaRecord)
+            .where(
+                PersonaRecord.session_id == session_id,
+                PersonaRecord.is_confirmed.is_(True),
+                PersonaRecord.source.in_(("llm", "fallback")),
+            )
+            .order_by(PersonaRecord.version.asc())
+            .limit(1)
+        )
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
+    async def save_reset_version(self, base: PersonaRecord, original: PersonaRecord) -> PersonaRecord:
+        """대화 스타일을 제거하고 온보딩 원래 점수로 복원한 확정 버전을 추가한다 (2026-10-08)."""
+        latest = await self.latest_persona(base.session_id)
+        record = PersonaRecord(
+            session_id=base.session_id,
+            user_id=base.user_id,
+            scores=original.scores,
+            texts=base.texts,
+            confidence=original.confidence,
+            narrative=original.narrative,
+            summaries=base.summaries,
+            conversation_style=None,
+            version=(latest.version if latest else base.version) + 1,
+            previous_id=base.id,
+            is_confirmed=True,
+            confirmed_at=datetime.now(UTC),
+            mbti=base.mbti,
+            source="reset",
+        )
+        self.db.add(record)
+        await self.db.flush()
+        return record

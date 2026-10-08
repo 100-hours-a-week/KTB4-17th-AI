@@ -68,6 +68,11 @@ class PracticeMessage(Base):
     content: Mapped[str] = mapped_column(Text)
     # "llm" | "fallback" — 페르소나 메시지만. 폴백 빈도를 나중에 세기 위해
     source: Mapped[str | None] = mapped_column(String(8))
+    # 세션의 user_id 복사본 — 세션 조인 없이 "이 사람의 발화"를 센다. DB 컬럼은 마이그레이션 ae420271b9cf 가
+    # 먼저 만들었는데 모델에 빠져 있어 그동안 NULL 로 쌓였다 (n4c5d6e7f8a9 에서 backfill)
+    user_id: Mapped[str | None] = mapped_column(String(64), index=True)
+    # 이 발화가 반영된 페르소나 버전 (persona_extraction). NULL 이면 아직 반영 전 — role=user 만 의미가 있다
+    reflected_persona_id: Mapped[str | None] = mapped_column(String(32))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

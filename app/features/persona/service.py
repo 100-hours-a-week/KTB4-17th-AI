@@ -39,6 +39,7 @@ from .schemas import (
     TOPICS_BY_ID,
     Change,
     ConfirmPersonaResponse,
+    ConversationStyle,
     Gap,
     Narrative,
     PersonaResponse,
@@ -364,6 +365,11 @@ def persona_response(
         confidence=record.confidence,
         narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
         summaries=[Summary.model_validate(s) for s in record.summaries] if record.summaries else [],
+        conversation_style=(
+            ConversationStyle.model_validate(record.conversation_style)
+            if getattr(record, "conversation_style", None)
+            else None
+        ),
         accuracy=accuracy_of(record.confidence),
         gaps=gaps or [],
         changes=changes or [],

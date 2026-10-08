@@ -1,7 +1,7 @@
 """profile.describe — simulation·practice 프롬프트에 들어가는 페르소나 블록."""
 
 from app.features.persona.profile import describe
-from app.features.persona.schemas import PersonaResponse
+from app.features.persona.schemas import ConversationStyle, PersonaResponse
 
 
 def test_describe_includes_mbti_as_reference_only():
@@ -44,3 +44,25 @@ def test_describe_adds_j_p_as_tone_only():
 
     assert "약속이나 계획 얘기를 구체적으로 꺼내는 편 (J)" in j
     assert "즉흥적인 제안이 섞인 말투 (P)" in p
+
+
+def test_describe_includes_conversation_style_block():
+    p = PersonaResponse(
+        persona_id="p1",
+        scores={},
+        conversation_style=ConversationStyle(
+            speech_level="반말",
+            frequent_phrases=["오 대박", "아 그니까"],
+            laughter="ㅋㅋ를 자주",
+            summary="리액션 큰 편",
+        ),
+    )
+
+    text = describe("민수", p)
+
+    assert "대화 스타일" in text
+    assert '"오 대박"' in text and "반말" in text and "ㅋㅋ를 자주" in text and "리액션 큰 편" in text
+
+
+def test_describe_without_style_has_no_style_block():
+    assert "대화 스타일" not in describe("민수", PersonaResponse(persona_id="p1", scores={}))

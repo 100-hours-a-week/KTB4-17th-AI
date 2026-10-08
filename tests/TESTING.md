@@ -270,3 +270,31 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
   - "규칙 위반이면 전체 템플릿"을 고정하던 기존 테스트를 새 동작으로 교체
 - `onboarding_phrase_timeout_s` 2.5 → 5.0
 - 세 조각 모두 테스트를 먼저 쓰고 실패를 확인한 뒤 구현
+
+## 페르소나 추출 — 대화 스타일 추출 및 점수 보정 (red → green)
+
+> 2026-10-06 / 2026-10-08 · `feat/persona-extraction`
+
+실제 대화(연습대화·카카오톡)에서 사용자의 말투·대화 습관을 관찰하여 페르소나에 반영하고, 관계 성향 점수 4개를 70:30으로 보정한다.
+
+### 세 가지 seam과 테스트 파일
+1. **HTTP API** (`tests/test_extraction_api.py`)
+   - `POST /v1/persona-extraction/practice`: 202 Accepted + 백그라운드 예약, DB 커밋 후 백그라운드 실행
+   - `POST /v1/persona-extraction/conversation`: 파일(.txt) 또는 text 파라미터 수신, UTF-8 BOM 지원, 크기 제한(413), 정확히 하나만 전송(422)
+   - `GET /v1/persona-extraction/jobs/{job_id}`: 작업 상태 조회 (200, 404)
+   - `DELETE /v1/persona-extraction/style`: 대화 스타일 삭제 및 온보딩 점수 복원 (200, 없는 경우 400)
+   - 도메인 예외 매핑: `PersonaNotFound` (404), `JobInProgress` (409), `NothingToExtract` (409), `SpeakerNotFound` / `TooFewUtterances` / `UnknownFormat` (422)
+
+2. **LLM 파싱·검증** (`tests/test_extraction_agents.py`, `tests/test_extraction_parsers.py`)
+   - 카카오톡 파서 3종(PC 날짜줄+대괄호, Android, iOS), 오전/오후 12시 변환, 사진/이모티콘 등 첨부 필터링, 알 수 없는 포맷 `UnknownFormat`
+   - `StyleAgent`: 이전 스타일과 발화 목록 전달, 빈도순 정렬 및 어미 괄호 힌트 루브릭, LLM 에러 및 형식 오류 시 `ExtractionFailed` 래핑
+
+3. **비즈니스 규칙 및 서비스** (`tests/test_extraction_rules.py`, `tests/test_extraction_service.py`, `tests/test_persona_style.py`, `tests/test_practice_repository.py`)
+   - 문구 필터링(`clean_phrases`): PII(전화번호·메일·링크·숫자) 필터링, 30자 초과 문구 제거, 닉네임 제외, 최대 10개
+   - 점수 가중 보정(`blend_scores`): 기존 점수*0.7 + 관찰값*0.3 반올림, 기존 null이면 관찰값 채우고 신뢰도 LOW
+   - 동시성 및 제약: 사용자당 활성 작업(pending/running) 1개만 허용(인덱스 제약), 오래 멈춘 running 작업은 stale failed 처리 후 새 작업 허용
+   - 발화 중복 방지: 동일 발화(시간, 해시, 순번) 중복 건너뜀, 새 발화 최소 10개 미만 시 거절
+   - 발화 분석 및 반영: 최근 최대 200개 발화만 LLM에 전달하되 업로드된 전체 발화에 `reflected_persona_id` 마킹
+   - 실패 시 보존: LLM 호출 실패 시 작업만 failed로 남고 발화는 미반영 상태 유지
+   - 온보딩 재빌드 시 초기화: 온보딩으로 재빌드하면 `conversation_style`은 None으로 초기화되고 기존 반영된 발화는 재사용되지 않음
+   - 대화 스타일 삭제: 원본 온보딩 확정 페르소나의 점수로 복구된 새 확정 버전 생성, 기존 발화 반영 표시는 유지하여 이후 대화부터 추출

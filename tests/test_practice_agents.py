@@ -108,3 +108,9 @@ def test_my_section_has_only_name_and_mbti():
     assert "- MBTI: INFP" in my_section
     for leaked in ("보드게임", "아침 수영", "전시회", "클럽"):
         assert leaked not in prompt
+
+
+def test_system_prompt_lets_conversation_style_override_fixed_tone_rules():
+    from app.features.practice.agents import SYSTEM_TEMPLATE
+
+    assert "대화 스타일" in SYSTEM_TEMPLATE

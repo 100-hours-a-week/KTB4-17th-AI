@@ -63,6 +63,7 @@ class PracticeRepository:
     ) -> PracticeMessage:
         msg = PracticeMessage(
             session_id=session.id,
+            user_id=session.user_id,
             index=session.message_count,
             role=role,
             content=content,
