@@ -101,6 +101,7 @@ def test_create_message_success(monkeypatch):
     res, _, messages, _ = _run(lambda s: s.create_message(_message_req()))
     assert res.status is ChatEndStatus.SUCCESS
     assert (res.end_turns, res.end_reason) == (1, "상호 합의 종료")
+    assert (res.ai_turn_count, res.is_final) == (1, False)
     assert res.ai_response == "바쁘셨을 텐데 고마웠어요."
     assert res.message_id == messages[0].id
     assert (messages[0].status, messages[0].source, messages[0].ending_messages) == ("SUCCESS", "llm", [ENDING])
@@ -154,3 +155,63 @@ def test_guardrail_trace_keeps_text_before_regeneration(monkeypatch):
     _, _, _, traces = _run(lambda s: s.create_message(_message_req()))
     message_traces = [t for t in traces if t.operation == "message"]
     assert [t.initial_response_text for t in message_traces] == ["저는 AI입니다. 고마웠어요."]
+
+
+def _ok(text):
+    return json.dumps({"ai_response": text, "end_reason": "r"}, ensure_ascii=False)
+
+
+def test_turn_count_increases_and_third_turn_is_final(monkeypatch):
+    prompts = []
+
+    async def fake_call(**kwargs):
+        prompts.append(kwargs["messages"][0]["content"])
+        return _ok(f"마지막 답장 {len(prompts)}")
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+
+    async def scenario(svc):
+        return [await svc.create_message(_message_req()) for _ in range(4)]
+
+    results, _, messages, _ = _run(scenario)
+    assert [(r.ai_turn_count, r.is_final, r.end_turns) for r in results] == [
+        (1, False, 1),
+        (2, False, 2),
+        (3, True, 3),
+        (3, True, 3),  # 3번 끝난 뒤 또 불러도 번호를 늘리지 않고 종료 답장
+    ]
+    assert [m.end_turns for m in messages] == [1, 2, 3, 3]
+    assert "첫 번째 답장" in prompts[0]
+    assert "두 번째 답장" in prompts[1]
+    assert "이 채팅을 여기서 종료" in prompts[2]
+
+
+def test_failed_message_does_not_use_up_a_turn(monkeypatch):
+    _fake_call(monkeypatch, [LLMError("timeout"), _ok("답장")])
+
+    async def scenario(svc):
+        failed = await svc.create_message(_message_req())
+        retried = await svc.create_message(_message_req())
+        return failed, retried
+
+    (failed, retried), _, _, _ = _run(scenario)
+    assert (failed.status, failed.ai_turn_count, failed.is_final, failed.end_turns) == (
+        ChatEndStatus.FAILED,
+        1,
+        False,
+        0,
+    )
+    assert (retried.status, retried.ai_turn_count) == (ChatEndStatus.SUCCESS, 1)
+
+
+def test_turns_are_counted_per_delegation(monkeypatch):
+    _fake_call(monkeypatch, [_ok("답장1"), _ok("답장2")])
+    other = _message_req().model_copy(update={"delegation_id": 7002})
+
+    async def scenario(svc):
+        first = await svc.create_message(_message_req())
+        second = await svc.create_message(other)
+        return first, second
+
+    (first, second), _, _, _ = _run(scenario)
+    assert (first.ai_turn_count, second.ai_turn_count) == (1, 1)

@@ -23,6 +23,8 @@ def _client():
                 message_id=1,
                 ai_response="고마웠어요.",
                 status=ChatEndStatus.SUCCESS,
+                ai_turn_count=1,
+                is_final=False,
                 end_turns=1,
                 end_reason="상호 합의 종료",
             )
@@ -75,6 +77,8 @@ def test_messages_returns_200_and_commits():
         "message_id": 1,
         "ai_response": "고마웠어요.",
         "status": "SUCCESS",
+        "ai_turn_count": 1,
+        "is_final": False,
         "end_turns": 1,
         "end_reason": "상호 합의 종료",
     }

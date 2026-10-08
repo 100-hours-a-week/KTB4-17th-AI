@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import ChatEndDraft, ChatEndMessage
@@ -11,6 +12,19 @@ class ChatEndRepository:
     # 이 요청의 DB 세션을 보관
     def __init__(self, db: AsyncSession) -> None:
         self.db = db
+
+    # 이 위임에서 이미 성공한 AI 답장 수. 다음 턴 번호 = 이 값 + 1 (FAILED 는 턴을 쓰지 않는다)
+    async def count_successful_messages(self, *, room_id: int, delegation_id: int) -> int:
+        stmt = (
+            select(func.count())
+            .select_from(ChatEndMessage)
+            .where(
+                ChatEndMessage.room_id == room_id,
+                ChatEndMessage.delegation_id == delegation_id,
+                ChatEndMessage.status == "SUCCESS",
+            )
+        )
+        return int((await self.db.execute(stmt)).scalar_one())
 
     # 초안 호출 한 건을 저장하고 flush(id 확정)까지 한다
     async def save_draft(

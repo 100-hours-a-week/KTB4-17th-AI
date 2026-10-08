@@ -1,7 +1,7 @@
 """채팅 종료 — 결정하는 곳.
 
   create_drafts(req)  초안 3개 생성 → 초안마다 가드레일 → 저장. LLM 이 실패해도 폴백 3개로 200
-  create_message(req) 종료 메시지 생성 → 가드레일(재생성 1회) → 저장. 실패하면 status=FAILED,
+  create_message(req) 종료 메시지 생성(몇 번째 턴인지는 DB 의 성공 행 수로 센다, 3번째가 마지막) → 가드레일(재생성 1회) → 저장. 실패하면 status=FAILED,
                       ai_response 는 고른 초안 첫 문장 (엔진 기본 폴백 문장이 종료 메시지로 나가면 안 된다)
 
 커밋은 라우트(api.py)가 한다.
@@ -20,6 +20,7 @@ from app.core.observability import build_langfuse_metadata
 from .agents import FALLBACK_DRAFTS, DraftAgent, EndMessage, EndMessageAgent, LLMError
 from .repository import ChatEndRepository
 from .schemas import (
+    MAX_AI_TURNS,
     MAX_ENDING_LEN,
     ChatEndDraftsRequest,
     ChatEndDraftsResponse,
@@ -118,12 +119,15 @@ class ChatEndService:
             end_type=req.end_type.value,
         )
         fallback = req.ending_messages[0]
+        done = await self.repo.count_successful_messages(room_id=req.room_id, delegation_id=req.delegation_id)
+        ai_turn = min(done + 1, MAX_AI_TURNS)  # 이미 3번 끝났어도 더 늘리지 않고 종료 답장으로 응답
 
         async def generate(notice: str = "") -> EndMessage:
             return await self.message_agent.generate(
                 end_type=req.end_type,
                 recent=req.recent_messages,
                 endings=req.ending_messages,
+                ai_turn=ai_turn,
                 notice=notice,
                 metadata=metadata,
             )
@@ -159,7 +163,7 @@ class ChatEndService:
             text, end_reason, status, source = checked.text, result.end_reason, ChatEndStatus.SUCCESS, "llm"
         else:
             text, end_reason, status, source = fallback, None, ChatEndStatus.FAILED, "fallback"
-        end_turns = 1 if status is ChatEndStatus.SUCCESS else 0
+        end_turns = ai_turn if status is ChatEndStatus.SUCCESS else 0
 
         row = await self.repo.save_message(
             room_id=req.room_id,
@@ -179,6 +183,8 @@ class ChatEndService:
             message_id=row.id,
             ai_response=text,
             status=status,
+            ai_turn_count=ai_turn,
+            is_final=status is ChatEndStatus.SUCCESS and ai_turn == MAX_AI_TURNS,
             end_turns=end_turns,
             end_reason=end_reason,
         )

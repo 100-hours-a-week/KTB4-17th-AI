@@ -19,6 +19,7 @@ MAX_RECENT_MESSAGES = 20
 MAX_ENDING_LEN = 300
 MAX_ENDINGS = 3
 MAX_REASON_LEN = 255
+MAX_AI_TURNS = 3  # 종료 위임에서 AI 가 답장하는 최대 횟수. 마지막 턴은 채팅을 닫는다
 
 UserId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
 EndingText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=MAX_ENDING_LEN)]
@@ -120,10 +121,14 @@ class ChatEndMessageRequest(_Request):
 
 
 # POST /messages 응답. 실패해도 200 — status=FAILED, ai_response 는 고른 초안 첫 문장
+# ai_turn_count: 이번 답장이 몇 번째인지(1~MAX_AI_TURNS). FAILED 는 턴을 쓰지 않아 재시도하면 같은 번호
+# is_final: 성공한 마지막 턴이라 채팅을 종료해야 한다. end_turns: 성공이면 ai_turn_count, 실패면 0
 class ChatEndMessageResponse(BaseModel):
     room_id: int
     message_id: int
     ai_response: str = Field(min_length=1)
     status: ChatEndStatus
-    end_turns: int = Field(ge=0)
+    ai_turn_count: int = Field(ge=1, le=MAX_AI_TURNS)
+    is_final: bool
+    end_turns: int = Field(ge=0, le=MAX_AI_TURNS)
     end_reason: str | None = None
