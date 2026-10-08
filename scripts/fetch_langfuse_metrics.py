@@ -16,14 +16,14 @@ import math
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import requests
-from requests.auth import HTTPBasicAuth
 from dotenv import load_dotenv
+from requests.auth import HTTPBasicAuth
 
 logging.basicConfig(
     level=logging.INFO,
@@ -287,10 +287,14 @@ def _request_with_retry(
                         retry_after = int(details["retryAfterSeconds"]) + 2
                 except Exception:
                     pass
-                logger.warning("429 Rate limit 감지. %d초 대기 후 재시도합니다 (시도 %d/%d)...", retry_after, attempt, max_retries)
+                logger.warning(
+                    "429 Rate limit 감지. %d초 대기 후 재시도합니다 (시도 %d/%d)...", retry_after, attempt, max_retries
+                )
                 time.sleep(retry_after)
                 continue
-            logger.warning("API 호출 실패 (status %d): %s (시도 %d/%d)", res.status_code, res.text[:150], attempt, max_retries)
+            logger.warning(
+                "API 호출 실패 (status %d): %s (시도 %d/%d)", res.status_code, res.text[:150], attempt, max_retries
+            )
             time.sleep(attempt * 2)
         except Exception as exc:
             logger.warning("네트워크 예외 발생: %s (시도 %d/%d)", exc, attempt, max_retries)
@@ -393,9 +397,9 @@ def calculate_feature_metrics(
 
     # generation 레벨 오류
     gen_errors = [
-        it for it in gen_items
-        if it.get("level") == "ERROR"
-        or (it.get("statusMessage") and "error" in str(it.get("statusMessage")).lower())
+        it
+        for it in gen_items
+        if it.get("level") == "ERROR" or (it.get("statusMessage") and "error" in str(it.get("statusMessage")).lower())
     ]
     gen_err_count = len(gen_errors)
 
@@ -408,24 +412,22 @@ def calculate_feature_metrics(
 
     # 2. 지연시간 (Latency) 계산 (초 단위 및 ms 단위)
     latencies_sec = [
-        float(it["latency"]) for it in gen_items
+        float(it["latency"])
+        for it in gen_items
         if it.get("latency") is not None and not math.isnan(float(it["latency"]))
     ]
     lat_stats_sec = compute_percentiles(latencies_sec)
-    lat_stats_ms = {
-        f"{k}_ms": round_float(v * 1000.0, 1) if v is not None else None
-        for k, v in lat_stats_sec.items()
-    }
+    lat_stats_ms = {f"{k}_ms": round_float(v * 1000.0, 1) if v is not None else None for k, v in lat_stats_sec.items()}
 
     # 3. TTFT (Time To First Token) 계산
     ttfts_sec = [
-        float(it["timeToFirstToken"]) for it in gen_items
+        float(it["timeToFirstToken"])
+        for it in gen_items
         if it.get("timeToFirstToken") is not None and not math.isnan(float(it["timeToFirstToken"]))
     ]
     ttft_stats_sec = compute_percentiles(ttfts_sec)
     ttft_stats_ms = {
-        f"{k}_ms": round_float(v * 1000.0, 1) if v is not None else None
-        for k, v in ttft_stats_sec.items()
+        f"{k}_ms": round_float(v * 1000.0, 1) if v is not None else None for k, v in ttft_stats_sec.items()
     }
     ttft_stats = {
         "sample_count": len(ttfts_sec),
@@ -487,7 +489,7 @@ def calculate_feature_metrics(
     # 5. TPS (Tokens Per Second, completion_tokens / latency)
     tps_values = [
         float(comp) / float(lat)
-        for comp, lat in zip(comp_tokens, latencies_sec)
+        for comp, lat in zip(comp_tokens, latencies_sec, strict=False)
         if lat > 0.05 and comp > 0
     ]
     tps_stats = {
@@ -500,7 +502,8 @@ def calculate_feature_metrics(
 
     # 6. 비용 계산 (USD)
     costs = [
-        float(it["totalCost"]) for it in gen_items
+        float(it["totalCost"])
+        for it in gen_items
         if it.get("totalCost") is not None and not math.isnan(float(it["totalCost"]))
     ]
     total_cost_usd = round_float(float(np.sum(costs)), 5) if costs else 0.0
@@ -594,7 +597,7 @@ def main() -> None:
 
     if cache_path.exists():
         try:
-            with open(cache_path, "r", encoding="utf-8") as f:
+            with open(cache_path, encoding="utf-8") as f:
                 cache_data = json.load(f)
                 generations = cache_data.get("generations", [])
                 error_spans = cache_data.get("error_spans", [])
@@ -631,7 +634,11 @@ def main() -> None:
         except Exception as exc:
             logger.warning("캐시 저장 실패: %s", exc)
     else:
-        logger.info("--from-cache 옵션 활성화: 캐시된 관측치 사용 (generations %d건, error_spans %d건)", len(generations), len(error_spans))
+        logger.info(
+            "--from-cache 옵션 활성화: 캐시된 관측치 사용 (generations %d건, error_spans %d건)",
+            len(generations),
+            len(error_spans),
+        )
 
     # 기능별로 데이터 분류
     grouped_gen: dict[str, list[dict[str, Any]]] = {k: [] for k in FEATURE_SPECS}
@@ -685,34 +692,34 @@ def main() -> None:
     comparison_summary: dict[str, Any] = {}
     for name in FEATURE_SPECS:
         b = BASELINE_2026_10_02["features"][name]
-        l = live_feature_metrics[name]
+        live_m = live_feature_metrics[name]
         comparison_summary[name] = {
             "feature_id": b["feature_id"],
             "korean_name": b["korean_name"],
             "sample_count": {
                 "baseline_2026_10_02": b.get("trace_count", b.get("call_count")),
-                "live_cumulative": l["counts"]["total_calls"],
+                "live_cumulative": live_m["counts"]["total_calls"],
             },
             "error_rate_pct": {
                 "baseline_2026_10_02": b["error_rate_pct"],
-                "live_cumulative": l["counts"]["error_rate_pct"],
-                "diff": round_float(l["counts"]["error_rate_pct"] - b["error_rate_pct"], 2),
+                "live_cumulative": live_m["counts"]["error_rate_pct"],
+                "diff": round_float(live_m["counts"]["error_rate_pct"] - b["error_rate_pct"], 2),
             },
             "latency_p50_seconds": {
                 "baseline_2026_10_02": b["latency"].get("p50_seconds") or b["latency"].get("generation_p50_seconds"),
-                "live_cumulative": l["latency"]["p50_seconds"],
+                "live_cumulative": live_m["latency"]["p50_seconds"],
             },
             "latency_p95_seconds": {
                 "baseline_2026_10_02": b["latency"].get("p95_seconds") or b["latency"].get("generation_p95_seconds"),
-                "live_cumulative": l["latency"]["p95_seconds"],
+                "live_cumulative": live_m["latency"]["p95_seconds"],
             },
             "cost_per_call_usd": {
                 "baseline_2026_10_02": b["cost"]["cost_per_call_usd"],
-                "live_cumulative": l["cost"]["cost_per_call_usd"],
+                "live_cumulative": live_m["cost"]["cost_per_call_usd"],
             },
             "sla_compliance_rate_pct": {
                 "baseline_2026_10_02": b["sla_compliance_rate_pct"],
-                "live_cumulative": l["sla"]["sla_compliance_rate_pct"],
+                "live_cumulative": live_m["sla"]["sla_compliance_rate_pct"],
             },
         }
 
@@ -720,7 +727,7 @@ def main() -> None:
     summary_document = {
         "metadata": {
             "title": "Langfuse 정량 성능 지표 및 SLA 평가 요약",
-            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "generated_at": datetime.now(UTC).isoformat(),
             "langfuse_base_url": base_url,
             "model": "google/gemini-3.1-flash-lite",
             "sla_guidelines": {
@@ -759,22 +766,26 @@ def main() -> None:
     print(f"전체 오류율: {overall_error_rate}% ({total_errors_all}건 오류)")
     print(f"전체 누적 비용: ${total_cost_all:.4f} USD")
     print("-" * 70)
-    print(f"{'기능명':<16} | {'호출수':>6} | {'오류율':>7} | {'p50 지연':>8} | {'p95 지연':>8} | {'TTFT p50':>9} | {'TPS':>6} | {'SLA(15s)':>8}")
+    print(
+        f"{'기능명':<16} | {'호출수':>6} | {'오류율':>7} | {'p50 지연':>8} | {'p95 지연':>8} | {'TTFT p50':>9} | {'TPS':>6} | {'SLA(15s)':>8}"
+    )
     print("-" * 70)
-    for name, m in live_feature_metrics.items():
+    for m in live_feature_metrics.values():
         c = m["counts"]
-        l = m["latency"]
+        lat = m["latency"]
         ttft = m["ttft"]
         tps = m["tps"]
         sla = m["sla"]
         k_name = m["korean_name"]
-        p50_s = f"{l['p50_seconds']}s" if l['p50_seconds'] else "-"
-        p95_s = f"{l['p95_seconds']}s" if l['p95_seconds'] else "-"
-        ttft_p50 = f"{ttft['p50_seconds']}s" if ttft['p50_seconds'] else "-"
-        tps_mean = f"{tps['mean']}" if tps['mean'] else "-"
+        p50_s = f"{lat['p50_seconds']}s" if lat["p50_seconds"] else "-"
+        p95_s = f"{lat['p95_seconds']}s" if lat["p95_seconds"] else "-"
+        ttft_p50 = f"{ttft['p50_seconds']}s" if ttft["p50_seconds"] else "-"
+        tps_mean = f"{tps['mean']}" if tps["mean"] else "-"
         sla_pct = f"{sla['sla_compliance_rate_pct']}%"
         err_pct = f"{c['error_rate_pct']}%"
-        print(f"{k_name:<16} | {c['total_calls']:>6} | {err_pct:>7} | {p50_s:>8} | {p95_s:>8} | {ttft_p50:>9} | {tps_mean:>6} | {sla_pct:>8}")
+        print(
+            f"{k_name:<16} | {c['total_calls']:>6} | {err_pct:>7} | {p50_s:>8} | {p95_s:>8} | {ttft_p50:>9} | {tps_mean:>6} | {sla_pct:>8}"
+        )
     print("=" * 70)
 
 
