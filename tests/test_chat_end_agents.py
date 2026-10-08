@@ -129,6 +129,48 @@ def test_daily_greetings_are_detected(text):
     assert is_daily_greeting(text)
 
 
+@pytest.mark.parametrize(
+    "text",
+    [
+        "다음에 또 좋은 기회로 뵐 수 있으면 좋겠네요.",
+        "다음에 봐요.",
+        "또 봐요.",
+        "나중에 봬요.",
+        "언젠가 다시 봬요.",
+        "친구로라도 지내요.",
+        "생각해 볼게요.",
+        "기회가 되면 연락 주세요.",
+        "편하게 연락 주세요.",
+        "언제 한번 연락할게요.",
+        "좋은 하루 보내세요.",
+        "편안한 밤 되세요.",
+        "굿나잇!",
+    ],
+)
+def test_reopening_phrases_are_detected(text):
+    assert is_daily_greeting(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "다시 연락드리지 않을게요.",
+        "다시 만나기는 어려울 것 같아요.",
+        "다시 이야기 나누기는 어려울 것 같아요.",
+        "또 연락하지는 않을게요.",
+        "앞으로 다시 연락하는 일은 없을 거예요.",
+        "친구로 지내기는 어려울 것 같아요.",
+        "다음에 또 연락드리지 못할 것 같아요.",
+    ],
+)
+def test_negated_reopening_phrases_are_firm_refusals(text):
+    assert not is_daily_greeting(text)
+
+
+def test_negation_in_a_later_sentence_does_not_cancel_a_reopening_phrase():
+    assert is_daily_greeting("다음에 봐요. 오늘은 바빠서 길게 말하기 어려워요.")
+
+
 def test_prompts_state_relationship_ending_situation():
     assert "이 인연을 여기서 마무리" in agents.DRAFT_SYSTEM
     assert "이 인연을 여기서 마무리" in agents.MESSAGE_SYSTEM
@@ -377,6 +419,8 @@ def test_fallback_scripts_are_valid_three_step_endings(end_type):
     assert not any(is_daily_greeting(t) for t in script)
     assert all(len(t) <= agents.MAX_REPLY_CHARS for t in script)
     assert agents.is_closing_message(script[2])  # 3번째는 채팅을 닫는다
+    assert not any(agents._EARLY_CLOSING.search(t) for t in script[:2])  # 종료 선언은 3번째에만
+    assert not any("?" in t or "？" in t for t in script)
 
 
 def test_draft_agent_returns_script_and_quotes_conversation(monkeypatch):
@@ -396,8 +440,84 @@ def test_draft_agent_falls_back(monkeypatch, reply):
     assert source == "fallback"
 
 
+@pytest.mark.parametrize("index", [0, 1, 2])
+@pytest.mark.parametrize("bad", ["", "   ", None, "?"])
+def test_fill_script_replaces_only_the_bad_turn_at_each_position(index, bad):
+    raw = list(SCRIPT)
+    raw[index] = bad if bad != "?" else "정말 여기서 끝내도 될까요? 종료할게요."
+    turns, source = fill_script(raw, EndType.GENTLE)
+    expected = list(SCRIPT)
+    expected[index] = FALLBACK_SCRIPTS[EndType.GENTLE][index]
+    assert turns == expected
+    assert source == "fallback"
+
+
+def test_fill_script_single_non_string_item():
+    turns, source = fill_script([None, SCRIPT[1], SCRIPT[2]], EndType.DIRECT)
+    assert turns == [FALLBACK_SCRIPTS[EndType.DIRECT][0], SCRIPT[1], SCRIPT[2]]
+    assert source == "fallback"
+
+
+def test_fill_script_length_boundary_is_200_chars():
+    ok, ok_source = fill_script(["가" * 200, SCRIPT[1], SCRIPT[2]], EndType.GENTLE)
+    assert ok[0] == "가" * 200 and ok_source == "llm"
+    bad, bad_source = fill_script(["가" * 201, SCRIPT[1], SCRIPT[2]], EndType.GENTLE)
+    assert bad[0] == FALLBACK_SCRIPTS[EndType.GENTLE][0] and bad_source == "fallback"
+
+
+@pytest.mark.parametrize("closing", ["이 채팅은 여기서 종료할게요.", "더 이상 답장하지 않을게요."])
+@pytest.mark.parametrize("index", [0, 1])
+def test_closing_declaration_before_third_turn_is_replaced(index, closing):
+    raw = list(SCRIPT)
+    raw[index] = f"고마웠어요. {closing}"
+    turns, source = fill_script(raw, EndType.GENTLE)
+    assert turns[index] == FALLBACK_SCRIPTS[EndType.GENTLE][index]
+    assert source == "fallback"
+
+
+@pytest.mark.parametrize("closing", ["이 채팅은 여기서 종료할게요.", "더 이상 답장하지 않을게요."])
+def test_closing_declaration_is_fine_as_third_turn(closing):
+    turns, source = fill_script([SCRIPT[0], SCRIPT[1], f"고마웠어요. {closing}"], EndType.GENTLE)
+    assert turns[2] == f"고마웠어요. {closing}"
+    assert source == "llm"
+
+
+def test_fill_script_replaces_a_duplicate_of_an_earlier_turn():
+    turns, source = fill_script([SCRIPT[0], f"  {SCRIPT[0]}  ", SCRIPT[2]], EndType.GENTLE)
+    assert turns == [SCRIPT[0], FALLBACK_SCRIPTS[EndType.GENTLE][1], SCRIPT[2]]
+    assert source == "fallback"
+
+
+@pytest.mark.parametrize("mark", ["?", "？"])
+def test_fill_script_replaces_a_turn_with_a_question(mark):
+    turns, source = fill_script([SCRIPT[0], f"괜찮으세요{mark} 마음은 그대로예요.", SCRIPT[2]], EndType.GENTLE)
+    assert turns[1] == FALLBACK_SCRIPTS[EndType.GENTLE][1]
+    assert source == "fallback"
+
+
+def test_fill_script_logs_the_reason_for_a_replaced_turn(caplog):
+    with caplog.at_level("INFO", logger=agents.logger.name):
+        fill_script([SCRIPT[0], f"{SCRIPT[0]}", SCRIPT[2]], EndType.GENTLE)
+    assert any("turn 2" in r.getMessage() and "duplicate" in r.getMessage() for r in caplog.records)
+
+
 def test_draft_prompt_defines_three_roles_and_output_key():
     assert "첫 번째 답변" in agents.DRAFT_SYSTEM
     assert "두 번째 답변" in agents.DRAFT_SYSTEM
     assert "세 번째 답변" in agents.DRAFT_SYSTEM
     assert '"turns"' in agents.DRAFT_SYSTEM
+
+
+def test_draft_prompt_limits_closing_declaration_and_blessing_and_does_not_assume_pushback():
+    assert "채팅 종료 선언은 세 번째 답변에만" in agents.DRAFT_SYSTEM
+    assert "덕담은 세 개 중 한 곳에서만" in agents.DRAFT_SYSTEM
+    assert "받아들이든 만류하든" in agents.DRAFT_SYSTEM
+    assert "이어가려 해도" not in agents.DRAFT_SYSTEM
+
+
+def test_second_turn_guide_does_not_assume_pushback():
+    guide = agents.TURN_GUIDE[2]
+    assert guide.startswith("두 번째 답장.")
+    assert "상대가 다시 답해 왔다(받아들이든 만류하든)" in guide
+    assert "이어가려 하거나 되물었다" not in guide
+    assert guide.endswith("전체 200자 이내")

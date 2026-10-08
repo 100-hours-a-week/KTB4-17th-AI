@@ -116,7 +116,7 @@ FALLBACK_SCRIPTS: dict[EndType, list[str]] = {
     ],
     EndType.CASUAL: [
         "여기까지만 할게요. 얘기 나눠 줘서 고마웠어요.",
-        "마음은 알겠지만 생각은 그대로예요. 여기서 정리할게요.",
+        "제 생각은 그대로예요. 여기서 정리할게요.",
         "이제 답장 안 할게요. 이 채팅은 여기서 종료할게요, 잘 지내세요.",
     ],
 }
@@ -128,7 +128,7 @@ TURN_GUIDE: dict[int, str] = {
         "② 고마움 한 마디. 전체 200자 이내"
     ),
     2: (
-        "두 번째 답장. 이미 마무리 의사를 전했는데 상대가 이어가려 하거나 되물었다. "
+        "두 번째 답장. 이미 마무리 의사를 전했고 상대가 다시 답해 왔다(받아들이든 만류하든). "
         "① 입장은 그대로라는 점을 앞서보다 분명하고 단호하게, 하지만 무례하지 않게 다시 알린다 ② 고마움 한 마디. 설득당하지 않는다. 전체 200자 이내"
     ),
     3: (
@@ -140,9 +140,15 @@ TURN_GUIDE: dict[int, str] = {
 
 # 하루 대화를 닫는 인사나 다시 만나자는 암시. 관계를 끝내는 메시지에는 쓰지 않는다
 _NOT_AN_ENDING = re.compile(
-    r"다음에\s*(?:또|한\s?번|봬|뵙|만나|연락|이야기|얘기)"
+    r"다음에\s*(?:또|한\s?번|봐|봬|보자|뵙|만나|연락|이야기|얘기)"
+    r"|나중에\s*(?:봐|봬|보자|연락|만나)"
+    r"|언젠가\s*(?:다시|또|봐|봬)"
     r"|언제\s*(?:한\s?번|또)"
-    r"|또\s*(?:뵙|봬|만나|연락|이야기|얘기)"
+    r"|또\s*(?:봐|봬|보자|뵙|만나|연락|이야기|얘기)"
+    r"|친구로(?:라도|서)?\s*(?:지내|남|만나)"
+    r"|생각해\s*볼게"
+    r"|연락\s*(?:주세요|해\s*주세요|줘요)"
+    r"|기회가\s*(?:되면|닿으면)"
     r"|(?:뵐|볼|만날)\s*수\s*있"
     r"|다시\s*(?:만나|뵙|뵐|연락|이야기|얘기)"
     r"|연락\s*(?:할게|드릴게)"
@@ -166,9 +172,21 @@ def is_closing_message(text: str) -> bool:
     return _CLOSING.search(text) is not None
 
 
+# 같은 문장 뒤쪽에 이 말이 있으면 재만남 표현이 부정된 것이다 ("다시 연락드리지 않을게요", "다시 만나기는 어려워요")
+_NEGATION = re.compile(r"않|없|어려|못|힘들|싫")
+
+
 def is_daily_greeting(text: str) -> bool:
-    """관계 마무리가 아니라 일상 인사나 재만남 암시로 읽히는 문장인가."""
-    return _NOT_AN_ENDING.search(text) is not None
+    """관계 마무리가 아니라 일상 인사나 재만남 암시로 읽히는 문장인가.
+
+    "다시 연락드리지 않을게요", "다시 만나기는 어려울 것 같아요"처럼 재만남 표현 뒤에 부정이 이어지면
+    그 표현은 재개 여지가 아니라 단호한 거절이므로 세지 않는다. 부정은 같은 문장 안, 표현 뒤 25자까지만 본다.
+    """
+    for m in _NOT_AN_ENDING.finditer(text):
+        tail = re.split(r"[.!?…]", text[m.end() :], maxsplit=1)[0][:25]  # 같은 문장에서 뒤 25자 안
+        if not _NEGATION.search(tail):
+            return True
+    return False
 
 
 _SITUATION = """\
@@ -208,9 +226,11 @@ DRAFT_SYSTEM = f"""\
 {_SITUATION}
 ## 3개의 역할 (순서대로 이어지는 하나의 흐름)
 1. 첫 번째 답변: 이 인연을 마무리하겠다는 뜻을 전한다. 고마움을 곁들인다
-2. 두 번째 답변: 상대가 이어가려 해도 입장은 그대로라는 점을 앞서보다 분명하고 단호하게, 무례하지 않게 알린다
+2. 두 번째 답변: 상대가 다시 답해 오면(받아들이든 만류하든) 결정이 그대로임을 앞서보다 분명하게, 무례하지 않게 확인한다
 3. 세 번째 답변: 더 이상 답장하지 않고 이 채팅을 여기서 종료한다고 알린다.
    반드시 '종료' 또는 '더 이상 답장하지 않'이라는 말을 넣는다
+- "종료", "더 이상 답장하지 않" 같은 채팅 종료 선언은 세 번째 답변에만 쓴다
+- "좋은 분 만나시길 바랍니다" 같은 덕담은 세 개 중 한 곳에서만 쓴다
 
 {_COMMON_RULES}- 3개는 표현이 서로 달라야 하고 같은 문장을 반복하지 않는다
 
@@ -287,11 +307,28 @@ def _transcript(recent: list[RecentMessage]) -> str:
     return f"<대화>\n{lines}\n</대화>"
 
 
-# 스크립트 한 턴을 그대로 쓸 수 있는가. 비었거나 200자를 넘거나 재만남 여지가 있으면 못 쓴다. 3번째는 채팅 종료 표현이 있어야 한다
-def _usable_script_turn(text: str, *, turn: int) -> bool:
-    if not text or len(text) > MAX_REPLY_CHARS or is_daily_greeting(text):
-        return False
-    return turn < MAX_AI_TURNS or is_closing_message(text)
+# 채팅 종료 선언은 세 번째 답변에만 쓴다. 앞선 턴에 있으면 너무 일찍 닫는 것이다
+_EARLY_CLOSING = re.compile(r"종료|더\s*이상\s*답장")
+
+
+# 스크립트 한 턴을 그대로 쓸 수 없는 이유 코드. 쓸 수 있으면 None.
+# previous 는 앞서 채택된 턴들(중복 검사용). 3번째는 채팅 종료 표현이 있어야 하고, 1·2번째는 종료 선언이 없어야 한다
+def _script_turn_problem(text: str, *, turn: int, previous: list[str]) -> str | None:
+    if not text:
+        return "empty"
+    if len(text) > MAX_REPLY_CHARS:
+        return "too_long"
+    if is_daily_greeting(text):
+        return "reopens_contact"
+    if "?" in text or "？" in text:
+        return "question"
+    if normalize(text) in {normalize(p) for p in previous}:
+        return "duplicate"
+    if turn < MAX_AI_TURNS and _EARLY_CLOSING.search(text):
+        return "early_closing"
+    if turn == MAX_AI_TURNS and not is_closing_message(text):
+        return "no_closing"
+    return None
 
 
 def fill_script(raw: object, end_type: EndType) -> tuple[list[str], str]:
@@ -302,7 +339,9 @@ def fill_script(raw: object, end_type: EndType) -> tuple[list[str], str]:
     source = "llm"
     for i in range(MAX_AI_TURNS):
         text = normalize(items[i]) if i < len(items) and isinstance(items[i], str) else ""
-        if not _usable_script_turn(text, turn=i + 1):
+        problem = _script_turn_problem(text, turn=i + 1, previous=turns)
+        if problem:
+            logger.info("chat_end script turn %d replaced by fallback: %s", i + 1, problem)
             text, source = FALLBACK_SCRIPTS[end_type][i], "fallback"
         turns.append(text)
     return turns, source
