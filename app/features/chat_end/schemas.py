@@ -17,7 +17,9 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 MAX_MESSAGE_LEN = 500  # practice MAX_MESSAGE_LEN 과 같다
 MAX_RECENT_MESSAGES = 20
-MAX_REPLY_CHARS = 200  # 스크립트 한 문장·종료 메시지 한 건의 글자 수 한도. 문장 수는 제한하지 않는다
+# 스크립트 한 문장·종료 메시지 한 건의 글자 수 한도. 문장 수는 제한하지 않는다. 마지막 턴은 본문 + closing 을 합쳐서 센다
+# 검사는 agents/service 에서 하고 모델 검증에는 걸지 않는다 (초과는 경미한 문제라 500 으로 만들지 않는다)
+MAX_REPLY_CHARS = 200
 MAX_REASON_LEN = 255
 MAX_AI_TURNS = 3  # 종료 위임에서 AI 가 답장하는 최대 횟수. 마지막 턴은 채팅을 닫는다
 
@@ -41,7 +43,8 @@ class ChatEndStatus(StrEnum):
 
 
 class DraftStatus(StrEnum):
-    PENDING = "PENDING"  # 만들어졌지만 사용자가 확정하지 않았다. messages 는 쓰지 못한다
+    # 현재 확정본이 아니다 (새로 만들었거나, 다른 초안이 확정되며 내려왔다). messages 는 쓰지 못한다
+    PENDING = "PENDING"
     CONFIRMED = "CONFIRMED"  # 확정됐다. 같은 delegation_id 에 1개만 있다
 
 
