@@ -1,8 +1,14 @@
+import json
+
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
-from app.core.db import get_db
-from app.features.chat_end import api
+import app.core.guardrail_trace  # noqa: F401  (guardrail trace 테이블도 create_all 에 포함)
+from app.core.db import Base, get_db
+from app.features.chat_end import agents, api
 from app.features.chat_end.schemas import (
     ChatEndConfirmResponse,
     ChatEndDraftsResponse,
@@ -107,6 +113,24 @@ def test_confirm_returns_200_and_commits():
     assert calls == [("confirm", DRAFT_ID), ("commit",)]
 
 
+@pytest.mark.parametrize("bad_id", ["short", "a" * 40, "A" * 32, "a" * 31 + "%00"])
+def test_confirm_rejects_malformed_draft_id_with_422(bad_id):
+    client, calls = _client()
+    res = client.post(f"/v1/chat_end/drafts/{bad_id}/confirm")
+    assert res.status_code == 422
+    assert calls == []
+
+
+def test_openapi_documents_error_responses():
+    app = FastAPI()
+    app.include_router(api.router)
+    paths = app.openapi()["paths"]
+    confirm = paths["/v1/chat_end/drafts/{draft_id}/confirm"]["post"]["responses"]
+    messages = paths["/v1/chat_end/messages"]["post"]["responses"]
+    assert "404" in confirm and "409" in confirm
+    assert "409" in messages
+
+
 def test_confirm_unknown_draft_is_404_without_commit():
     client, calls = _client(raises=DraftNotFound("x"))
     res = client.post(f"/v1/chat_end/drafts/{DRAFT_ID}/confirm")
@@ -149,7 +173,62 @@ def test_messages_with_mismatched_end_type_is_409_without_commit():
     client, calls = _client(raises=EndTypeMismatch("GENTLE", "DIRECT"))
     res = client.post("/v1/chat_end/messages", json={**_message_body(), "end_type": "DIRECT"})
     assert res.status_code == 409
+    assert "GENTLE" in res.json()["detail"] and "DIRECT" in res.json()["detail"]
     assert ("commit",) not in calls
+
+
+SCRIPT = [
+    "대화 나눌 수 있어서 고마웠어요. 다만 저는 여기서 인연을 마무리하려고 해요.",
+    "마음 써 주셔서 감사해요. 그래도 제 마음은 변하지 않았어요.",
+    "그동안 정말 고마웠어요. 더 이상 답장하지 않고 이 채팅은 여기서 종료할게요.",
+]
+
+
+def test_golden_path_drafts_confirm_then_three_messages_through_http(monkeypatch):
+    monkeypatch.setenv("GUARDRAIL_MODE", "off")
+    replies = [
+        json.dumps({"turns": SCRIPT}, ensure_ascii=False),
+        json.dumps({"ai_response": "고마웠어요. 여기서 마무리할게요.", "end_reason": "r"}, ensure_ascii=False),
+        json.dumps(
+            {"ai_response": "마음 써 줘서 고마워요. 제 생각은 그대로예요.", "end_reason": "r"}, ensure_ascii=False
+        ),
+        json.dumps(
+            {
+                "ai_response": "그동안 고마웠어요.",
+                "closing": "더 이상 답장하지 않고 이 채팅은 여기서 종료할게요.",
+                "end_reason": "r",
+            },
+            ensure_ascii=False,
+        ),
+    ]
+
+    async def fake_call(**_):
+        return replies.pop(0)
+
+    monkeypatch.setattr(agents, "_call", fake_call)
+    engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def real_db():
+        async with factory() as db:
+            yield db
+
+    async def create_tables():
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    app = FastAPI()
+    app.include_router(api.router)
+    app.dependency_overrides[get_db] = real_db  # get_service 는 덮지 않는다 — 진짜 service·repository 를 쓴다
+    msg = _message_body()
+    with TestClient(app) as client:
+        client.portal.call(create_tables)  # 앱과 같은 이벤트 루프에서 테이블을 만든다
+        draft_id = client.post("/v1/chat_end/drafts", json=_drafts_body()).json()["draft_id"]
+        assert client.post("/v1/chat_end/messages", json=msg).status_code == 409
+        assert client.post(f"/v1/chat_end/drafts/{draft_id}/confirm").status_code == 200
+        assert client.post("/v1/chat_end/messages", json={**msg, "end_type": "DIRECT"}).status_code == 409
+        turns = [client.post("/v1/chat_end/messages", json=msg).json() for _ in range(3)]
+    assert [(t["ai_turn_count"], t["is_final"]) for t in turns] == [(1, False), (2, False), (3, True)]
 
 
 def test_messages_rejects_the_removed_ending_messages_field():

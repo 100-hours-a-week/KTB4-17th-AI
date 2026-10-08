@@ -42,16 +42,24 @@ async def create_drafts(
     return result
 
 
-@router.post("/drafts/{draft_id}/confirm", response_model=ChatEndConfirmResponse, summary="스크립트 확정")
+@router.post(
+    "/drafts/{draft_id}/confirm",
+    response_model=ChatEndConfirmResponse,
+    summary="스크립트 확정",
+    responses={
+        404: {"description": "없는 draft_id"},
+        409: {"description": "이 위임에서 messages 가 이미 성공해 다른 초안으로 바꿀 수 없음"},
+    },
+)
 async def confirm_draft(
-    draft_id: str = Path(min_length=1, max_length=64),
+    draft_id: str = Path(pattern=r"^[0-9a-f]{32}$", description="drafts 응답의 draft_id (32자리 소문자 hex)"),
     service: ChatEndService = Depends(get_service),
     db: AsyncSession = Depends(get_db),
 ) -> ChatEndConfirmResponse:
     try:
         result = await service.confirm_draft(draft_id)
     except DraftNotFound as e:
-        raise HTTPException(404, "draft not found") from e
+        raise HTTPException(404, "초안을 찾을 수 없어요") from e
     except DraftLocked as e:
         raise HTTPException(409, "messages 가 이미 시작되어 초안을 바꿀 수 없어요") from e
     await db.commit()
@@ -59,7 +67,10 @@ async def confirm_draft(
 
 
 @router.post(
-    "/messages", response_model=ChatEndMessageResponse, summary="확정 스크립트를 기반으로 종료 채팅 메시지 생성"
+    "/messages",
+    response_model=ChatEndMessageResponse,
+    summary="확정 스크립트를 기반으로 종료 채팅 메시지 생성",
+    responses={409: {"description": "확정된 초안이 없거나, 요청의 end_type 이 확정본과 다름"}},
 )
 async def create_message(
     req: ChatEndMessageRequest,
@@ -71,6 +82,8 @@ async def create_message(
     except NoConfirmedDraft as e:
         raise HTTPException(409, "확정된 초안이 없어요. 먼저 초안을 만들고 확정해 주세요") from e
     except EndTypeMismatch as e:
-        raise HTTPException(409, "확정한 초안의 종료 유형과 요청의 end_type 이 달라요") from e
+        raise HTTPException(
+            409, f"확정한 초안의 종료 유형({e.confirmed})과 요청의 end_type({e.requested})이 달라요"
+        ) from e
     await db.commit()
     return result

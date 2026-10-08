@@ -2,8 +2,10 @@
 
   create_drafts(req)       1·2·3번째 답변 스크립트 생성 → 문장마다 가드레일 → PENDING 으로 저장.
                            LLM 이 실패해도 폴백 스크립트로 응답한다
-  confirm_draft(draft_id)  PENDING → CONFIRMED. 멱등. 같은 위임에서 messages 가 이미 시작됐으면 다른 초안은 확정할 수 없다
-  create_message(req)      요청 end_type 이 확정 스크립트의 end_type 과 다르면 거절한다. 확정 스크립트의 N번째 문장(N = 성공한 답장 수 + 1, 최대 3)을 방향으로 종료 메시지 생성 →
+  confirm_draft(draft_id)  PENDING → CONFIRMED. 멱등.
+                           같은 위임에서 messages 가 이미 시작됐으면 다른 초안은 확정할 수 없다
+  create_message(req)      요청 end_type 이 확정 스크립트의 end_type 과 다르면 거절한다.
+                           확정 스크립트의 N번째 문장(N = 성공한 답장 수 + 1, 최대 3)을 방향으로 종료 메시지 생성 →
                            가드레일(재생성 1회) → 저장. 실패하면 status=FAILED, ai_response 는 그 N번째 스크립트 문장
                            (엔진 기본 폴백 문장이 종료 메시지로 나가면 안 된다)
 
@@ -56,6 +58,11 @@ class NoConfirmedDraft(Exception):
 
 class EndTypeMismatch(Exception):
     """messages 요청의 end_type 이 확정 스크립트의 end_type 과 다르다."""
+
+    def __init__(self, confirmed: str, requested: str) -> None:
+        self.confirmed = confirmed
+        self.requested = requested
+        super().__init__(f"confirmed={confirmed} requested={requested}")
 
 
 # 가드레일 문맥. 대화 양쪽이 실제로 한 말은 언급해도 되므로 user_texts 에 전부 넣는다
@@ -158,6 +165,13 @@ class ChatEndService:
         if draft is None:
             raise NoConfirmedDraft(req.delegation_id)
         if req.end_type.value != draft.end_type:
+            logger.warning(
+                "chat_end end_type mismatch room=%s delegation=%s confirmed=%s requested=%s",
+                req.room_id,
+                req.delegation_id,
+                draft.end_type,
+                req.end_type.value,
+            )
             raise EndTypeMismatch(draft.end_type, req.end_type.value)
         done = await self.repo.count_successful_messages(room_id=req.room_id, delegation_id=req.delegation_id)
         ai_turn = min(done + 1, MAX_AI_TURNS)  # 이미 3번 끝났어도 더 늘리지 않고 종료 답장으로 응답

@@ -514,10 +514,11 @@ def test_create_message_with_mismatched_end_type_is_rejected_without_llm_call(mo
         await _seed(svc, end_type="GENTLE")
         with pytest.raises(EndTypeMismatch) as exc:
             await svc.create_message(_message_req(end_type="DIRECT"))
-        return exc.value.args
+        return exc.value
 
-    args, _, messages, _ = _run(scenario)
-    assert args == ("GENTLE", "DIRECT")
+    err, _, messages, _ = _run(scenario)
+    assert err.confirmed == "GENTLE"
+    assert err.requested == "DIRECT"
     assert calls == []  # LLM 을 부르지 않았다
     assert messages == []  # 실패 행도 남기지 않았다
 
