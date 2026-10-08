@@ -92,8 +92,8 @@ def _run(scenario):
             result = await scenario(ChatEndService(db))
             await db.commit()
         async with factory() as db:
-            drafts = (await db.execute(select(ChatEndDraft))).scalars().all()
-            messages = (await db.execute(select(ChatEndMessage))).scalars().all()
+            drafts = (await db.execute(select(ChatEndDraft).order_by(ChatEndDraft.id))).scalars().all()
+            messages = (await db.execute(select(ChatEndMessage).order_by(ChatEndMessage.id))).scalars().all()
             traces = (await db.execute(select(GuardrailTrace))).scalars().all()
         return result, drafts, messages, traces
 
@@ -384,3 +384,124 @@ def test_guardrail_trace_keeps_text_before_regeneration(monkeypatch):
     _, _, _, traces = _run(scenario)
     message_traces = [t for t in traces if t.operation == "message"]
     assert [t.initial_response_text for t in message_traces] == ["저는 AI입니다. 고마웠어요."]
+
+
+# ---------------------------------------------------------------- locking / ordering
+
+
+def _spy(svc, order):
+    """svc.repo 의 메서드를 감싸 호출 순서를 order 에 모은다."""
+    for name in ("lock_delegation", "get_draft", "get_confirmed_draft", "count_successful_messages"):
+        original = getattr(svc.repo, name)
+
+        def make(name=name, original=original):
+            async def wrapper(*args, **kwargs):
+                order.append(name)
+                return await original(*args, **kwargs)
+
+            return wrapper
+
+        setattr(svc.repo, name, make())
+
+
+def test_create_message_locks_the_delegation_before_reading_anything(monkeypatch):
+    _fake_call(monkeypatch, [_ok("여기서 마무리할게요. 고마웠어요.")])
+    order: list[str] = []
+
+    async def scenario(svc):
+        await _seed(svc)
+        _spy(svc, order)
+        return await svc.create_message(_message_req())
+
+    _run(scenario)
+    assert order == ["lock_delegation", "get_confirmed_draft", "count_successful_messages"]
+
+
+def test_confirm_draft_locks_before_counting_messages():
+    order: list[str] = []
+
+    async def scenario(svc):
+        row = await _seed(svc, confirmed=False)
+        _spy(svc, order)
+        return await svc.confirm_draft(row.id)
+
+    _run(scenario)
+    # 마지막 lock_delegation 은 repo.confirm_draft 안에서 다시 잡는 같은 잠금(재진입이라 무해)
+    assert order == ["get_draft", "lock_delegation", "count_successful_messages", "lock_delegation"]
+
+
+def test_create_message_for_other_room_raises():
+    async def scenario(svc):
+        await _seed(svc)  # 확정 스크립트는 5001 방 것
+        req = _message_req().model_copy(update={"room_id": 9999})
+        with pytest.raises(NoConfirmedDraft):
+            await svc.create_message(req)
+        return "raised"
+
+    res, _, messages, _ = _run(scenario)
+    assert res == "raised" and messages == []
+
+
+def test_failed_only_does_not_lock_the_script(monkeypatch):
+    _fake_call(monkeypatch, [LLMError("down")])  # 성공한 답장이 없으면 시작된 것이 아니다
+
+    async def scenario(svc):
+        await _seed(svc, confirmed=True)
+        other = await _seed(svc, confirmed=False)
+        failed = await svc.create_message(_message_req())
+        return failed, await svc.confirm_draft(other.id), other.id
+
+    (failed, confirmed, other_id), drafts, messages, _ = _run(scenario)
+    assert failed.status is ChatEndStatus.FAILED
+    assert confirmed.status is DraftStatus.CONFIRMED
+    assert {d.id: d.status for d in drafts}[other_id] == "CONFIRMED"
+    assert [m.status for m in messages] == ["FAILED"]
+
+
+def test_reconfirm_before_messages_uses_the_new_script(monkeypatch):
+    script_b = [
+        "B 첫 문장입니다. 여기서 정리하려고 해요.",
+        "B 둘째 문장입니다. 마음은 그대로예요.",
+        "B 셋째 문장입니다. 이 채팅은 종료할게요.",
+    ]
+    calls = _fake_call(monkeypatch, [_ok("여기서 마무리할게요. 고마웠어요.")])
+
+    async def scenario(svc):
+        a = await _seed(svc, confirmed=False)
+        b = await _seed(svc, confirmed=False, turns=script_b)
+        await svc.confirm_draft(a.id)
+        await svc.confirm_draft(b.id)
+        await svc.create_message(_message_req())
+        return b.id
+
+    b_id, _, messages, _ = _run(scenario)
+    prompt = calls[0]["messages"][0]["content"]
+    assert script_b[0] in prompt and SCRIPT[0] not in prompt
+    assert (messages[0].draft_id, messages[0].direction) == (b_id, script_b[0])
+
+
+def test_locked_confirm_leaves_nothing_behind(monkeypatch):
+    _fake_call(monkeypatch, [_ok("여기서 마무리할게요. 고마웠어요.")])
+
+    async def scenario(svc):
+        await _seed(svc, confirmed=True)
+        other = await _seed(svc, confirmed=False)
+        await svc.create_message(_message_req())
+        with pytest.raises(DraftLocked):
+            await svc.confirm_draft(other.id)
+        return other.id
+
+    other_id, drafts, messages, _ = _run(scenario)
+    assert {d.id: d.status for d in drafts}[other_id] == "PENDING"  # 확정이 바뀌지 않았다
+    assert len(messages) == 1  # 실패한 호출이 메시지를 만들지 않았다
+
+
+def test_create_message_without_confirmed_draft_leaves_no_message():
+    async def scenario(svc):
+        await _seed(svc, confirmed=False)
+        with pytest.raises(NoConfirmedDraft):
+            await svc.create_message(_message_req())
+        return "raised"
+
+    res, _, messages, _ = _run(scenario)
+    assert res == "raised" and messages == []

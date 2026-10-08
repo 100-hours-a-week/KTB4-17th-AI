@@ -66,15 +66,19 @@ class ChatEndRepository:
         )
         return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    # 스크립트를 확정한다. 같은 방·위임의 기존 CONFIRMED 를 먼저 PENDING 으로 내려 부분 유니크 인덱스를 지킨다
-    async def confirm_draft(self, draft: ChatEndDraft) -> ChatEndDraft:
-        # 같은 위임의 행을 id 순으로 잠가 PostgreSQL 에서 동시 확정을 직렬화한다 (SQLite 는 무시)
+    async def lock_delegation(self, room_id: int, delegation_id: int) -> None:
+        """같은 방·위임의 스크립트 행을 id 순으로 잠근다. confirm_draft 와 create_message 가 같은 잠금을 잡아 서로를 직렬화한다.
+        트랜잭션이 끝날 때(라우트가 commit 할 때)까지 유지된다. PostgreSQL 에서만 의미가 있고 SQLite 는 무시한다."""
         await self.db.execute(
             select(ChatEndDraft.id)
-            .where(ChatEndDraft.room_id == draft.room_id, ChatEndDraft.delegation_id == draft.delegation_id)
+            .where(ChatEndDraft.room_id == room_id, ChatEndDraft.delegation_id == delegation_id)
             .order_by(ChatEndDraft.id)  # 잠금 순서를 고정해 교착을 막는다
             .with_for_update()
         )
+
+    # 스크립트를 확정한다. 같은 방·위임의 기존 CONFIRMED 를 먼저 PENDING 으로 내려 부분 유니크 인덱스를 지킨다
+    async def confirm_draft(self, draft: ChatEndDraft) -> ChatEndDraft:
+        await self.lock_delegation(draft.room_id, draft.delegation_id)
         await self.db.refresh(draft)
         if draft.status == DraftStatus.CONFIRMED.value:  # 이미 확정됐으면 confirmed_at 을 건드리지 않는다
             return draft

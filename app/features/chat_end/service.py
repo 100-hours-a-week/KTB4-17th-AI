@@ -133,6 +133,9 @@ class ChatEndService:
         draft = await self.repo.get_draft(draft_id)
         if draft is None:
             raise DraftNotFound(draft_id)
+        # 같은 위임의 답장 생성·다른 확정과 직렬화한 뒤 잠금 시점의 최신 상태로 판단한다
+        await self.repo.lock_delegation(draft.room_id, draft.delegation_id)
+        await self.db.refresh(draft)
         if draft.status != DraftStatus.CONFIRMED.value:  # 이미 확정이면 아무것도 하지 않는다(멱등)
             started = await self.repo.count_successful_messages(
                 room_id=draft.room_id, delegation_id=draft.delegation_id
@@ -145,6 +148,8 @@ class ChatEndService:
         )
 
     async def create_message(self, req: ChatEndMessageRequest) -> ChatEndMessageResponse:
+        # 같은 위임의 동시 답장·확정을 직렬화한다. 라우트가 commit 할 때까지 잠금을 유지해 턴 번호 중복과 스크립트 중도 교체를 막는다
+        await self.repo.lock_delegation(req.room_id, req.delegation_id)
         draft = await self.repo.get_confirmed_draft(req.room_id, req.delegation_id)
         if draft is None:
             raise NoConfirmedDraft(req.delegation_id)

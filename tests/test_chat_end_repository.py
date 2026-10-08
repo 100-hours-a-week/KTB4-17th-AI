@@ -118,6 +118,19 @@ def test_confirm_draft_twice_keeps_original_confirmed_at():
     asyncio.run(with_db(body))
 
 
+def test_lock_delegation_runs_and_is_a_noop_without_rows():
+    async def body(factory):
+        async with factory() as db:
+            repo = ChatEndRepository(db)
+            await repo.lock_delegation(5001, 7001)  # 행이 없어도 에러 없이 끝난다
+            draft = await _draft(repo)
+            await repo.lock_delegation(5001, 7001)  # 행이 있어도 상태를 바꾸지 않는다
+            await repo.lock_delegation(5001, 9999)
+            assert draft.status == "PENDING"
+
+    asyncio.run(with_db(body))
+
+
 def test_same_delegation_in_different_rooms_is_independent():
     async def body(factory):
         async with factory() as db:
