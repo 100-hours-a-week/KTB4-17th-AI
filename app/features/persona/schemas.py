@@ -353,6 +353,107 @@ class Summary(BaseModel):
     content: str = Field(max_length=200)
 
 
+# ══ 실제 대화에서 관찰한 대화 스타일 (persona_extraction 이 채운다) ═══════════
+
+SPEECH_LEVELS = ("존댓말", "반말", "혼용")
+# 실제 대화로 보정하는 점수 — 메신저 대화에서 드러나는 것만. 갈등·이상형·연락 빈도는 대화만으로 판단하기 어렵다
+REFLECTED_SCORES = ("disclosure", "positivity", "openness", "assurances")
+_STYLE_TEXT_MAX = 80
+_STYLE_SUMMARY_MAX = 200
+
+
+class ConversationStyle(BaseModel):
+    """실제 대화 발화에서 뽑은 말투·대화 습관. 모든 필드는 선택 — 근거가 없으면 비워 둔다.
+
+    LLM 이 형식을 조금 어겨도 추출 전체가 실패하지 않게, 검증 대신 정리(before validator)한다."""
+
+    model_config = {"extra": "ignore"}
+
+    # 말투·말버릇
+    speech_level: str | None = None  # 존댓말 | 반말 | 혼용
+    frequent_phrases: list[str] = Field(default_factory=list)  # 실제 문구, 최대 10개 (개인정보는 추출 서비스가 거름)
+    endings: list[str] = Field(default_factory=list)  # 어미 습관: "~요", "~용"
+    interjections: list[str] = Field(default_factory=list)  # 감탄사·추임새: "헐", "오"
+    slang: list[str] = Field(default_factory=list)  # 줄임말·신조어: "ㄹㅇ"
+    phrase_weights: dict[str, float] = Field(
+        default_factory=dict
+    )  # 어미·단어별 수치 가중치 (0.0~1.0, 시간 감쇠 및 퇴출 관리)
+    punctuation: str | None = None  # 문장부호 습관
+    laughter: str | None = None  # 웃음 표현과 빈도
+    # 대화 방식
+    message_length: str | None = None
+    question_rate: str | None = None
+    reaction: str | None = None
+    self_talk: str | None = None
+    humor: str | None = None
+    initiative: str | None = None
+    summary: str | None = None  # 한 줄 요약 1~2문장
+
+    @field_validator("speech_level", mode="before")
+    @classmethod
+    def _known_level(cls, v: object) -> object:
+        return v if v in SPEECH_LEVELS else None
+
+    @field_validator("frequent_phrases", "endings", "interjections", "slang", mode="before")
+    @classmethod
+    def _str_list(cls, v: object) -> list[str]:
+        if not isinstance(v, list):
+            return []
+        return [x.strip() for x in v if isinstance(x, str) and x.strip()]
+
+    @field_validator("phrase_weights", mode="before")
+    @classmethod
+    def _weights_dict(cls, v: object) -> dict[str, float]:
+        if not isinstance(v, dict):
+            return {}
+        out: dict[str, float] = {}
+        for k, val in v.items():
+            if isinstance(k, str) and k.strip():
+                try:
+                    num = float(val)
+                    out[k.strip()] = max(0.0, min(1.0, round(num, 3)))
+                except (ValueError, TypeError):
+                    continue
+        return out
+
+    @field_validator(
+        "punctuation",
+        "laughter",
+        "message_length",
+        "question_rate",
+        "reaction",
+        "self_talk",
+        "humor",
+        "initiative",
+        mode="before",
+    )
+    @classmethod
+    def _short(cls, v: object) -> object:
+        return (v.strip()[:_STYLE_TEXT_MAX] or None) if isinstance(v, str) else None
+
+    @field_validator("summary", mode="before")
+    @classmethod
+    def _summary(cls, v: object) -> object:
+        return (v.strip()[:_STYLE_SUMMARY_MAX] or None) if isinstance(v, str) else None
+
+
+class StyleExtraction(BaseModel):
+    """StyleAgent 의 원본 출력. 점수는 대화에서 근거를 찾은 것만 — 범위를 벗어나면 그 점수만 버린다."""
+
+    model_config = {"extra": "ignore"}
+
+    style: ConversationStyle = Field(default_factory=ConversationStyle)
+    disclosure: int | None = None
+    positivity: int | None = None
+    openness: int | None = None
+    assurances: int | None = None
+
+    @field_validator(*REFLECTED_SCORES, mode="before")
+    @classmethod
+    def _in_range(cls, v: object) -> object:
+        return v if isinstance(v, int) and not isinstance(v, bool) and 0 <= v <= 100 else None
+
+
 class RawExtraction(BaseModel):
     """추출 LLM의 원본 출력. 근거를 못 찾은 차원은 키가 없다."""
 
@@ -524,7 +625,9 @@ class PersonaResponse(BaseModel):
     is_confirmed: bool = False
     confirmed_at: datetime | None = None
     mbti: str | None = None
-    source: Literal["llm", "fallback"] = "llm"  # fallback 이면 LLM 없이 규칙으로 만든 임시 초안
+    source: Literal["llm", "fallback", "practice", "kakao", "reset"] = (
+        "llm"  # practice·kakao 면 대화 추출 버전, reset 은 스타일 삭제
+    )
     # 근거 없는(직접 답하지 않은) 차원은 null — "모름". 50 으로 채우면 궁합 계산이 "중간"으로 오해한다
     scores: dict[str, int | None]
     interests: list[str] = Field(default_factory=list)
@@ -534,6 +637,8 @@ class PersonaResponse(BaseModel):
     confidence: dict[str, str] = Field(default_factory=dict)  # {차원: LOW|MEDIUM|HIGH}
     narrative: Narrative | None = None  # 점수와 모순되면 service 가 None 으로 떨어뜨림
     summaries: list[Summary] = Field(default_factory=list)  # area별 요약 카드. 최대 len(AREAS)개
+    # 실제 대화에서 관찰한 말투·대화 습관. 추출 전이거나 온보딩으로 재빌드/리셋한 버전이면 None
+    conversation_style: ConversationStyle | None = None
     accuracy: int = 0  # 0~100. confidence 가중 평균
     gaps: list[Gap] = Field(default_factory=list)  # LOW 먼저, 그다음 MEDIUM
     changes: list[Change] = Field(default_factory=list)  # 이전 버전 대비

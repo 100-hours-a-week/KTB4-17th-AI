@@ -110,6 +110,20 @@ class Settings(BaseSettings):
     simulation_migration_max_runs: int = 2
     simulation_migration_max_event_streams: int = 8
 
+    # ── 페르소나 추출 (연습대화·카카오톡 → 대화 스타일) ──────────────
+    # 한 작업에서 분석하는 최대 본인 발화 수. 최근 것부터 — 최근 말투가 지금 성격에 가깝다고 본다
+    extraction_max_utterances: int = 200
+    # 업로드 대화에서 새 본인 발화가 이보다 적으면 거절한다 (말투를 판단하기엔 부족)
+    extraction_min_utterances: int = 5
+    # 업로드 파일·텍스트 최대 크기 (바이트)
+    extraction_max_upload_bytes: int = 5 * 1024 * 1024
+    # 점수 보정 가중치 — 기존 점수 비중. 나머지(0.3)가 관찰값
+    extraction_base_weight: float = 0.7
+    # 대화 스타일 추출 LLM 타임아웃. 백그라운드 작업이라 넉넉히
+    extraction_timeout_s: float = 30.0
+    # 이 시간(분) 넘게 running 인 작업은 서버 재시작 등으로 멈춘 것으로 보고 failed 처리
+    extraction_job_stale_minutes: int = 10
+
     # ── 프로필 신뢰(대표사진 심사·얼굴 인증) ──────────────────────────
     # /test 브라우저 테스트 페이지. 운영에서는 꺼 둔다
     enable_test_ui: bool = Field(default=False, validation_alias="ENABLE_TEST_UI")
