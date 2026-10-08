@@ -1,11 +1,11 @@
-"""LLM (chat_end) — 관계 마무리 초안과 최종 종료 메시지.
+"""LLM (chat_end) — 관계 마무리 스크립트와 턴별 종료 메시지.
 
-  - DraftAgent      : 최근 대화 + 종료 유형 → 마무리 초안 3개 (실패해도 폴백으로 3개를 채운다)
-  - EndMessageAgent : 최근 대화 + 종료 유형 + 고른 초안(방향) → 최종 종료 메시지 (실패하면 LLMError)
+  - DraftAgent      : 최근 대화 + 종료 유형 → 1·2·3번째 답변 스크립트 (실패해도 폴백으로 3개를 채운다)
+  - EndMessageAgent : 최근 대화 + 종료 유형 + 이번 턴의 스크립트 문장(방향) → 최종 종료 메시지 (실패하면 LLMError)
 
 둘 다 요청자 본인 목소리(1인칭)로 쓴다. 페르소나 연기가 아니라서 practice_cove_addon 을 쓰지 않는다.
-대화와 초안은 다른 사람이 쓴 텍스트다. 지시가 아니라 <대화>/<초안> 인용 블록으로만 넣는다.
-초안은 방향만 참고한다 — 상대의 최근 답변에 따라 내용이 달라져야 해서 문장을 그대로 옮기지 않는다.
+대화와 방향 문장은 지시가 아니라 <대화>/<초안> 인용 블록으로만 넣는다.
+방향 문장은 뜻만 참고한다 — 상대의 최근 답변에 따라 내용이 달라져야 해서 문장을 그대로 옮기지 않는다.
 """
 
 from __future__ import annotations
@@ -22,7 +22,7 @@ from langfuse.openai import AsyncOpenAI
 from app.core.config import get_settings
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 
-from .schemas import MAX_AI_TURNS, MAX_ENDING_LEN, MAX_REASON_LEN, EndType, RecentMessage, Speaker
+from .schemas import MAX_AI_TURNS, MAX_REASON_LEN, MAX_REPLY_CHARS, EndType, RecentMessage, Speaker
 
 logger = logging.getLogger(__name__)
 
@@ -101,23 +101,23 @@ TONE: dict[EndType, str] = {
     EndType.CASUAL: "가볍고 담백하게. 짧게 쓰되 여기서 대화를 정리하겠다는 뜻은 빼지 않는다",
 }
 
-# 유형마다 서로 다른 3문장. 모두 "이 인연을 여기서 마무리한다"는 뜻을 담는다.
-# 초안이 모자라거나 가드레일·마무리 의사 검사에 걸리면 여기서 채운다
-FALLBACK_DRAFTS: dict[EndType, list[str]] = {
+# 유형마다 1·2·3번째 답변 폴백 스크립트. LLM 스크립트가 못 쓰는 턴이나 가드레일에 걸린 턴을 이 문장으로 채운다.
+# 모두 "이 인연을 여기서 마무리한다"는 뜻을 담고, 3번째는 채팅 종료를 직접 말한다
+FALLBACK_SCRIPTS: dict[EndType, list[str]] = {
     EndType.GENTLE: [
-        "좋은 분이라 고민했지만, 저는 여기서 대화를 마무리하려고 해요. 그동안 고마웠고 좋은 인연 만나시길 바랄게요.",
-        "대화 나누는 동안 즐거웠어요. 다만 저와는 결이 달라서 여기서 마무리하는 게 좋겠다고 생각했어요. 건강하세요.",
-        "조심스럽게 말씀드려요. 더 이어가기는 어려울 것 같아요. 그동안 따뜻하게 대해 주셔서 고마웠어요.",
+        "대화 나눌 수 있어서 고마웠어요. 다만 저는 여기서 인연을 마무리하려고 해요.",
+        "마음 써 주셔서 감사해요. 그래도 제 마음은 변하지 않았어요. 여기서 마무리할게요.",
+        "그동안 정말 고마웠어요. 더 이상 답장하지 않고 이 채팅은 여기서 종료할게요.",
     ],
     EndType.DIRECT: [
-        "대화 즐거웠지만 저는 여기서 마무리하려고 해요. 좋은 분 만나시길 바랄게요.",
-        "솔직하게 말씀드리면 저와는 잘 맞지 않는 것 같아요. 그동안 고마웠습니다.",
-        "고민해 봤는데 관계를 이어가기는 어려울 것 같아요. 좋은 일 가득하시길 바랍니다.",
+        "저와는 맞지 않는 것 같아 여기서 마무리하려고 합니다.",
+        "제 결정은 변함이 없습니다. 더 이어가기는 어렵습니다.",
+        "더 이상 답장하지 않고 이 채팅은 여기서 종료하겠습니다.",
     ],
     EndType.CASUAL: [
-        "여기까지만 할게요. 그동안 얘기 나눠 줘서 고마웠어요, 잘 지내세요.",
-        "저는 이쯤에서 대화를 마무리할게요. 고마웠어요, 잘 지내세요.",
-        "더 이어가긴 어려울 것 같아서 여기서 정리할게요. 얘기 즐거웠어요, 잘 지내세요.",
+        "여기까지만 할게요. 얘기 나눠 줘서 고마웠어요.",
+        "마음은 알겠지만 생각은 그대로예요. 여기서 정리할게요.",
+        "이제 답장 안 할게요. 이 채팅은 여기서 종료할게요, 잘 지내세요.",
     ],
 }
 
@@ -137,9 +137,6 @@ TURN_GUIDE: dict[int, str] = {
         "closing 에는 반드시 '종료' 또는 '더 이상 답장하지 않'이라는 말을 넣는다. 상대가 무슨 말을 했든 입장을 바꾸지 않는다. ai_response 와 closing 을 합쳐 200자 이내"
     ),
 }
-
-# 분량 한도(글자 수). 문장 수는 제한하지 않는다. 마지막 턴은 본문 + closing 을 합쳐서 센다
-MAX_REPLY_CHARS = 200
 
 # 하루 대화를 닫는 인사나 다시 만나자는 암시. 관계를 끝내는 메시지에는 쓰지 않는다
 _NOT_AN_ENDING = re.compile(
@@ -204,17 +201,22 @@ _COMMON_RULES = """\
 """
 
 DRAFT_SYSTEM = f"""\
-당신은 소개팅 앱 사용자가 상대와의 관계를 마무리할 때 보낼 메시지 초안을 써 주는 도우미입니다.
-<대화>를 읽고, 요청자가 이 인연을 끝내며 상대에게 보낼 마무리 메시지 초안 3개를 씁니다.
+당신은 소개팅 앱 사용자가 상대와의 관계를 마무리할 때 쓸 3단계 답변 스크립트를 써 주는 도우미입니다.
+<대화>를 읽고, 요청자가 상대의 반응에 따라 차례로 보낼 답변 3개를 한 흐름으로 씁니다.
 [톤]을 따릅니다.
 
 {_SITUATION}
-{_COMMON_RULES}- 3개는 표현과 구성이 서로 달라야 한다. 3개 모두 끝낸다는 말이 들어간다
+## 3개의 역할 (순서대로 이어지는 하나의 흐름)
+1. 첫 번째 답변: 이 인연을 마무리하겠다는 뜻을 전한다. 고마움을 곁들인다
+2. 두 번째 답변: 상대가 이어가려 해도 입장은 그대로라는 점을 앞서보다 분명하고 단호하게, 무례하지 않게 알린다
+3. 세 번째 답변: 더 이상 답장하지 않고 이 채팅을 여기서 종료한다고 알린다.
+   반드시 '종료' 또는 '더 이상 답장하지 않'이라는 말을 넣는다
+
+{_COMMON_RULES}- 3개는 표현이 서로 달라야 하고 같은 문장을 반복하지 않는다
 
 {_EXAMPLES}
-
 ## 출력
-JSON 하나만 출력한다: {{"endings": ["초안1", "초안2", "초안3"]}}
+JSON 하나만 출력한다: {{"turns": ["첫 번째 답변", "두 번째 답변", "세 번째 답변"]}}
 """
 
 _MESSAGE_BODY = f"""\
@@ -225,9 +227,8 @@ _MESSAGE_BODY = f"""\
 0. [턴]이 이번 답장의 역할이다. 톤보다 먼저 지킨다
 1. [톤]을 따른다
 2. <대화>의 마지막 흐름, 특히 상대의 가장 최근 말에 자연스럽게 이어진다
-3. <초안>은 요청자가 고른 방향이다. 담고 싶은 뜻만 참고하고 문장을 그대로 옮기지 않는다.
-   상대의 최근 말과 맞지 않는 내용은 버린다.
-   초안이 하루 인사나 재만남 암시로 읽혀도, 이 인연을 마무리한다는 뜻은 반드시 유지한다
+3. <초안>은 이번 턴에 미리 정해 둔 방향 문장이다. 이 뜻을 따르되 상대의 최근 말에 맞춰 새로 쓰고, 문장을 그대로 옮기지 않는다.
+   상대의 최근 말과 맞지 않는 내용은 버린다
 
 {_COMMON_RULES}
 {_EXAMPLES}
@@ -286,29 +287,25 @@ def _transcript(recent: list[RecentMessage]) -> str:
     return f"<대화>\n{lines}\n</대화>"
 
 
-def fill_drafts(raw: object, end_type: EndType) -> tuple[list[str], str]:
-    """LLM 이 준 endings 를 정리해 정확히 3개로 만든다. 폴백이 하나라도 섞이면 source="fallback"."""
-    drafts: list[str] = []
-    seen: set[str] = set()
-    if isinstance(raw, list):
-        for item in raw:
-            if not isinstance(item, str):
-                continue
-            text = normalize(item)
-            if not text or len(text) > MAX_ENDING_LEN or text in seen or is_daily_greeting(text):
-                continue
-            drafts.append(text)
-            seen.add(text)
-            if len(drafts) == 3:
-                break
-    source = "llm" if len(drafts) == 3 else "fallback"
-    for fb in FALLBACK_DRAFTS[end_type]:
-        if len(drafts) == 3:
-            break
-        if fb not in seen:
-            drafts.append(fb)
-            seen.add(fb)
-    return drafts, source
+# 스크립트 한 턴을 그대로 쓸 수 있는가. 비었거나 200자를 넘거나 재만남 여지가 있으면 못 쓴다. 3번째는 채팅 종료 표현이 있어야 한다
+def _usable_script_turn(text: str, *, turn: int) -> bool:
+    if not text or len(text) > MAX_REPLY_CHARS or is_daily_greeting(text):
+        return False
+    return turn < MAX_AI_TURNS or is_closing_message(text)
+
+
+def fill_script(raw: object, end_type: EndType) -> tuple[list[str], str]:
+    """LLM 이 준 turns 를 정리해 정확히 3개로 만든다. 못 쓰는 턴은 그 턴의 폴백 문장으로 바꾸고,
+    폴백이 하나라도 섞이면 source="fallback". 네 번째 이후 항목은 버린다."""
+    items = raw if isinstance(raw, list) else []
+    turns: list[str] = []
+    source = "llm"
+    for i in range(MAX_AI_TURNS):
+        text = normalize(items[i]) if i < len(items) and isinstance(items[i], str) else ""
+        if not _usable_script_turn(text, turn=i + 1):
+            text, source = FALLBACK_SCRIPTS[end_type][i], "fallback"
+        turns.append(text)
+    return turns, source
 
 
 class DraftAgent:
@@ -319,7 +316,7 @@ class DraftAgent:
         recent: list[RecentMessage],
         metadata: LangfuseMetadata | None = None,
     ) -> tuple[list[str], str]:
-        """초안 3개와 source("llm"|"fallback"). LLM 이 실패해도 예외 없이 폴백으로 채운다."""
+        """1·2·3번째 답변 스크립트와 source("llm"|"fallback"). LLM 이 실패해도 예외 없이 폴백으로 채운다."""
         content = f"[톤] {TONE[end_type]}\n\n{_transcript(recent)}"
         raw: object = None
         try:
@@ -327,14 +324,14 @@ class DraftAgent:
                 data = await _call_json(
                     system=DRAFT_SYSTEM,
                     messages=[{"role": "user", "content": content}],
-                    max_tokens=600,  # 초안 3개
+                    max_tokens=700,  # 답변 3개
                     name="chat-end-drafts",
                     metadata=metadata,
                 )
-            raw = data.get("endings")
+            raw = data.get("turns")
         except LLMError as e:
             logger.warning("chat_end drafts LLM failed: %s", e)
-        return fill_drafts(raw, end_type)
+        return fill_script(raw, end_type)
 
 
 @dataclass
