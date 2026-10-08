@@ -32,9 +32,10 @@ def _now() -> datetime:
 class ChatEndDraft(Base):
     __tablename__ = "chat_end_drafts"
     __table_args__ = (
-        # 같은 위임에 CONFIRMED 는 1개만. PENDING 은 몇 개든 쌓인다
+        # 같은 방·위임에 CONFIRMED 는 1개만. PENDING 은 몇 개든 쌓인다
         Index(
             "uq_chat_end_drafts_confirmed",
+            "room_id",
             "delegation_id",
             unique=True,
             postgresql_where=text("status = 'CONFIRMED'"),
@@ -49,7 +50,7 @@ class ChatEndDraft(Base):
     end_type: Mapped[str] = mapped_column(String(16))
     turns: Mapped[list[str]] = mapped_column(JSON)  # [1번째, 2번째, 3번째] 답변
     source: Mapped[str] = mapped_column(String(8))  # llm | fallback
-    status: Mapped[str] = mapped_column(String(10), default="PENDING", index=True)  # PENDING | CONFIRMED
+    status: Mapped[str] = mapped_column(String(10), default="PENDING", server_default="PENDING")  # PENDING | CONFIRMED
     confirmed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

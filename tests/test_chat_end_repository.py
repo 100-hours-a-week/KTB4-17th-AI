@@ -85,6 +85,9 @@ def test_confirming_another_draft_demotes_the_previous_one():
             first, second = await _draft(repo), await _draft(repo)
             await repo.confirm_draft(first)
             await repo.confirm_draft(second)
+            # 커밋 전에도 세션 안의 객체가 갱신돼 있어야 한다
+            assert first.status == "PENDING" and first.confirmed_at is None
+            assert second.status == "CONFIRMED"
             await db.commit()
 
         async with factory() as db:
@@ -95,6 +98,38 @@ def test_confirming_another_draft_demotes_the_previous_one():
             assert confirmed is not None and confirmed.confirmed_at is not None
             demoted = next(r for r in rows.values() if r.status == "PENDING")
             assert demoted.confirmed_at is None
+
+    asyncio.run(with_db(body))
+
+
+def test_confirm_draft_twice_keeps_original_confirmed_at():
+    async def body(factory):
+        async with factory() as db:
+            repo = ChatEndRepository(db)
+            draft = await _draft(repo)
+            await repo.confirm_draft(draft)
+            first_confirmed_at = draft.confirmed_at
+            assert first_confirmed_at is not None
+            await repo.confirm_draft(draft)
+            assert draft.status == "CONFIRMED"
+            # SQLite 는 refresh 시 tz 정보를 잃으므로 tz 를 떼고 같은 시각인지 비교한다
+            assert draft.confirmed_at.replace(tzinfo=None) == first_confirmed_at.replace(tzinfo=None)
+
+    asyncio.run(with_db(body))
+
+
+def test_same_delegation_in_different_rooms_is_independent():
+    async def body(factory):
+        async with factory() as db:
+            repo = ChatEndRepository(db)
+            a = await _draft(repo, delegation_id=7001, room_id=5001)
+            b = await _draft(repo, delegation_id=7001, room_id=5002)
+            await repo.confirm_draft(a)
+            await repo.confirm_draft(b)
+            await db.commit()
+            assert (await repo.get_confirmed_draft(5001, 7001)).id == a.id
+            assert (await repo.get_confirmed_draft(5002, 7001)).id == b.id
+            assert a.status == "CONFIRMED" and b.status == "CONFIRMED"
 
     asyncio.run(with_db(body))
 

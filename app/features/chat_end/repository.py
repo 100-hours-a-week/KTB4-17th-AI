@@ -8,6 +8,7 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import ChatEndDraft, ChatEndMessage
+from .schemas import DraftStatus
 
 
 class ChatEndRepository:
@@ -46,7 +47,7 @@ class ChatEndRepository:
             end_type=end_type,
             turns=turns,
             source=source,
-            status="PENDING",
+            status=DraftStatus.PENDING.value,
         )
         self.db.add(row)
         await self.db.flush()
@@ -61,22 +62,33 @@ class ChatEndRepository:
         stmt = select(ChatEndDraft).where(
             ChatEndDraft.room_id == room_id,
             ChatEndDraft.delegation_id == delegation_id,
-            ChatEndDraft.status == "CONFIRMED",
+            ChatEndDraft.status == DraftStatus.CONFIRMED.value,
         )
-        return (await self.db.execute(stmt)).scalars().first()
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
-    # 스크립트를 확정한다. 같은 위임의 기존 CONFIRMED 를 먼저 PENDING 으로 내려 부분 유니크 인덱스를 지킨다
+    # 스크립트를 확정한다. 같은 방·위임의 기존 CONFIRMED 를 먼저 PENDING 으로 내려 부분 유니크 인덱스를 지킨다
     async def confirm_draft(self, draft: ChatEndDraft) -> ChatEndDraft:
+        # 같은 위임의 행을 id 순으로 잠가 PostgreSQL 에서 동시 확정을 직렬화한다 (SQLite 는 무시)
+        await self.db.execute(
+            select(ChatEndDraft.id)
+            .where(ChatEndDraft.room_id == draft.room_id, ChatEndDraft.delegation_id == draft.delegation_id)
+            .order_by(ChatEndDraft.id)  # 잠금 순서를 고정해 교착을 막는다
+            .with_for_update()
+        )
+        await self.db.refresh(draft)
+        if draft.status == DraftStatus.CONFIRMED.value:  # 이미 확정됐으면 confirmed_at 을 건드리지 않는다
+            return draft
         await self.db.execute(
             update(ChatEndDraft)
             .where(
+                ChatEndDraft.room_id == draft.room_id,
                 ChatEndDraft.delegation_id == draft.delegation_id,
-                ChatEndDraft.status == "CONFIRMED",
+                ChatEndDraft.status == DraftStatus.CONFIRMED.value,
                 ChatEndDraft.id != draft.id,
             )
-            .values(status="PENDING", confirmed_at=None)
+            .values(status=DraftStatus.PENDING.value, confirmed_at=None)
         )
-        draft.status = "CONFIRMED"
+        draft.status = DraftStatus.CONFIRMED.value
         draft.confirmed_at = datetime.now(UTC)
         await self.db.flush()
         return draft
