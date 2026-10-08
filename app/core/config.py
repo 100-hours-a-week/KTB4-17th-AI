@@ -98,6 +98,8 @@ class Settings(BaseSettings):
     onboarding_first_turn_timeout_s: float = 8.0
     # 연습 대화(practice) 실시간 스트리밍 답변 전체 타임아웃
     practice_timeout_s: float = 12.0
+    # 채팅 종료 초안 3개(JSON)·최종 종료 메시지 1회 호출 타임아웃
+    chat_end_timeout_s: float = 10.0
     # 시뮬레이션 대본+리포트 1회 호출 타임아웃 (SimulationAgent.run)
     simulation_script_timeout_s: float = 120.0
     # 마이그레이션 리포트 서술만 생성하는 호출 타임아웃

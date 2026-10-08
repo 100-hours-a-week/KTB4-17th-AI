@@ -39,13 +39,8 @@ evals/review/langfuse_prod_eval_2026-10-02.html
 .idea/
 .vscode/
 
-# docs는 기본적으로 로컬 산출물로 두되, 운영 문서 두 개는 버전 관리한다.
-docs/*
-!docs/v1docs/
-docs/v1docs/*
-!docs/v1docs/langfuse-adoption-plan.md
-!docs/v1docs/langfuse-metadata-guide.md
-!docs/v2docs/
+# docs는 모두 로컬 산출물로 두고 버전 관리하지 않는다.
+docs/
 
 # 얼굴 인증 런타임 모델은 scripts/download_models.py 로 받는다
 models/*
