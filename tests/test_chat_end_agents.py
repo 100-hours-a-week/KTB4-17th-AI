@@ -240,3 +240,128 @@ def test_last_turn_appends_closing_sentence_after_one_retry_and_earlier_turns_ar
     two = asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=2))
     assert two.ai_response == "저는 여기서 마무리하는 게 좋겠어요."
     assert len(calls) == 1
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "마지막으로, 더 이상 이어가기는 어려울 것 같아요.",
+        "저는 여기서 대화를 마무리하는 게 좋겠어요.",
+        "마지막으로 말씀드려요. 감사했습니다.",
+    ],
+)
+def test_vague_endings_do_not_count_as_closing(text):
+    assert not agents.is_closing_message(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "이 채팅은 여기서 종료할게요.",
+        "더 이상 답장하지 않을게요.",
+        "대화는 여기서 끝낼게요.",
+        "연락도 드리지 않을게요.",
+    ],
+)
+def test_explicit_closing_words_count(text):
+    assert agents.is_closing_message(text)
+
+
+def test_closing_suffix_does_not_repeat_marjimak(monkeypatch):
+    weak = json.dumps({"ai_response": "마지막으로 인사드릴게요. 감사했습니다.", "end_reason": "r"}, ensure_ascii=False)
+    _fake_call(monkeypatch, [weak, weak])
+    result = asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=3))
+    assert result.ai_response == f"마지막으로 인사드릴게요. 감사했습니다. {agents.CLOSING_SUFFIX_PLAIN}"
+    assert result.ai_response.count("마지막") == 1
+
+
+def _reply(body, closing=None):
+    data = {"ai_response": body, "end_reason": "r"}
+    if closing is not None:
+        data["closing"] = closing
+    return json.dumps(data, ensure_ascii=False)
+
+
+def test_sentence_count_is_not_limited_only_chars():
+    three_short = "여기서 마무리할게요. 그동안 고마웠어요. 앞으로 좋은 일만 있길 바랄게요."
+    assert agents.message_problems(three_short, ai_turn=1, copies=set()) == []
+    assert agents.message_problems("가" * 201, ai_turn=1, copies=set()) == ["length"]
+    assert agents.message_problems("가" * 200, ai_turn=1, copies=set()) == []
+    assert agents.MAX_REPLY_CHARS == 200
+
+
+def test_last_turn_uses_final_prompt_and_merges_closing_field(monkeypatch):
+    calls = _fake_call(
+        monkeypatch, [_reply("제 마음은 그대로예요.", "더 이상 답장하지 않고 이 채팅은 여기서 종료할게요.")]
+    )
+    result = asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=3))
+    assert result.ai_response == "제 마음은 그대로예요. 더 이상 답장하지 않고 이 채팅은 여기서 종료할게요."
+    assert len(calls) == 1  # 재작성 없이 통과
+    assert calls[0]["system"] == agents.MESSAGE_SYSTEM_FINAL
+    assert '"closing"' in agents.MESSAGE_SYSTEM_FINAL and '"closing"' not in agents.MESSAGE_SYSTEM
+
+
+@pytest.mark.parametrize("turn", [1, 2])
+def test_early_turns_use_base_prompt_without_closing_field(monkeypatch, turn):
+    calls = _fake_call(monkeypatch, [_reply("여기서 마무리할게요. 고마웠어요.")])
+    asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=turn))
+    assert calls[0]["system"] == agents.MESSAGE_SYSTEM
+
+
+def test_closing_field_missing_or_weak_triggers_one_retry_then_suffix(monkeypatch):
+    calls = _fake_call(
+        monkeypatch, [_reply("여기서 마무리할게요.", "마지막으로 인사드려요."), _reply("저는 여기서 마무리할게요.")]
+    )
+    result = asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=3))
+    assert len(calls) == 2
+    assert result.ai_response == f"저는 여기서 마무리할게요. {agents.CLOSING_SUFFIX}"
+
+
+def test_too_long_message_is_rewritten_once(monkeypatch):
+    long_ = ("여기서 마무리할게요. " + "그동안 정말 고마웠어요. " * 20).strip()
+    calls = _fake_call(monkeypatch, [_reply(long_), _reply("여기서 마무리할게요. 고마웠어요.")])
+    result = asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=1))
+    assert result.ai_response == "여기서 마무리할게요. 고마웠어요."
+    assert len(calls) == 2
+    assert agents.LENGTH_NOTICE in calls[1]["messages"][0]["content"]
+
+
+def test_too_long_after_rewrite_is_accepted_not_truncated(monkeypatch):
+    long_ = ("여기서 마무리할게요. " + "그동안 정말 고마웠어요. " * 20).strip()
+    calls = _fake_call(monkeypatch, [_reply(long_), _reply(long_)])
+    result = asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=2))
+    assert result.ai_response == long_
+    assert len(calls) == 2
+
+
+def test_multiple_problems_are_fixed_with_a_single_rewrite(monkeypatch):
+    # 하루 인사 + 길이 초과 → 사유를 모두 담아 한 번만 다시 쓴다 (예전에는 순차로 재작성했다)
+    bad = "오늘 즐거웠어요. 다음에 또 뵐 수 있으면 좋겠네요. 좋은 하루 보내세요. " + "그동안 정말 고마웠어요. " * 15
+    calls = _fake_call(monkeypatch, [_reply(bad), _reply("여기서 마무리할게요. 고마웠어요.")])
+    result = asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=1))
+    assert result.ai_response == "여기서 마무리할게요. 고마웠어요."
+    assert len(calls) == 2
+    content = calls[1]["messages"][0]["content"]
+    assert agents.GREETING_NOTICE in content and agents.LENGTH_NOTICE in content
+
+
+def test_worse_rewrite_is_not_adopted(monkeypatch):
+    # 원문은 길이만 문제, 재작성은 하루 인사가 되면 원문을 쓴다
+    long_ = ("여기서 마무리할게요. " + "그동안 정말 고마웠어요. " * 20).strip()
+    worse = "다음에 또 뵐 수 있으면 좋겠네요."
+    _fake_call(monkeypatch, [_reply(long_), _reply(worse)])
+    result = asyncio.run(EndMessageAgent().generate(end_type=EndType.GENTLE, recent=RECENT, endings=["x"], ai_turn=1))
+    assert result.ai_response == long_
+
+
+def test_turn_guides_have_no_sentence_count_but_200_chars():
+    assert "문장" not in agents.TURN_GUIDE[1].replace("마지막", "") or "정확히" not in agents.TURN_GUIDE[1]
+    assert all("정확히 2문장" not in g for g in agents.TURN_GUIDE.values())
+    assert all("200자" in g for g in agents.TURN_GUIDE.values())
+    assert "closing" in agents.TURN_GUIDE[3]
+
+
+def test_prompts_say_only_two_participants():
+    assert "요청자와 상대 둘뿐" in agents.DRAFT_SYSTEM
+    assert "요청자와 상대 둘뿐" in agents.MESSAGE_SYSTEM
+    assert "요청자와 상대 둘뿐" in agents.MESSAGE_SYSTEM_FINAL

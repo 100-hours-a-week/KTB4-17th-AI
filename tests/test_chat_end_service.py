@@ -166,7 +166,7 @@ def test_turn_count_increases_and_third_turn_is_final(monkeypatch):
 
     async def fake_call(**kwargs):
         prompts.append(kwargs["messages"][0]["content"])
-        return _ok(f"마지막 답장 {len(prompts)}")
+        return _ok(f"마지막으로 더 이상 답장하지 않을게요 {len(prompts)}")
 
     monkeypatch.setattr(agents, "_call", fake_call)
 
