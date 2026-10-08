@@ -16,7 +16,7 @@ from app.features.chat_end.schemas import (
     DraftStatus,
     EndType,
 )
-from app.features.chat_end.service import ChatEndService, DraftLocked, DraftNotFound, NoConfirmedDraft
+from app.features.chat_end.service import ChatEndService, DraftLocked, DraftNotFound, EndTypeMismatch, NoConfirmedDraft
 
 RECENT = [
     {"speaker": "REQUESTER", "content": "요즘 바쁘신가 봐요."},
@@ -60,24 +60,24 @@ def _drafts_req(end_type="GENTLE", delegation_id=7001):
     )
 
 
-def _message_req(delegation_id=7001):
+def _message_req(delegation_id=7001, end_type="GENTLE"):
     return ChatEndMessageRequest(
         room_id=5001,
         delegation_id=delegation_id,
         user_id="user-1",
         target_user_id="user-2",
-        end_type="GENTLE",
+        end_type=end_type,
         recent_messages=RECENT,
     )
 
 
-async def _seed(svc, *, delegation_id=7001, confirmed=True, turns=None):
+async def _seed(svc, *, delegation_id=7001, confirmed=True, turns=None, end_type="GENTLE"):
     """확정(또는 대기) 스크립트를 DB 에 직접 만든다."""
     row = await svc.repo.save_draft(
         room_id=5001,
         delegation_id=delegation_id,
         requester_user_id="user-1",
-        end_type="GENTLE",
+        end_type=end_type,
         turns=list(turns or SCRIPT),
         source="llm",
     )
@@ -505,3 +505,30 @@ def test_create_message_without_confirmed_draft_leaves_no_message():
 
     res, _, messages, _ = _run(scenario)
     assert res == "raised" and messages == []
+
+
+def test_create_message_with_mismatched_end_type_is_rejected_without_llm_call(monkeypatch):
+    calls = _fake_call(monkeypatch, [])
+
+    async def scenario(svc):
+        await _seed(svc, end_type="GENTLE")
+        with pytest.raises(EndTypeMismatch) as exc:
+            await svc.create_message(_message_req(end_type="DIRECT"))
+        return exc.value.args
+
+    args, _, messages, _ = _run(scenario)
+    assert args == ("GENTLE", "DIRECT")
+    assert calls == []  # LLM 을 부르지 않았다
+    assert messages == []  # 실패 행도 남기지 않았다
+
+
+def test_create_message_with_matching_direct_end_type_works(monkeypatch):
+    calls = _fake_call(monkeypatch, [_ok("여기서 마무리할게요. 고마웠어요.")])
+
+    async def scenario(svc):
+        await _seed(svc, end_type="DIRECT")
+        return await svc.create_message(_message_req(end_type="DIRECT"))
+
+    res, _, messages, _ = _run(scenario)
+    assert res.status is ChatEndStatus.SUCCESS
+    assert len(calls) == 1 and messages[0].end_type == "DIRECT"
