@@ -24,6 +24,7 @@ from langfuse.openai import AsyncOpenAI
 from pydantic import ValidationError  # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import llm_retry
 from app.core.config import get_settings
 from app.core.guardrail import (
     GuardrailContext,
@@ -85,29 +86,44 @@ async def _call(
     name: str = "persona-llm-call",
     metadata: LangfuseMetadata | None = None,
 ) -> str:
+    """타임아웃·요청 한도·서버 오류·빈 응답이면 llm_retry 규칙대로 다시 보낸다. timeout 은 시도마다."""
     settings = get_settings()
     client = _get_client()
     payload = [{"role": "system", "content": system}, *messages]
-    try:
-        async with asyncio.timeout(timeout):
-            resp = await client.chat.completions.create(
-                name=name,
-                model=settings.llm_model,
-                messages=payload,  # type: ignore[arg-type]
-                max_tokens=max_tokens,
-                metadata=metadata,
-            )
-    except TimeoutError as e:
-        raise LLMError(f"timeout after {timeout}s") from e
-    except Exception as e:
-        raise LLMError(str(e)) from e
+    total = llm_retry.attempts()
+    for attempt in range(1, total + 1):
+        try:
+            async with asyncio.timeout(timeout):
+                resp = await client.chat.completions.create(
+                    name=name,
+                    model=settings.llm_model,
+                    messages=payload,  # type: ignore[arg-type]
+                    max_tokens=max_tokens,
+                    metadata=metadata,
+                )
+        except Exception as e:
+            error = LLMError(f"timeout after {timeout}s") if isinstance(e, TimeoutError) else LLMError(str(e))
+            if attempt < total and llm_retry.is_retryable(e):
+                await _before_retry(name, attempt, error)
+                continue
+            raise error from e
 
-    text = ""
-    if resp.choices:
-        text = (resp.choices[0].message.content or "").strip()
-    if not text:
+        text = ""
+        if resp.choices:
+            text = (resp.choices[0].message.content or "").strip()
+        if text:
+            return text
+        if attempt < total:
+            await _before_retry(name, attempt, LLMError("empty response"))
+            continue
         raise LLMError("empty response")
-    return text
+    raise AssertionError("unreachable")  # 마지막 시도는 return 하거나 raise 한다
+
+
+async def _before_retry(name: str, attempt: int, error: LLMError) -> None:
+    logger.warning("%s attempt %d failed (%s), retrying", name, attempt, error)
+    llm_retry.record_retry(name=name, attempt=attempt, reason=str(error))
+    await asyncio.sleep(llm_retry.RETRY_BACKOFF_S)
 
 
 """

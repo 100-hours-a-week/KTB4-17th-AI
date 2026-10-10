@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     )
 
     # ── 기능별 LLM 요청 제한 시간(초) ──────────────────────────
+    # 타임아웃·요청 한도·서버 오류로 실패한 LLM 호출을 다시 보내는 횟수 (app/core/llm_retry.py).
+    # 아래 타임아웃은 시도마다 새로 적용된다 — 최악의 경우 대기 시간이 (1 + 이 값) 배가 된다
+    llm_retry_attempts: int = Field(default=1, ge=0, validation_alias="LLM_RETRY_ATTEMPTS")
     # 온보딩 태그 추출 타임아웃
     # 1.5초였을 때 운영 태깅 호출이 전부 끊겼다 (#80). 답마다 다음 질문 전에 도는 호출이라 너무 늘리지는 않는다
     onboarding_tag_timeout_s: float = 4.0
