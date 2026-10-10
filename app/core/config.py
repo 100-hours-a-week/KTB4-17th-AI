@@ -88,19 +88,21 @@ class Settings(BaseSettings):
     # 아래 타임아웃은 시도마다 새로 적용된다 — 최악의 경우 대기 시간이 (1 + 이 값) 배가 된다
     llm_retry_attempts: int = Field(default=1, ge=0, validation_alias="LLM_RETRY_ATTEMPTS")
     # 온보딩 태그 추출 타임아웃
-    # 1.5초였을 때 운영 태깅 호출이 전부 끊겼다 (#80). 답마다 다음 질문 전에 도는 호출이라 너무 늘리지는 않는다
-    onboarding_tag_timeout_s: float = 4.0
+    # 1.5초였을 때 운영 태깅 호출이 전부 끊겼다 (#80). 4초로도 LLM 이 느린 순간엔 끊겨 15초로 늘렸다.
+    # 이 시간이 지나면 사용자는 다음 질문으로 넘어가고, 태깅은 뒤에서 계속 돌아 /build 재태깅이 이어받는다
+    onboarding_tag_timeout_s: float = 15.0
     # /build 때 온보딩 중 실패한 답을 다시 태깅하는 타임아웃. 결과를 기다리는 단계라 더 넉넉히
-    persona_retag_timeout_s: float = 8.0
-    # 2턴 이후 질문 생성(220토큰). 2.5초였을 때 운영에서 정확히 2.50초에 끊겨 기본 질문으로 떨어졌다 (#87)
-    onboarding_phrase_timeout_s: float = 5.0
+    persona_retag_timeout_s: float = 20.0
+    # 2턴 이후 질문 생성(220토큰). 2.5초였을 때 운영에서 정확히 2.50초에 끊겨 기본 질문으로 떨어졌다 (#87).
+    # 5초로도 LLM 이 느린 순간엔 끊겨 15초로 늘렸다
+    onboarding_phrase_timeout_s: float = 15.0
     # 페르소나 프로필 종합 추출 타임아웃
     persona_extract_timeout_s: float = 15.0
     # 온보딩 첫 턴(5개 항목 JSON, 450토큰). 일반 턴과 같은 2.5초로는 운영에서 매번 템플릿으로 떨어졌다 (#82).
     # 온보딩을 시작할 때 한 번만 기다리는 호출이라 넉넉히
-    onboarding_first_turn_timeout_s: float = 8.0
+    onboarding_first_turn_timeout_s: float = 20.0
     # 연습 대화(practice) 실시간 스트리밍 답변 전체 타임아웃
-    practice_timeout_s: float = 12.0
+    practice_timeout_s: float = 15.0
     # 채팅 종료 초안 3개(JSON)·최종 종료 메시지 1회 호출 타임아웃
     chat_end_timeout_s: float = 10.0
     # 시뮬레이션 대본+리포트 1회 호출 타임아웃 (SimulationAgent.run)
