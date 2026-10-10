@@ -19,6 +19,7 @@ from functools import lru_cache
 from langfuse import get_client
 from langfuse.openai import AsyncOpenAI
 
+from app.core import llm_retry
 from app.core.config import get_settings
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.profile import describe
@@ -64,30 +65,45 @@ async def _stream(
     # OpenAI 규격에서는 system 프롬프트를 messages 최상단에 role="system" 메시지로 전달합니다.
     payload_messages = [{"role": "system", "content": system}, *messages]
 
-    try:
-        async with asyncio.timeout(stream_timeout):
-            # OpenRouter 및 로컬 서버로 스트리밍 요청 전송
-            stream = await client.chat.completions.create(
-                name="practice-reply",
-                model=settings.llm_model,  # .env 의 LLM_MODEL (e.g. anthropic/claude-3.5-sonnet 또는 local-model)
-                messages=payload_messages,  # type: ignore[arg-type]
-                max_tokens=max_tokens,
-                stream=True,
-                stream_options={"include_usage": True},
-                metadata=metadata,
-            )
-            # 스트림에서 청크를 받아 텍스트 조각을 yield
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-    except TimeoutError as e:
-        # 전체 스트림 시간이 타임아웃을 초과한 경우
-        raise LLMError(f"timeout after {stream_timeout}s") from e
-    except LLMError:
-        raise
-    except Exception as e:
-        # 모델 서버 연결 거부, 유효하지 않은 모델명, API Key 인증 실패 등 모든 예외를 LLMError로 통일
-        raise LLMError(str(e)) from e
+    # 재시도는 첫 조각을 내보내기 전까지만 — 이미 사용자에게 보낸 글자를 다시 보내면 답변이 겹친다
+    total = llm_retry.attempts()
+    for attempt in range(1, total + 1):
+        sent = False
+        try:
+            async with asyncio.timeout(stream_timeout):
+                # OpenRouter 및 로컬 서버로 스트리밍 요청 전송
+                stream = await client.chat.completions.create(
+                    name="practice-reply",
+                    model=settings.llm_model,  # .env 의 LLM_MODEL (e.g. anthropic/claude-3.5-sonnet 또는 local-model)
+                    messages=payload_messages,  # type: ignore[arg-type]
+                    max_tokens=max_tokens,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    metadata=metadata,
+                )
+                # 스트림에서 청크를 받아 텍스트 조각을 yield
+                async for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        sent = True
+                        yield chunk.choices[0].delta.content
+            return
+        except Exception as e:
+            if isinstance(e, TimeoutError):
+                # 전체 스트림 시간이 타임아웃을 초과한 경우
+                error = LLMError(f"timeout after {stream_timeout}s")
+            elif isinstance(e, LLMError):
+                error = e
+            else:
+                # 모델 서버 연결 거부, 유효하지 않은 모델명, API Key 인증 실패 등 모든 예외를 LLMError로 통일
+                error = LLMError(str(e))
+            if not sent and attempt < total and llm_retry.is_retryable(e):
+                logger.warning("practice-reply attempt %d failed (%s), retrying", attempt, error)
+                llm_retry.record_retry(name="practice-reply", attempt=attempt, reason=str(error))
+                await asyncio.sleep(llm_retry.RETRY_BACKOFF_S)
+                continue
+            if error is e:
+                raise
+            raise error from e
 
 
 # ══ 프롬프트 ═══════════════════════════════════════════════
