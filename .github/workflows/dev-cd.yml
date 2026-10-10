@@ -97,4 +97,6 @@ jobs:
                       docker login --username AWS --password-stdin $ECR_REGISTRY && \
                     sed -i 's|^AI_IMAGE=.*|AI_IMAGE=$IMAGE_URL|' .env && \
                     docker compose pull ai && \
+                    docker compose run --rm --no-deps \
+                      --entrypoint /code/.venv/bin/alembic ai upgrade head && \
                     docker compose up -d --no-deps ai"
