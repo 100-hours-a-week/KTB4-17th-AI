@@ -82,9 +82,35 @@ def test_system_prompt_mentions_me_only_when_my_persona_exists():
     with_me = PartnerAgent.system_prompt(partner_name="지수", partner=partner, my_name="민수", me=me)
 
     assert "러닝" in without_me
-    assert "민수님에 대해 참고할 것" not in without_me
-    assert "민수님에 대해 참고할 것" in with_me
-    assert "보드게임" in with_me
+    assert "대화 상대 민수님" not in without_me
+    assert "대화 상대 민수님" in with_me
     assert "연기하는 AI" not in without_me
     assert '당신은 "지수" 본인입니다' in without_me
     assert "제3자로 부르지 않습니다" in without_me
+
+
+def test_my_section_has_only_name_and_mbti():
+    partner = PersonaResponse(persona_id="p", scores={}, interests=["러닝"])
+    me = PersonaResponse(
+        persona_id="m",
+        mbti="INFP",
+        scores={},
+        interests=["보드게임"],
+        routine=["아침 수영"],
+        date_prefer=["전시회"],
+        date_avoid=["클럽"],
+    )
+
+    prompt = PartnerAgent.system_prompt(partner_name="지수", partner=partner, my_name="민수", me=me)
+    my_section = prompt.split("## 대화 상대 민수님")[1].split("## 말하는 방식")[0]
+
+    assert "- 이름: 민수" in my_section
+    assert "- MBTI: INFP" in my_section
+    for leaked in ("보드게임", "아침 수영", "전시회", "클럽"):
+        assert leaked not in prompt
+
+
+def test_system_prompt_lets_conversation_style_override_fixed_tone_rules():
+    from app.features.practice.agents import SYSTEM_TEMPLATE
+
+    assert "대화 스타일" in SYSTEM_TEMPLATE

@@ -23,9 +23,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 from fastapi import APIRouter, FastAPI
 from langfuse import get_client
 
+from app.core.config import get_settings
+from app.devtools.api import router as devtools_router
+from app.features.chat_end.api import router as chat_end_router
+from app.features.face_verification.api import router as face_verification_router
 from app.features.persona.api import router as persona_router
+from app.features.persona_extraction.api import router as persona_extraction_router
 from app.features.practice.api import router as practice_router
+from app.features.primary_photo.api import router as primary_photo_router
 from app.features.simulation.api import router as simulation_router
+from app.features.simulation_migration.api import get_run_manager
+from app.features.simulation_migration.api import router as simulation_migration_router
+from app.features.synthetic_detection.api import router as synthetic_detection_router
 
 description = """
 별이삼샵 어플리케이션의 AI API입니다.
@@ -37,17 +46,32 @@ description = """
 
 TAGS_METADATA = [
     {"name": "persona", "description": "사용자 정보를 바탕으로 AI 페르소나를 생성하고 조회합니다."},
+    {
+        "name": "persona-extraction",
+        "description": "실제 대화(연습대화·카카오톡)에서 대화 스타일을 추출하고 반영합니다.",
+    },
     {"name": "practice", "description": "페르소나와의 연습 대화 메시지를 처리합니다."},
-    {"name": "simulation", "description": "두 페르소나 간의 대화를 시뮬레이션하고 결과를 반환합니다."},
+    {"name": "chat-end", "description": "채팅을 마무리하는 메시지 초안과 최종 종료 메시지를 만듭니다."},
+    {
+        "name": "simulation",
+        "description": "LangGraph로 두 페르소나가 한 줄씩 대화하고, 끝난 뒤 대본과 리포트를 반환합니다.",
+    },
+    {"name": "simulation_old", "description": "예전 한 호출 시뮬레이션입니다. 경로는 /v1/simulation_old 입니다."},
+    {"name": "primary-photo", "description": "대표사진의 정면·품질을 검사합니다."},
+    {"name": "synthetic-detection", "description": "대표사진의 AI 생성 위험을 검사합니다."},
+    {"name": "face-verification", "description": "라이브니스와 동일인 여부를 확인합니다."},
 ]
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """프로세스 종료 전에 버퍼에 남은 Langfuse 이벤트를 전송한다."""
+    """프로세스 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
 
     yield
-    get_client().shutdown()
+    try:
+        await get_run_manager().shutdown()
+    finally:
+        get_client().shutdown()
 
 
 app = FastAPI(
@@ -65,8 +89,14 @@ app = FastAPI(
 )
 api_router = APIRouter(prefix="/ai/api")
 api_router.include_router(persona_router)
+api_router.include_router(persona_extraction_router)
 api_router.include_router(practice_router)
+api_router.include_router(chat_end_router)
 api_router.include_router(simulation_router)
+api_router.include_router(simulation_migration_router)
+api_router.include_router(primary_photo_router)
+api_router.include_router(synthetic_detection_router)
+api_router.include_router(face_verification_router)
 
 
 @app.get("/health", status_code=200, summary="헬스 체크", tags=["health"])
@@ -83,3 +113,5 @@ async def trigger_error():
 
 
 app.include_router(api_router)
+if get_settings().enable_test_ui:
+    app.include_router(devtools_router)

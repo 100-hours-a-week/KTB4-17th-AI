@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Profile Trust 기능 테스트</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, sans-serif; color: #17201c; background: #f2f4ef; }
+    body { margin: 0; padding: 36px 18px 80px; }
+    main { max-width: 980px; margin: auto; }
+    h1 { font-size: clamp(28px, 5vw, 48px); margin: 0 0 8px; letter-spacing: -.04em; }
+    .lead { color: #5c665f; margin: 0 0 28px; }
+    .toolbar, .card { background: #fff; border: 1px solid #dfe4dc; border-radius: 16px; padding: 20px; }
+    .toolbar { margin-bottom: 16px; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+    .card h2 { margin: 0 0 8px; font-size: 20px; }
+    .card p { color: #68716b; font-size: 14px; min-height: 40px; }
+    label { display: block; font-size: 13px; margin: 12px 0 5px; }
+    input[type=file], input[type=password] { box-sizing: border-box; width: 100%; padding: 10px; border: 1px solid #ccd3ca; border-radius: 9px; background: #fafbf9; }
+    button { margin-top: 12px; border: 0; border-radius: 9px; padding: 11px 14px; background: #143d2b; color: #fff; font-weight: 700; cursor: pointer; }
+    button:disabled { opacity: .45; cursor: wait; }
+    pre { overflow: auto; white-space: pre-wrap; background: #132018; color: #dff3e6; border-radius: 10px; padding: 12px; font-size: 12px; }
+    .result { margin-top: 12px; min-height: 76px; border-radius: 12px; padding: 14px; border: 1px solid #dfe4dc; background: #f7f8f5; }
+    .result.pass { border-color: #84b99b; background: #eef8f1; }
+    .result.warn { border-color: #e3b45f; background: #fff8e8; }
+    .result.fail { border-color: #df9584; background: #fff1ed; }
+    .result.waiting { color: #68716b; }
+    .result-title { display: block; margin-bottom: 6px; font-size: 18px; font-weight: 850; }
+    .result-message { margin: 0; color: #3f4842; min-height: auto; }
+    .reason-list { margin: 10px 0 0; padding-left: 20px; color: #6e3024; }
+    .metrics { margin-top: 9px; font-size: 13px; color: #566159; }
+    details { margin-top: 10px; }
+    summary { cursor: pointer; color: #5c665f; font-size: 12px; }
+    video { display: none; width: 100%; aspect-ratio: 3 / 4; margin-top: 12px; border-radius: 12px; background: #111; object-fit: cover; transform: scaleX(-1); }
+    .compare-media { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+    .compare-media figure { margin: 0; }
+    .compare-media figcaption { margin-bottom: 5px; color: #68716b; font-size: 12px; font-weight: 700; }
+    .compare-media img, .compare-media .recorded { display: none; width: 100%; aspect-ratio: 4 / 3; border-radius: 10px; background: #edf0eb; object-fit: contain; transform: none; }
+    .process { display: grid; gap: 8px; margin-top: 12px; }
+    .process-step { display: grid; grid-template-columns: 28px 1fr auto; align-items: center; gap: 9px; padding: 10px; border: 1px solid #dfe4dc; border-radius: 10px; background: #fafbf9; }
+    .process-step.pass { border-color: #84b99b; background: #eef8f1; }
+    .process-step.fail { border-color: #df9584; background: #fff1ed; }
+    .process-step.skip { color: #7a837c; }
+    .process-index { display: grid; place-items: center; width: 25px; height: 25px; border-radius: 50%; background: #e5e9e3; font-size: 12px; font-weight: 850; }
+    .process-label { font-size: 13px; font-weight: 800; }
+    .process-value { font-size: 12px; color: #566159; text-align: right; }
+    .frame-panel { display: none; margin-top: 16px; padding-top: 14px; border-top: 1px solid #e5e9e3; }
+    .frame-panel h3 { margin: 0 0 4px; font-size: 16px; }
+    .frame-summary { margin: 0 0 10px; min-height: auto !important; font-size: 12px !important; }
+    .frame-legend { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0 12px; color: #68716b; font-size: 11px; }
+    .legend-dot { display: inline-block; width: 8px; height: 8px; margin-right: 4px; border-radius: 50%; }
+    .frame-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 9px; }
+    .frame-card { overflow: hidden; border: 2px solid #dfe4dc; border-radius: 10px; background: #fafbf9; }
+    .frame-card.candidate { border-color: #6e63c7; background: #f2efff; }
+    .frame-card.frontal { border-color: #84b99b; }
+    .frame-card.non-frontal { border-color: #e3b45f; background: #fff8e8; }
+    .frame-card.no-face, .frame-card.multiple { border-color: #df9584; background: #fff1ed; }
+    .frame-thumb { display: grid; place-items: center; width: 100%; aspect-ratio: 4 / 3; background: #dfe4dc; color: #68716b; font-size: 11px; }
+    .frame-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    .frame-info { padding: 8px; }
+    .frame-title { display: flex; justify-content: space-between; gap: 6px; font-size: 12px; font-weight: 850; }
+    .frame-detail { margin-top: 4px; color: #68716b; font-size: 10px; line-height: 1.45; }
+    .challenge { margin-top: 12px; min-height: 24px; font-weight: 800; color: #a13c1e; }
+    .wide { grid-column: 1 / -1; }
+    .hint { font-size: 12px; color: #7a837c; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Profile Trust 테스트</h1>
+  <p class="lead">대표사진, AI 생성 사진, 라이브 얼굴 인증을 각각 직접 호출합니다.</p>
+
+  <section class="toolbar">
+    <label for="apiKey">X-Internal-Api-Key (.env에서 설정한 경우만 입력)</label>
+    <input id="apiKey" type="password" autocomplete="off" placeholder="미설정이면 비워두세요">
+  </section>
+
+  <div class="grid">
+    <section class="card">
+      <h2>1. 대표사진 정면 검사</h2>
+      <p>얼굴 수, 정면 여부와 기본적인 밝기·선명도만 검사합니다. 얼굴 크기는 제한하지 않고, 다른 사람의 얼굴이 마스킹되어 있으면 허용합니다.</p>
+      <input id="primaryImage" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+      <button data-run="primary">검사하기</button>
+      <div id="primaryResult" class="result waiting">결과 대기 중</div>
+    </section>
+
+    <section class="card">
+      <h2>2. 대표사진 AI 생성 검사</h2>
+      <p>정면 여부와 무관하게 대표사진이 AI로 생성된 이미지인지 C2PA와 판별 모델로 확인합니다.</p>
+      <input id="syntheticImage" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+      <button data-run="synthetic">검사하기</button>
+      <div id="syntheticResult" class="result waiting">결과 대기 중</div>
+    </section>
+
+    <section class="card wide">
+      <h2>3. 라이브 얼굴 인증</h2>
+      <p>현재 대표사진을 고른 뒤 카메라를 정면으로 바라보는 포즈를 4초간 유지하세요. 선명한 정면 후보 3장을 골라 대표사진과 비교합니다.</p>
+      <label for="referenceImage">현재 대표사진</label>
+      <input id="referenceImage" type="file" accept=".jpg,.jpeg,.png,image/jpeg,image/png">
+      <button id="startVerification">4초 정면 촬영 시작</button>
+      <div class="challenge" id="challenge">챌린지 대기 중</div>
+      <video id="preview" autoplay muted playsinline></video>
+      <div class="compare-media">
+        <figure><figcaption>비교 기준: 대표사진</figcaption><img id="referencePreview" alt="선택한 대표사진 미리보기"></figure>
+        <figure><figcaption>비교 대상: 실제 전송 영상</figcaption><video id="recordedPreview" class="recorded" muted controls playsinline></video></figure>
+      </div>
+      <div id="verificationProcess" class="process"></div>
+      <section id="framePanel" class="frame-panel">
+        <h3>프레임 분할·선택 과정</h3>
+        <p id="frameSummary" class="frame-summary"></p>
+        <div class="frame-legend">
+          <span><i class="legend-dot" style="background:#6e63c7"></i>동일인 비교 후보</span>
+          <span><i class="legend-dot" style="background:#84b99b"></i>정면 통과</span>
+          <span><i class="legend-dot" style="background:#e3b45f"></i>비정면</span>
+          <span><i class="legend-dot" style="background:#df9584"></i>얼굴 없음·여러 명</span>
+        </div>
+        <div id="frameGrid" class="frame-grid"></div>
+      </section>
+      <div id="verificationResult" class="result waiting">결과 대기 중</div>
+      <div class="hint">카메라는 localhost에서만 사용되며 녹화 데이터는 이 요청 처리 후 저장되지 않습니다. 고정 포즈 방식은 동일인 비교용이며 강한 위변조 방지 수단은 아닙니다.</div>
+    </section>
+  </div>
+</main>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const challengeNames = { LOOK_STRAIGHT: "카메라를 정면으로 바라보기" };
+  const frameStatusNames = {
+    NO_FACE: "얼굴 없음",
+    MULTIPLE_FACES: "여러 얼굴",
+    NON_FRONTAL: "비정면",
+    FRONTAL: "정면 통과",
+    MATCH_CANDIDATE: "비교 후보"
+  };
+  const reasonNames = {
+    NO_FACE: "얼굴을 찾을 수 없습니다.",
+    MULTIPLE_FACES: "사진에 여러 명의 얼굴이 있습니다.",
+    NON_FRONTAL_FACE: "얼굴이 정면을 향하고 있지 않습니다.",
+    IMAGE_TOO_SMALL: "사진 해상도가 너무 낮습니다.",
+    IMAGE_TOO_BLURRY: "사진이 너무 흐립니다.",
+    IMAGE_TOO_DARK: "사진이 너무 어둡습니다.",
+    IMAGE_TOO_BRIGHT: "사진이 너무 밝습니다.",
+    SYNTHETIC_RISK: "AI로 생성하거나 편집한 사진일 가능성이 높습니다.",
+    CONFIRMED_SYNTHETIC: "신뢰할 수 있는 출처 정보에서 AI 생성 사진으로 확인됐습니다.",
+    LIVENESS_FAILED: "촬영 조건을 충족하지 못했습니다. 아래 단계별 결과에서 부족한 항목을 확인하세요.",
+    FACE_MISMATCH: "대표사진과 촬영 영상의 얼굴이 서로 다른 사람으로 판정됐습니다.",
+    FACE_COMPARISON_FAILED: "얼굴은 찾았지만 동일인 비교용 특징을 만들지 못했습니다. 다시 촬영해주세요."
+  };
+
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[char]);
+  }
+
+  function renderVerificationProcess(data) {
+    const output = $("verificationProcess");
+    const live = data.liveness;
+    if (!live) {
+      output.innerHTML = "";
+      return;
+    }
+    const steps = [
+      {
+        label: "영상 프레임 읽기",
+        passed: live.sampled_frames >= live.required_sampled_frames,
+        value: `${live.sampled_frames}개 / 최소 ${live.required_sampled_frames}개`
+      },
+      {
+        label: "한 명의 얼굴 검출",
+        passed: live.valid_face_frames >= live.required_valid_face_frames,
+        value: `${live.valid_face_frames}개 / 최소 ${live.required_valid_face_frames}개` +
+          (live.low_light_enhanced_frames ? ` · 저조도 보정 ${live.low_light_enhanced_frames}개` : "")
+      },
+      {
+        label: "정면 포즈 유지",
+        passed: live.frontal_face_frames >= live.required_frontal_face_frames,
+        value: `${live.frontal_face_frames}개 / 최소 ${live.required_frontal_face_frames}개 · yaw ±${live.max_abs_yaw_deg}° · pitch ±${live.max_abs_pitch_deg}° · roll ±${live.max_abs_roll_deg}°`
+      },
+      {
+        label: "대표사진과 동일인 비교",
+        passed: data.match
+          ? data.similarity >= data.match.threshold
+          : data.reason_codes?.includes("FACE_COMPARISON_FAILED") ? false : null,
+        value: data.match
+          ? `중앙값 ${(data.similarity * 100).toFixed(1)}% / 기준 ${(data.match.threshold * 100).toFixed(1)}% · ${data.match.compared_frame_count}장`
+          : data.reason_codes?.includes("FACE_COMPARISON_FAILED")
+            ? "후보 얼굴 특징 생성 실패"
+            : "앞 단계 실패로 비교하지 않음"
+      }
+    ];
+    output.innerHTML = steps.map((step, index) => {
+      const state = step.passed === null ? "skip" : step.passed ? "pass" : "fail";
+      const mark = step.passed === null ? "–" : step.passed ? "✓" : "✕";
+      return `<div class="process-step ${state}"><span class="process-index">${mark}</span><span class="process-label">${index + 1}. ${escapeHtml(step.label)}</span><span class="process-value">${escapeHtml(step.value)}</span></div>`;
+    }).join("");
+    if (data.match?.frame_similarities?.length) {
+      const values = data.match.frame_similarities.map(value => `${(value * 100).toFixed(1)}%`).join(", ");
+      output.innerHTML += `<div class="metrics">개별 후보 유사도: ${escapeHtml(values)} · 최종값은 중앙값</div>`;
+    }
+  }
+
+  function waitForMediaEvent(target, eventName) {
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error(`${eventName} 시간 초과`)), 5000);
+      target.addEventListener(eventName, () => {
+        clearTimeout(timer);
+        resolve();
+      }, { once: true });
+      target.addEventListener("error", () => {
+        clearTimeout(timer);
+        reject(new Error("녹화 영상을 다시 읽을 수 없습니다."));
+      }, { once: true });
+    });
+  }
+
+  async function frameThumbnail(player, timestampMs) {
+    const duration = Number.isFinite(player.duration) ? player.duration : 0;
+    const target = Math.min(Math.max(0, timestampMs / 1000), Math.max(0, duration - 0.01));
+    if (Math.abs(player.currentTime - target) > 0.001) {
+      player.currentTime = target;
+      await waitForMediaEvent(player, "seeked");
+    }
+    const canvas = document.createElement("canvas");
+    canvas.width = 240;
+    canvas.height = 180;
+    const context = canvas.getContext("2d");
+    const sourceRatio = player.videoWidth / player.videoHeight;
+    const targetRatio = canvas.width / canvas.height;
+    let sx = 0, sy = 0, sw = player.videoWidth, sh = player.videoHeight;
+    if (sourceRatio > targetRatio) {
+      sw = player.videoHeight * targetRatio;
+      sx = (player.videoWidth - sw) / 2;
+    } else {
+      sh = player.videoWidth / targetRatio;
+      sy = (player.videoHeight - sh) / 2;
+    }
+    context.drawImage(player, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL("image/jpeg", 0.72);
+  }
+
+  async function renderFrameTimeline(data, videoUrl) {
+    const panel = $("framePanel");
+    const grid = $("frameGrid");
+    const live = data.liveness;
+    const frames = live?.frame_diagnostics || [];
+    if (!frames.length || !videoUrl) {
+      panel.style.display = "none";
+      grid.innerHTML = "";
+      return;
+    }
+    panel.style.display = "block";
+    const fps = live.source_fps ? `${live.source_fps.toFixed(1)}fps` : "FPS 정보 없음";
+    $("frameSummary").textContent = `원본 ${live.source_frame_count}프레임 · ${fps} → 영상 전체에서 ${live.sampled_frames}프레임을 균등 추출 → 정면 후보 최대 3장 비교`;
+    const similarities = data.match?.frame_similarities || [];
+    grid.innerHTML = frames.map(frame => {
+      const cssStatus = {
+        MATCH_CANDIDATE: "candidate",
+        FRONTAL: "frontal",
+        NON_FRONTAL: "non-frontal",
+        NO_FACE: "no-face",
+        MULTIPLE_FACES: "multiple"
+      }[frame.status] || "";
+      const pose = frame.yaw === null
+        ? `검출 얼굴 ${frame.detected_face_count}명`
+        : `yaw ${frame.yaw.toFixed(1)}° · pitch ${frame.pitch.toFixed(1)}° · roll ${frame.roll.toFixed(1)}°`;
+      const candidateSimilarity = frame.candidate_rank ? similarities[frame.candidate_rank - 1] : null;
+      const candidateScore = frame.candidate_rank
+        ? ` · ${typeof candidateSimilarity === "number" ? `유사도 ${(candidateSimilarity * 100).toFixed(1)}%` : "비교값 없음"}`
+        : "";
+      const enhanced = frame.low_light_enhanced ? " · 저조도 보정" : "";
+      return `<article class="frame-card ${cssStatus}" data-sample-index="${frame.sample_index}">
+        <div class="frame-thumb">추출 중…</div>
+        <div class="frame-info">
+          <div class="frame-title"><span>#${frame.sample_index + 1} · 원본 ${frame.source_frame_index}</span><span>${escapeHtml(frameStatusNames[frame.status] || frame.status)}</span></div>
+          <div class="frame-detail">${frame.timestamp_ms === null ? "시간 정보 없음" : `${(frame.timestamp_ms / 1000).toFixed(2)}초`} · ${escapeHtml(pose)}${escapeHtml(enhanced)}${escapeHtml(candidateScore)}</div>
+        </div>
+      </article>`;
+    }).join("");
+
+    const player = document.createElement("video");
+    player.muted = true;
+    player.playsInline = true;
+    player.preload = "auto";
+    player.src = videoUrl;
+    await waitForMediaEvent(player, "loadedmetadata");
+    for (const frame of frames) {
+      const card = grid.querySelector(`[data-sample-index="${frame.sample_index}"] .frame-thumb`);
+      try {
+        const fallbackTimestamp = player.duration * 1000 * frame.sample_index / Math.max(1, frames.length - 1);
+        const imageUrl = await frameThumbnail(player, frame.timestamp_ms ?? fallbackTimestamp);
+        card.innerHTML = `<img src="${imageUrl}" alt="${frame.sample_index + 1}번째 분석 프레임">`;
+      } catch (error) {
+        card.textContent = "미리보기 실패";
+      }
+    }
+    player.removeAttribute("src");
+    player.load();
+  }
+
+  function renderResult(outputId, data, feature, responseOk = true) {
+    const output = $(outputId);
+    let state = "fail";
+    let title = "요청 실패";
+    let message = data.detail || "요청을 처리하지 못했습니다.";
+
+    if (responseOk && feature === "primary") {
+      if (data.decision === "PASS") {
+        state = "pass";
+        title = "✅ 정면 검사 통과";
+        message = "한 명의 얼굴, 정면 각도와 최소 사진 품질 기준을 통과했습니다.";
+      } else {
+        state = "fail";
+        title = "❌ 정면 검사 실패";
+        message = "아래 사유를 확인한 뒤 다른 대표사진을 사용하세요.";
+      }
+    } else if (responseOk && feature === "synthetic") {
+      if (data.decision === "CLEAR") {
+        state = "pass";
+        title = "✅ AI 생성 위험 없음";
+        message = "AI 생성 사진으로 의심할 만한 신호가 기준값보다 낮습니다.";
+      } else if (data.decision === "CONFIRMED_SYNTHETIC") {
+        state = "fail";
+        title = "❌ AI 생성 사진으로 확인됨";
+        message = "검증된 콘텐츠 출처 정보에서 AI 생성 이력이 확인됐습니다.";
+      } else {
+        state = "warn";
+        title = "⚠️ AI 생성 위험 감지";
+        message = "AI 생성 확정은 아니지만 모델 위험도가 기준값을 넘었습니다.";
+      }
+    } else if (responseOk && feature === "verification") {
+      renderVerificationProcess(data);
+      if (data.decision === "VERIFIED") {
+        state = "pass";
+        title = "✅ 본인 인증 성공 — 인증 마크 부여 가능";
+        message = "라이브 행동과 대표사진 동일인 검사를 모두 통과했습니다.";
+      } else if (data.decision === "NOT_VERIFIED") {
+        state = "fail";
+        title = "❌ 본인 불일치 — 인증할 수 없습니다";
+        message = "대표사진과 라이브 촬영 속 얼굴이 같은 사람으로 확인되지 않았습니다.";
+      } else {
+        state = "warn";
+        title = "⚠️ 촬영 확인 실패 — 다시 시도해주세요";
+        message = "아래 단계별 결과에서 실패한 기준과 실제 측정값을 확인하세요.";
+      }
+    }
+
+    const reasons = (data.reason_codes || []).map(code => reasonNames[code] || code);
+    const reasonHtml = reasons.length
+      ? `<ul class="reason-list">${reasons.map(reason => `<li>${escapeHtml(reason)}</li>`).join("")}</ul>`
+      : "";
+    const metrics = [];
+    if (typeof data.probability === "number") {
+      metrics.push(`AI 생성 위험도: ${(data.probability * 100).toFixed(1)}%`);
+    }
+    if (data.signals?.includes("PIXEL_ART_OR_ILLUSTRATION")) {
+      metrics.push("픽셀아트·일러스트형 이미지 감지");
+    }
+    if (typeof data.similarity === "number") {
+      metrics.push(`얼굴 유사도: ${(data.similarity * 100).toFixed(1)}%`);
+    }
+    if (data.quality?.masked_face_count > 0) {
+      metrics.push(`마스킹된 보조 얼굴 ${data.quality.masked_face_count}명 허용`);
+    }
+    if (data.quality?.ignored_background_face_count > 0) {
+      metrics.push(`작은 배경 얼굴 ${data.quality.ignored_background_face_count}명 제외`);
+    }
+    if (data.quality?.detection_method === "haar-closeup-fallback") {
+      metrics.push("근접 얼굴 보완 검출 사용");
+    }
+    if (typeof data.quality?.blur_variance === "number") {
+      metrics.push(`얼굴 선명도: ${data.quality.blur_variance.toFixed(1)}`);
+    }
+    const metricsHtml = metrics.length ? `<div class="metrics">${metrics.join(" · ")}</div>` : "";
+    output.className = `result ${state}`;
+    output.innerHTML = `
+      <span class="result-title">${escapeHtml(title)}</span>
+      <p class="result-message">${escapeHtml(message)}</p>
+      ${reasonHtml}${metricsHtml}
+      <details><summary>개발자용 JSON 보기</summary><pre>${escapeHtml(JSON.stringify(data, null, 2))}</pre></details>
+    `;
+  }
+
+  function setLoading(outputId, message) {
+    const output = $(outputId);
+    output.className = "result waiting";
+    output.textContent = message;
+  }
+
+  function headers() {
+    const key = $("apiKey").value.trim();
+    return key ? { "X-Internal-Api-Key": key } : {};
+  }
+
+  async function postFile(path, inputId, outputId, feature) {
+    const file = $(inputId).files[0];
+    if (!file) return setLoading(outputId, "사진을 먼저 선택하세요.");
+    const body = new FormData();
+    body.append("image", file);
+    setLoading(outputId, "분석 중… 첫 호출은 모델 로딩으로 시간이 조금 걸릴 수 있습니다.");
+    try {
+      const response = await fetch(path, { method: "POST", headers: headers(), body });
+      renderResult(outputId, await response.json(), feature, response.ok);
+    } catch (error) {
+      renderResult(outputId, { detail: String(error) }, "error", false);
+    }
+  }
+
+  document.querySelector('[data-run="primary"]').onclick = () => postFile(
+    "/ai/api/v1/profile-trust/photos/primary/frontal-check", "primaryImage", "primaryResult", "primary"
+  );
+  document.querySelector('[data-run="synthetic"]').onclick = () => postFile(
+    "/ai/api/v1/profile-trust/photos/primary/synthetic-check", "syntheticImage", "syntheticResult", "synthetic"
+  );
+
+  $("startVerification").onclick = async () => {
+    const reference = $("referenceImage").files[0];
+    if (!reference) return setLoading("verificationResult", "대표사진을 먼저 선택하세요.");
+    const button = $("startVerification");
+    button.disabled = true;
+    let stream;
+    try {
+      const challengeResponse = await fetch("/ai/api/v1/profile-trust/verifications/challenges", {
+        method: "POST", headers: headers()
+      });
+      const challenge = await challengeResponse.json();
+      if (!challengeResponse.ok) throw new Error(JSON.stringify(challenge));
+      $("challenge").textContent = "순서: " + challenge.challenges.map(x => challengeNames[x]).join(" → ");
+
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: "user",
+          width: { ideal: 640, max: 960 },
+          height: { ideal: 480, max: 720 },
+          frameRate: { ideal: 15, max: 24 }
+        },
+        audio: false
+      });
+      const preview = $("preview");
+      preview.srcObject = stream;
+      preview.style.display = "block";
+      await preview.play();
+      button.textContent = "카메라 초점 맞추는 중…";
+      await new Promise(resolve => setTimeout(resolve, 900));
+      const candidates = ["video/webm;codecs=vp9", "video/webm", "video/mp4"];
+      const mimeType = candidates.find(type => MediaRecorder.isTypeSupported(type)) || "";
+      const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+      const chunks = [];
+      recorder.ondataavailable = event => { if (event.data.size) chunks.push(event.data); };
+      recorder.start();
+      for (let remaining = 4; remaining > 0; remaining--) {
+        button.textContent = `${remaining}초 남음`;
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      const stopped = new Promise(resolve => recorder.onstop = resolve);
+      recorder.stop();
+      await stopped;
+      stream.getTracks().forEach(track => track.stop());
+      preview.style.display = "none";
+
+      const baseType = (recorder.mimeType || "video/webm").split(";")[0];
+      const extension = baseType === "video/mp4" ? "mp4" : "webm";
+      const video = new File([new Blob(chunks)], `live.${extension}`, { type: baseType });
+      const recordedPreview = $("recordedPreview");
+      if (recordedPreview.dataset.objectUrl) URL.revokeObjectURL(recordedPreview.dataset.objectUrl);
+      recordedPreview.dataset.objectUrl = URL.createObjectURL(video);
+      recordedPreview.src = recordedPreview.dataset.objectUrl;
+      recordedPreview.style.display = "block";
+      const body = new FormData();
+      body.append("challenge_token", challenge.challenge_token);
+      body.append("primary_photo", reference);
+      body.append("live_video", video);
+      setLoading("verificationResult", "영상과 얼굴을 분석 중…");
+      $("framePanel").style.display = "none";
+      $("frameGrid").innerHTML = "";
+      const response = await fetch("/ai/api/v1/profile-trust/verifications/complete", {
+        method: "POST", headers: headers(), body
+      });
+      const result = await response.json();
+      renderResult("verificationResult", result, "verification", response.ok);
+      if (response.ok) await renderFrameTimeline(result, recordedPreview.dataset.objectUrl);
+    } catch (error) {
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      renderResult("verificationResult", { detail: String(error) }, "error", false);
+    } finally {
+      button.disabled = false;
+      button.textContent = "4초 정면 촬영 시작";
+    }
+  };
+
+  $("referenceImage").onchange = () => {
+    const file = $("referenceImage").files[0];
+    const preview = $("referencePreview");
+    if (preview.dataset.objectUrl) URL.revokeObjectURL(preview.dataset.objectUrl);
+    if (!file) {
+      preview.removeAttribute("src");
+      preview.style.display = "none";
+      return;
+    }
+    preview.dataset.objectUrl = URL.createObjectURL(file);
+    preview.src = preview.dataset.objectUrl;
+    preview.style.display = "block";
+  };
+</script>
+</body>
+</html>

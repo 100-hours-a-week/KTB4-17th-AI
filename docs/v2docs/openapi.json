@@ -1,0 +1,924 @@
+{
+  "components": {
+    "schemas": {
+      "Body_checkPrimaryPhotoFrontal": {
+        "properties": {
+          "image": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Image",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image"
+        ],
+        "title": "Body_checkPrimaryPhotoFrontal",
+        "type": "object"
+      },
+      "Body_checkPrimaryPhotoSynthetic": {
+        "properties": {
+          "image": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Image",
+            "type": "string"
+          }
+        },
+        "required": [
+          "image"
+        ],
+        "title": "Body_checkPrimaryPhotoSynthetic",
+        "type": "object"
+      },
+      "Body_completeFaceVerification": {
+        "properties": {
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          },
+          "live_video": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Live Video",
+            "type": "string"
+          },
+          "primary_photo": {
+            "contentMediaType": "application/octet-stream",
+            "title": "Primary Photo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token",
+          "primary_photo",
+          "live_video"
+        ],
+        "title": "Body_completeFaceVerification",
+        "type": "object"
+      },
+      "Challenge": {
+        "enum": [
+          "LOOK_STRAIGHT"
+        ],
+        "title": "Challenge",
+        "type": "string"
+      },
+      "FrameDiagnostic": {
+        "properties": {
+          "blur_variance": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Blur Variance"
+          },
+          "candidate_rank": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Candidate Rank"
+          },
+          "detected_face_count": {
+            "title": "Detected Face Count",
+            "type": "integer"
+          },
+          "face_count": {
+            "title": "Face Count",
+            "type": "integer"
+          },
+          "ignored_background_face_count": {
+            "default": 0,
+            "title": "Ignored Background Face Count",
+            "type": "integer"
+          },
+          "low_light_enhanced": {
+            "default": false,
+            "title": "Low Light Enhanced",
+            "type": "boolean"
+          },
+          "masked_face_count": {
+            "default": 0,
+            "title": "Masked Face Count",
+            "type": "integer"
+          },
+          "pitch": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pitch"
+          },
+          "roll": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roll"
+          },
+          "sample_index": {
+            "title": "Sample Index",
+            "type": "integer"
+          },
+          "source_frame_index": {
+            "title": "Source Frame Index",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/FrameStatus"
+          },
+          "timestamp_ms": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timestamp Ms"
+          },
+          "yaw": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Yaw"
+          }
+        },
+        "required": [
+          "sample_index",
+          "source_frame_index",
+          "status",
+          "face_count",
+          "detected_face_count"
+        ],
+        "title": "FrameDiagnostic",
+        "type": "object"
+      },
+      "FrameStatus": {
+        "enum": [
+          "NO_FACE",
+          "MULTIPLE_FACES",
+          "NON_FRONTAL",
+          "FRONTAL",
+          "MATCH_CANDIDATE"
+        ],
+        "title": "FrameStatus",
+        "type": "string"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LivenessResult": {
+        "properties": {
+          "candidate_frame_count": {
+            "default": 0,
+            "title": "Candidate Frame Count",
+            "type": "integer"
+          },
+          "completed_challenges": {
+            "items": {
+              "$ref": "#/components/schemas/Challenge"
+            },
+            "title": "Completed Challenges",
+            "type": "array"
+          },
+          "frame_diagnostics": {
+            "items": {
+              "$ref": "#/components/schemas/FrameDiagnostic"
+            },
+            "title": "Frame Diagnostics",
+            "type": "array"
+          },
+          "frontal_face_frames": {
+            "default": 0,
+            "title": "Frontal Face Frames",
+            "type": "integer"
+          },
+          "low_light_enhanced_frames": {
+            "default": 0,
+            "title": "Low Light Enhanced Frames",
+            "type": "integer"
+          },
+          "max_abs_pitch_deg": {
+            "default": 25.0,
+            "title": "Max Abs Pitch Deg",
+            "type": "number"
+          },
+          "max_abs_roll_deg": {
+            "default": 40.0,
+            "title": "Max Abs Roll Deg",
+            "type": "number"
+          },
+          "max_abs_yaw_deg": {
+            "default": 25.0,
+            "title": "Max Abs Yaw Deg",
+            "type": "number"
+          },
+          "passed": {
+            "title": "Passed",
+            "type": "boolean"
+          },
+          "required_frontal_face_frames": {
+            "default": 6,
+            "title": "Required Frontal Face Frames",
+            "type": "integer"
+          },
+          "required_sampled_frames": {
+            "default": 8,
+            "title": "Required Sampled Frames",
+            "type": "integer"
+          },
+          "required_valid_face_frames": {
+            "default": 6,
+            "title": "Required Valid Face Frames",
+            "type": "integer"
+          },
+          "sampled_frames": {
+            "title": "Sampled Frames",
+            "type": "integer"
+          },
+          "sampling_strategy": {
+            "default": "uniform_max_24",
+            "title": "Sampling Strategy",
+            "type": "string"
+          },
+          "source_fps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Fps"
+          },
+          "source_frame_count": {
+            "default": 0,
+            "title": "Source Frame Count",
+            "type": "integer"
+          },
+          "valid_face_frames": {
+            "title": "Valid Face Frames",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "passed",
+          "completed_challenges",
+          "sampled_frames",
+          "valid_face_frames"
+        ],
+        "title": "LivenessResult",
+        "type": "object"
+      },
+      "MatchDiagnostics": {
+        "properties": {
+          "aggregation": {
+            "default": "median",
+            "title": "Aggregation",
+            "type": "string"
+          },
+          "compared_frame_count": {
+            "title": "Compared Frame Count",
+            "type": "integer"
+          },
+          "frame_similarities": {
+            "items": {
+              "type": "number"
+            },
+            "title": "Frame Similarities",
+            "type": "array"
+          },
+          "threshold": {
+            "title": "Threshold",
+            "type": "number"
+          }
+        },
+        "required": [
+          "threshold",
+          "compared_frame_count",
+          "frame_similarities"
+        ],
+        "title": "MatchDiagnostics",
+        "type": "object"
+      },
+      "PhotoDecision": {
+        "enum": [
+          "PASS",
+          "RETRY"
+        ],
+        "title": "PhotoDecision",
+        "type": "string"
+      },
+      "Pose": {
+        "properties": {
+          "pitch": {
+            "title": "Pitch",
+            "type": "number"
+          },
+          "roll": {
+            "title": "Roll",
+            "type": "number"
+          },
+          "yaw": {
+            "title": "Yaw",
+            "type": "number"
+          }
+        },
+        "required": [
+          "yaw",
+          "pitch",
+          "roll"
+        ],
+        "title": "Pose",
+        "type": "object"
+      },
+      "PrimaryPhotoResponse": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/PhotoDecision"
+          },
+          "quality": {
+            "$ref": "#/components/schemas/Quality"
+          },
+          "reason_codes": {
+            "items": {
+              "$ref": "#/components/schemas/app__features__primary_photo__schemas__ReasonCode"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decision",
+          "reason_codes",
+          "quality"
+        ],
+        "title": "PrimaryPhotoResponse",
+        "type": "object"
+      },
+      "Quality": {
+        "properties": {
+          "blur_variance": {
+            "title": "Blur Variance",
+            "type": "number"
+          },
+          "brightness": {
+            "title": "Brightness",
+            "type": "number"
+          },
+          "detected_face_count": {
+            "title": "Detected Face Count",
+            "type": "integer"
+          },
+          "detection_method": {
+            "default": "yunet",
+            "title": "Detection Method",
+            "type": "string"
+          },
+          "face_area_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Face Area Ratio"
+          },
+          "face_count": {
+            "title": "Face Count",
+            "type": "integer"
+          },
+          "global_blur_variance": {
+            "title": "Global Blur Variance",
+            "type": "number"
+          },
+          "height": {
+            "title": "Height",
+            "type": "integer"
+          },
+          "ignored_background_face_count": {
+            "default": 0,
+            "title": "Ignored Background Face Count",
+            "type": "integer"
+          },
+          "masked_face_count": {
+            "default": 0,
+            "title": "Masked Face Count",
+            "type": "integer"
+          },
+          "pose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Pose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "width": {
+            "title": "Width",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "width",
+          "height",
+          "face_count",
+          "detected_face_count",
+          "blur_variance",
+          "global_blur_variance",
+          "brightness"
+        ],
+        "title": "Quality",
+        "type": "object"
+      },
+      "SyntheticDecision": {
+        "enum": [
+          "CLEAR",
+          "SYNTHETIC_RISK",
+          "CONFIRMED_SYNTHETIC"
+        ],
+        "title": "SyntheticDecision",
+        "type": "string"
+      },
+      "SyntheticResult": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/SyntheticDecision"
+          },
+          "model_version": {
+            "title": "Model Version",
+            "type": "string"
+          },
+          "probability": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Probability"
+          },
+          "provenance": {
+            "title": "Provenance",
+            "type": "string"
+          },
+          "signals": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Signals",
+            "type": "array"
+          }
+        },
+        "required": [
+          "decision",
+          "provenance",
+          "model_version"
+        ],
+        "title": "SyntheticResult",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "ctx": {
+            "title": "Context",
+            "type": "object"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      },
+      "VerificationChallengeResponse": {
+        "properties": {
+          "challenge_token": {
+            "title": "Challenge Token",
+            "type": "string"
+          },
+          "challenges": {
+            "items": {
+              "$ref": "#/components/schemas/Challenge"
+            },
+            "title": "Challenges",
+            "type": "array"
+          },
+          "expires_at": {
+            "format": "date-time",
+            "title": "Expires At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "challenge_token",
+          "challenges",
+          "expires_at"
+        ],
+        "title": "VerificationChallengeResponse",
+        "type": "object"
+      },
+      "VerificationDecision": {
+        "enum": [
+          "VERIFIED",
+          "RETRY",
+          "NOT_VERIFIED"
+        ],
+        "title": "VerificationDecision",
+        "type": "string"
+      },
+      "VerificationResponse": {
+        "properties": {
+          "decision": {
+            "$ref": "#/components/schemas/VerificationDecision"
+          },
+          "liveness": {
+            "$ref": "#/components/schemas/LivenessResult"
+          },
+          "match": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MatchDiagnostics"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model_version": {
+            "title": "Model Version",
+            "type": "string"
+          },
+          "reason_codes": {
+            "items": {
+              "$ref": "#/components/schemas/app__features__face_verification__schemas__ReasonCode"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "similarity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Similarity"
+          }
+        },
+        "required": [
+          "decision",
+          "reason_codes",
+          "liveness",
+          "model_version"
+        ],
+        "title": "VerificationResponse",
+        "type": "object"
+      },
+      "app__features__face_verification__schemas__ReasonCode": {
+        "enum": [
+          "NO_FACE",
+          "LIVENESS_FAILED",
+          "FACE_MISMATCH",
+          "FACE_COMPARISON_FAILED"
+        ],
+        "title": "ReasonCode",
+        "type": "string"
+      },
+      "app__features__primary_photo__schemas__ReasonCode": {
+        "enum": [
+          "NO_FACE",
+          "MULTIPLE_FACES",
+          "NON_FRONTAL_FACE",
+          "IMAGE_TOO_SMALL",
+          "IMAGE_TOO_BLURRY",
+          "IMAGE_TOO_DARK",
+          "IMAGE_TOO_BRIGHT"
+        ],
+        "title": "ReasonCode",
+        "type": "string"
+      }
+    }
+  },
+  "info": {
+    "contact": {
+      "name": "별이삼샵 AI 팀",
+      "url": "https://github.com/100-hours-a-week/KTB4-17th-AI"
+    },
+    "description": "\n별이삼샵 어플리케이션의 AI API입니다.\n\n## 담당자\n- [lena.cho](https://github.com/HyeerinCho)\n- [yuta.jeong](https://github.com/hrunj1230)\n",
+    "title": "별이삼샵 Profile Trust AI API",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/ai/api/v1/profile-trust/photos/primary/frontal-check": {
+      "post": {
+        "operationId": "checkPrimaryPhotoFrontal",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-internal-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_checkPrimaryPhotoFrontal"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrimaryPhotoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "대표사진 정면·품질 검사",
+        "tags": [
+          "primary-photo"
+        ]
+      }
+    },
+    "/ai/api/v1/profile-trust/photos/primary/synthetic-check": {
+      "post": {
+        "operationId": "checkPrimaryPhotoSynthetic",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-internal-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_checkPrimaryPhotoSynthetic"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyntheticResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "대표사진 AI 생성 위험 검사",
+        "tags": [
+          "synthetic-detection"
+        ]
+      }
+    },
+    "/ai/api/v1/profile-trust/verifications/challenges": {
+      "post": {
+        "operationId": "createVerificationChallenge",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-internal-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Api-Key"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationChallengeResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "라이브 촬영 챌린지 발급",
+        "tags": [
+          "face-verification"
+        ]
+      }
+    },
+    "/ai/api/v1/profile-trust/verifications/complete": {
+      "post": {
+        "operationId": "completeFaceVerification",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "x-internal-api-key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Internal-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_completeFaceVerification"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "라이브 얼굴 인증 완료",
+        "tags": [
+          "face-verification"
+        ]
+      }
+    }
+  },
+  "tags": [
+    {
+      "description": "대표사진의 정면·품질을 검사합니다.",
+      "name": "primary-photo"
+    },
+    {
+      "description": "대표사진의 AI 생성 위험을 검사합니다.",
+      "name": "synthetic-detection"
+    },
+    {
+      "description": "라이브니스와 동일인 여부를 확인합니다.",
+      "name": "face-verification"
+    }
+  ]
+}

@@ -7,8 +7,9 @@ OpenRouter 및 로컬 서빙 LLM(vLLM, Ollama 등)을 모두 지원하도록 설
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -63,7 +64,7 @@ class Settings(BaseSettings):
     # 로컬 서빙 예시: "local-model" 또는 서빙 중인 모델 이름
     llm_model: str = Field(
         default="anthropic/claude-3.5-sonnet",
-        validation_alias="LLM_MODEL3",
+        validation_alias="LLM_MODEL",
         description="호출할 기본 LLM 모델명",
     )
 
@@ -83,24 +84,125 @@ class Settings(BaseSettings):
     )
 
     # ── 기능별 LLM 요청 제한 시간(초) ──────────────────────────
+    # 타임아웃·요청 한도·서버 오류로 실패한 LLM 호출을 다시 보내는 횟수 (app/core/llm_retry.py).
+    # 아래 타임아웃은 시도마다 새로 적용된다 — 최악의 경우 대기 시간이 (1 + 이 값) 배가 된다
+    llm_retry_attempts: int = Field(default=1, ge=0, validation_alias="LLM_RETRY_ATTEMPTS")
     # 온보딩 태그 추출 타임아웃
-    # 1.5초였을 때 운영 태깅 호출이 전부 끊겼다 (#80). 답마다 다음 질문 전에 도는 호출이라 너무 늘리지는 않는다
-    onboarding_tag_timeout_s: float = 4.0
+    # 1.5초였을 때 운영 태깅 호출이 전부 끊겼다 (#80). 4초로도 LLM 이 느린 순간엔 끊겨 15초로 늘렸다.
+    # 이 시간이 지나면 사용자는 다음 질문으로 넘어가고, 태깅은 뒤에서 계속 돌아 /build 재태깅이 이어받는다
+    onboarding_tag_timeout_s: float = 15.0
     # /build 때 온보딩 중 실패한 답을 다시 태깅하는 타임아웃. 결과를 기다리는 단계라 더 넉넉히
-    persona_retag_timeout_s: float = 8.0
-    # 2턴 이후 질문 생성(220토큰). 2.5초였을 때 운영에서 정확히 2.50초에 끊겨 기본 질문으로 떨어졌다 (#87)
-    onboarding_phrase_timeout_s: float = 5.0
+    persona_retag_timeout_s: float = 20.0
+    # 2턴 이후 질문 생성(220토큰). 2.5초였을 때 운영에서 정확히 2.50초에 끊겨 기본 질문으로 떨어졌다 (#87).
+    # 5초로도 LLM 이 느린 순간엔 끊겨 15초로 늘렸다
+    onboarding_phrase_timeout_s: float = 15.0
     # 페르소나 프로필 종합 추출 타임아웃
     persona_extract_timeout_s: float = 15.0
     # 온보딩 첫 턴(5개 항목 JSON, 450토큰). 일반 턴과 같은 2.5초로는 운영에서 매번 템플릿으로 떨어졌다 (#82).
     # 온보딩을 시작할 때 한 번만 기다리는 호출이라 넉넉히
-    onboarding_first_turn_timeout_s: float = 8.0
+    onboarding_first_turn_timeout_s: float = 20.0
     # 연습 대화(practice) 실시간 스트리밍 답변 전체 타임아웃
-    practice_timeout_s: float = 12.0
+    practice_timeout_s: float = 15.0
+    # 채팅 종료 초안 3개(JSON)·최종 종료 메시지 1회 호출 타임아웃
+    chat_end_timeout_s: float = 10.0
     # 시뮬레이션 대본+리포트 1회 호출 타임아웃 (SimulationAgent.run)
     simulation_script_timeout_s: float = 120.0
-    # /report/preview 의 서술만 생성하는 호출 타임아웃 (ReportAgent.write)
+    # 마이그레이션 리포트 서술만 생성하는 호출 타임아웃
     simulation_narrative_timeout_s: float = 60.0
+    simulation_migration_attempt_timeout_s: float = 20.0
+    simulation_migration_slot_timeout_s: float = 30.0
+    simulation_migration_stale_s: float = 120.0
+    simulation_migration_max_runs: int = 2
+    simulation_migration_max_event_streams: int = 8
+
+    # ── 페르소나 추출 (연습대화·카카오톡 → 대화 스타일) ──────────────
+    # 한 작업에서 분석하는 최대 본인 발화 수. 최근 것부터 — 최근 말투가 지금 성격에 가깝다고 본다
+    extraction_max_utterances: int = 200
+    # 업로드 대화에서 새 본인 발화가 이보다 적으면 거절한다 (말투를 판단하기엔 부족)
+    extraction_min_utterances: int = 5
+    # 업로드 파일·텍스트 최대 크기 (바이트)
+    extraction_max_upload_bytes: int = 5 * 1024 * 1024
+    # 점수 보정 가중치 — 기존 점수 비중. 나머지(0.3)가 관찰값
+    extraction_base_weight: float = 0.7
+    # 대화 스타일 추출 LLM 타임아웃. 백그라운드 작업이라 넉넉히
+    extraction_timeout_s: float = 30.0
+    # 이 시간(분) 넘게 running 인 작업은 서버 재시작 등으로 멈춘 것으로 보고 failed 처리
+    extraction_job_stale_minutes: int = 10
+
+    # ── 프로필 신뢰(대표사진 심사·얼굴 인증) ──────────────────────────
+    # /test 브라우저 테스트 페이지. 운영에서는 꺼 둔다
+    enable_test_ui: bool = Field(default=False, validation_alias="ENABLE_TEST_UI")
+
+    yunet_model_path: Path = Field(
+        default=Path("models/face_detection_yunet_2023mar.onnx"),
+        validation_alias="YUNET_MODEL_PATH",
+    )
+    lbf_model_path: Path = Field(default=Path("models/lbfmodel.yaml"), validation_alias="LBF_MODEL_PATH")
+    sface_model_path: Path = Field(
+        default=Path("models/face_recognition_sface_2021dec.onnx"),
+        validation_alias="SFACE_MODEL_PATH",
+    )
+    synthetic_model_path: Path = Field(
+        default=Path("models/community_forensics_vit_int8.onnx"),
+        validation_alias="SYNTHETIC_MODEL_PATH",
+    )
+    c2pa_trust_anchors_path: Path | None = Field(default=None, validation_alias="C2PA_TRUST_ANCHORS_PATH")
+
+    max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, validation_alias="MAX_IMAGE_BYTES")
+    max_video_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, validation_alias="MAX_VIDEO_BYTES")
+    min_image_edge_px: int = Field(default=160, ge=64, validation_alias="MIN_IMAGE_EDGE_PX")
+    min_blur_variance: float = Field(default=8.0, ge=0, validation_alias="MIN_BLUR_VARIANCE")
+    masked_face_max_blur_variance: float = Field(
+        default=20.0,
+        ge=0,
+        validation_alias="MASKED_FACE_MAX_BLUR_VARIANCE",
+    )
+    masked_face_min_overlay_ratio: float = Field(
+        default=0.35,
+        ge=0,
+        le=1,
+        validation_alias="MASKED_FACE_MIN_OVERLAY_RATIO",
+    )
+    background_face_max_relative_area: float = Field(
+        default=0.15,
+        ge=0,
+        le=1,
+        validation_alias="BACKGROUND_FACE_MAX_RELATIVE_AREA",
+    )
+    min_brightness: float = Field(default=45.0, ge=0, le=255, validation_alias="MIN_BRIGHTNESS")
+    max_brightness: float = Field(default=215.0, ge=0, le=255, validation_alias="MAX_BRIGHTNESS")
+    max_abs_yaw_deg: float = Field(default=20.0, gt=0, validation_alias="MAX_ABS_YAW_DEG")
+    max_abs_pitch_deg: float = Field(default=18.0, gt=0, validation_alias="MAX_ABS_PITCH_DEG")
+    max_abs_roll_deg: float = Field(default=22.0, gt=0, validation_alias="MAX_ABS_ROLL_DEG")
+
+    synthetic_risk_threshold: float = Field(default=0.70, gt=0, lt=1, validation_alias="SYNTHETIC_RISK_THRESHOLD")
+    pixel_art_min_axis_ratio: float = Field(
+        default=0.45,
+        ge=0,
+        le=1,
+        validation_alias="PIXEL_ART_MIN_AXIS_RATIO",
+    )
+    pixel_art_min_edge_density: float = Field(
+        default=0.07,
+        ge=0,
+        le=1,
+        validation_alias="PIXEL_ART_MIN_EDGE_DENSITY",
+    )
+    face_match_threshold: float = Field(default=0.42, gt=-1, lt=1, validation_alias="FACE_MATCH_THRESHOLD")
+    liveness_max_abs_yaw_deg: float = Field(default=25.0, gt=0, validation_alias="LIVENESS_MAX_ABS_YAW_DEG")
+    liveness_max_abs_pitch_deg: float = Field(default=25.0, gt=0, validation_alias="LIVENESS_MAX_ABS_PITCH_DEG")
+    liveness_max_abs_roll_deg: float = Field(default=40.0, gt=0, validation_alias="LIVENESS_MAX_ABS_ROLL_DEG")
+
+    liveness_token_secret: str = Field(
+        default="replace-with-at-least-32-random-characters",
+        validation_alias="LIVENESS_TOKEN_SECRET",
+    )
+    liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
+
+    @field_validator("c2pa_trust_anchors_path", mode="before")
+    @classmethod
+    def empty_path_is_none(cls, value: object) -> object:
+        return None if value == "" else value
 
 
 @lru_cache

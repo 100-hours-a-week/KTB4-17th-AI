@@ -160,6 +160,9 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 | 페르소나 온보딩 | `app/features/persona/` | 구현됨. 소개팅 상대 "하루"와 대화한 뒤 연애 성향 점수를 뽑습니다. |
 | 시뮬레이션 | `app/features/simulation/` | 구현됨. 내 페르소나 × 상대 페르소나가 10턴 대화한 대본 + 매칭 리포트. LLM 1회. |
 | 연습 대화 | `app/features/practice/` | 구현됨. 상대의 저장된 페르소나가 나와 SSE 로 대화합니다. |
+| 대표사진 정면 검사 | `app/features/primary_photo/` | 구현됨. 한 명의 정면 얼굴과 최소 밝기·선명도를 검사합니다. |
+| 대표사진 AI 생성 검사 | `app/features/synthetic_detection/` | 구현됨. Community Forensics ViT + C2PA 로 AI 생성 위험을 판정합니다. |
+| 얼굴 인증 | `app/features/face_verification/` | 구현됨. 4초 정면 영상의 라이브니스를 확인하고 대표사진과 SFace 로 1:1 비교합니다. |
 
 페르소나 온보딩 API (`/ai/api` prefix 기준):
 
@@ -176,15 +179,18 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주지 않습니다. 시뮬레이션·연습대화에서 페르소나를 연기할 때 **말투 힌트**로만 약하게 쓰입니다 (`app/features/persona/profile.py` 의 `MBTI_TONE`).
 시뮬레이션과 연습대화에서는 확정된 페르소나만 사용할 수 있습니다.
 
-시뮬레이션 API:
+시뮬레이션 API. `POST /v1/simulation` 은 한 줄씩 대화를 만든 뒤, 끝날 때까지 기다렸다가 대본과 리포트를 201로 한 번에 돌려줍니다. 상대는 `partner_user_id` 이고, `turns` 를 생략하면 10왕복입니다.
 
 | 메서드 | 경로 | 역할 |
 | --- | --- | --- |
-| POST | `/v1/simulation` | `{me, partner, turns=10}` → 두 페르소나가 `turns` 왕복 대화한 대본과 매칭 리포트. LLM 1회. 저장됨. 한쪽이라도 모르는(`null`) 차원은 궁합 계산에서 빠집니다. |
-| GET | `/v1/simulation/{id}` | 저장된 시뮬레이션 (대본 + 리포트). |
-| GET | `/v1/simulation/{id}/report` | 리포트만. |
+| POST | `/v1/simulation` | `{me_user_id, partner_user_id, turns=10}` → 대화가 끝나면 대본과 매칭 리포트. |
+| GET | `/v1/simulation/{id}` | 실행 상태와 저장된 줄. |
+| GET | `/v1/simulation/{id}/report` | 리포트를 한 번 감싼 응답. |
+| GET | `/v1/simulation/{id}/events` | 저장된 줄을 한 줄씩 받는 스트림. |
 | GET | `/v1/simulation?user_id=…` | 내 시뮬레이션 목록. |
-| POST | `/v1/simulation/report/preview` | 페르소나 둘 + 대화록을 직접 넣어 리포트만 (프론트 형식 확인용). |
+| POST | `/v1/simulation/{id}/resume` | 멈춘 실행을 다시 시작. 202 `{simulation_id}`. |
+
+예전 한 호출 시뮬레이션은 `/v1/simulation_old` 입니다.
 
 연습대화 API:
 
@@ -202,6 +208,20 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 
 연습대화는 `partner_user_id` / `me_user_id` 로, 그 사용자의 최신 확정 페르소나를 가리킵니다.
 상세 설계와 변경 내역은 [docs/simulation-practice.md](docs/simulation-practice.md).
+
+프로필 신뢰(대표사진 심사·얼굴 인증) API — LLM 을 쓰지 않고 로컬 비전 모델만 사용합니다:
+
+| 메서드 | 경로 | 역할 |
+| --- | --- | --- |
+| POST | `/v1/profile-trust/photos/primary/frontal-check` | `image` → 정면·품질 판정과 사유 코드 (`NO_FACE`, `MULTIPLE_FACES`, `NON_FRONTAL_FACE` 등). |
+| POST | `/v1/profile-trust/photos/primary/synthetic-check` | `image` → `CLEAR` / `SYNTHETIC_RISK` / `CONFIRMED_SYNTHETIC`. |
+| POST | `/v1/profile-trust/verifications/challenges` | 서명된 5분짜리 라이브 촬영 챌린지 발급. |
+| POST | `/v1/profile-trust/verifications/complete` | `challenge_token` + `primary_photo` + `live_video` → `VERIFIED` 면 백엔드가 인증 마크를 부여. |
+
+- `INTERNAL_API_KEY` 를 설정하면 이 네 API 는 `X-Internal-Api-Key` 헤더를 요구합니다.
+- 모델 파일은 Git 에 없습니다. 로컬에서는 `uv run python scripts/download_models.py` 로 받고, Docker 이미지는 빌드 때 받습니다.
+- `ENABLE_TEST_UI=true` 면 `GET /test` 에서 브라우저로 세 기능을 시험할 수 있습니다 (기본 꺼짐).
+- 백엔드 연동 계약: [docs/v2docs/backend-api-contract.md](docs/v2docs/backend-api-contract.md), 스키마 [docs/v2docs/openapi.json](docs/v2docs/openapi.json) (`uv run python scripts/export_profile_trust_openapi.py` 로 재생성). 설계 결정은 [docs/v2docs/adr/](docs/v2docs/adr/).
 
 ## 개발 도구
 
@@ -230,9 +250,11 @@ uv add --dev <package>    # 개발 의존성 추가
 ```
 app/
 ├── main.py                 # FastAPI 앱 엔트리포인트 (`/ai/api`)
+├── devtools/               # 프로필 신뢰 브라우저 테스트 페이지 (ENABLE_TEST_UI)
 ├── core/
 │   ├── config.py           # 환경 변수 (pydantic-settings)
-│   └── db.py               # Postgres 엔진·세션, 공통 get_db, 공통 Base
+│   ├── db.py               # Postgres 엔진·세션, 공통 get_db, 공통 Base
+│   ├── media.py · errors.py · security.py  # 업로드 검증, 비전 API 오류 매핑, 내부 API 키
 └── features/
     ├── persona/            # AI 페르소나 온보딩·생성
     │   ├── api.py          # 라우터. 검증·상태코드만
@@ -247,13 +269,17 @@ app/
     │   ├── api.py
     │   ├── service.py      # 페르소나 로드 → 규칙 점수 → LLM 1회(대본+서술) → 조립·저장
     │   ├── report.py       # 점수 층(규칙) · 리포트 조립
-    │   ├── agents.py       # SimulationAgent(대본+서술 1회) · ReportAgent(서술만)
+    │   ├── agents.py       # SimulationAgent(대본+서술 1회)
     │   ├── repository.py / models.py / schemas.py
-    └── practice/           # 상대 페르소나와의 연습 대화 (SSE)
-        ├── api.py          # SSE 직렬화. DB 세션은 scope="request"
-        ├── service.py      # 세션·메시지 저장, 답변 스트리밍, 폴백
-        ├── agents.py       # PartnerAgent (스트리밍)
-        ├── repository.py / models.py / schemas.py
+    ├── practice/           # 상대 페르소나와의 연습 대화 (SSE)
+    │   ├── api.py          # SSE 직렬화. DB 세션은 scope="request"
+    │   ├── service.py      # 세션·메시지 저장, 답변 스트리밍, 폴백
+    │   ├── agents.py       # PartnerAgent (스트리밍)
+    │   ├── repository.py / models.py / schemas.py
+    ├── primary_photo/      # 대표사진 정면·품질 검사 (YuNet + LBF)
+    ├── synthetic_detection/ # 대표사진 AI 생성 위험 (ViT ONNX + C2PA)
+    └── face_verification/  # 라이브니스 + 대표사진 1:1 비교 (SFace)
+models/                     # 비전 모델 (scripts/download_models.py 로 내려받음)
 alembic/                    # DB 마이그레이션 (env.py 가 .env 의 DATABASE_URL 사용)
 └── versions/
 dev/                        # 로컬 플레이그라운드 (`app/`을 수정하지 않음)

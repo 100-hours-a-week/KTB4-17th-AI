@@ -20,6 +20,12 @@ dependencies = [
     "sqlalchemy[asyncio]==2.0.52",
     "uvicorn[standard]==0.52.4",
     "sentry-sdk[fastapi]>=2.71.0",
+    "c2pa-python==0.38.0",
+    "numpy==1.26.4",
+    "onnxruntime==1.30.0",
+    "opencv-contrib-python==4.11.0.86",
+    "pillow==12.3.0",
+    "python-multipart==0.0.32",
 ]
 
 [dependency-groups]

@@ -20,9 +20,12 @@ from alembic import context
 load_dotenv()
 
 # 테이블은 import 되어야 Base.metadata 에 등록된다. 새 기능에 models.py 가 생기면 여기에 추가.
+import app.features.chat_end.models  # noqa: E402, F401
 import app.features.persona.models  # noqa: E402, F401
+import app.features.persona_extraction.models  # noqa: E402, F401
 import app.features.practice.models  # noqa: E402, F401
 import app.features.simulation.models  # noqa: E402, F401
+import app.features.simulation_migration.models  # noqa: E402, F401
 from app.core.config import settings  # noqa: E402
 from app.core.db import Base  # noqa: E402
 

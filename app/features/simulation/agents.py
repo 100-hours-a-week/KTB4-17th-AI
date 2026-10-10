@@ -1,7 +1,6 @@
 """LLM (simulation).
 
   - SimulationAgent : 두 페르소나 + 규칙 점수 → 대본(N턴 왕복) + 리포트 서술.  **호출 1회**
-  - ReportAgent     : 대화록 + 두 페르소나 + 규칙 점수 → 서술만. /report/preview 용 (대화록을 밖에서 줄 때)
 
 점수는 여기서 만들지 않는다. 규칙으로 이미 나온 점수를 LLM에 "설명할 재료"로 준다.
 LLM이 점수를 다시 매기면 규칙과 서술이 어긋나서 사용자가 헷갈린다.
@@ -44,7 +43,7 @@ from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.profile import describe
 from app.features.persona.schemas import SCORED, PersonaResponse
 
-from .schemas import AREAS, DIMENSIONS_BY_AREA, RULES, Fit, ReportNarrative, ScriptOutput, Transcript
+from .schemas import AREAS, DIMENSIONS_BY_AREA, RULES, Fit, ScriptOutput
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +59,7 @@ def _get_client() -> AsyncOpenAI:
 
 
 class LLMError(Exception):
-    """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다.
+    """호출 실패. SimulationAgent.run 이 잡아서 재시도하거나 SimulationFailed 로 올린다.
 
     reason 은 SimulationFailed 가 그대로 물려받아 API 503 응답에 실린다 —
     클라이언트가 "그냥 재시도"(timeout)와 "다른 조치가 필요"(그 외)를 구분할 수 있게.
@@ -213,27 +212,6 @@ def _rules_section() -> str:
     return "\n".join(lines)
 
 
-def _persona_section(name: str, p: PersonaResponse) -> str:
-    scored = ", ".join(f"{d}={'?' if p.scores.get(d) is None else p.scores[d]}" for d in SCORED)
-    head = p.narrative.headline if p.narrative else "(서술 없음)"
-    return (
-        f"## {name}\n"
-        f"MBTI: {p.mbti or '-'} (참고만. 점수·대화록이 우선)\n"
-        f"한 줄: {head}\n"
-        f"점수: {scored}\n"
-        f"관심사: {', '.join(p.interests) or '-'}\n"
-        f"선호 데이트: {', '.join(p.date_prefer) or '-'} / 피함: {', '.join(p.date_avoid) or '-'}\n"
-        f"근거 부족(LOW): {', '.join(d for d, c in p.confidence.items() if c == 'LOW') or '없음'}"
-    )
-
-
-def _transcript_section(t: Transcript, name_a: str, name_b: str) -> str:
-    if not t.turns:
-        return "(대화록 없음 — 페르소나만으로 서술)"
-    names = {"a": name_a, "b": name_b}
-    return "\n".join(f"[{turn.index}] {names[turn.speaker]}: {turn.text}" for turn in t.turns)
-
-
 def _scores_section(area_scores: dict[str, int | None], dim_scores: dict[str, int | None]) -> str:
     lines = []
     for area, label in AREAS.items():
@@ -258,7 +236,8 @@ _REPORT_SHAPE = """{
 
 _REPORT_RULES = """- 점수를 다시 매기지 마세요. 주어진 점수를 "왜 그런지" 대화록의 장면으로 설명하세요.
 - 예외: ideal_* 세 차원만 대화록을 보고 0~100 으로 판정하세요. 근거가 없으면 키를 빼거나 값을 null로 두세요.
-- 두 사람 모두에게 보이는 글입니다. 한쪽을 깎아내리지 마세요. "A는 ~한 편이고 B는 ~한 편이라" 식으로.
+- 두 사람 모두에게 보이는 글입니다. 한쪽을 깎아내리지 마세요. "OO님은 ~한 편이고 XX님은 ~한 편이라" 식으로.
+- 사람을 가리킬 땐 실제 닉네임에 "님"을 붙여 부르세요. a·b·A·B 같은 기호로 사람을 가리키지 마세요.
 - 근거 부족(LOW) 차원은 단정하지 말고 "아직 잘 모르겠지만" 톤으로.
 - 한국어, "~해요" 체. 조언은 구체적으로 (예: "연락 빈도를 첫 주에 맞춰보세요").
 - 하이라이트 quote 는 대화록 원문을 그대로, turn_index 와 함께. click(잘 통한 순간)·friction(어긋난 순간) 섞어서 3~5개."""
@@ -266,6 +245,9 @@ _REPORT_RULES = """- 점수를 다시 매기지 마세요. 주어진 점수를 "
 
 # ══ 1. 시뮬레이션 — 대본 + 리포트, 호출 1회 ═════════════════
 
+# 대화 스타일 우선 (2026-10-05 결정): 프로필에 "대화 스타일"(실제 대화에서 관찰한 말투)이 있으면
+# 아래 고정 규칙의 "존댓말 유지·이모지 금지"보다 그 스타일을 따른다. 재현 정확도를 택한 결정이라,
+# 반말·이모티콘을 쓰던 사람이면 처음 보는 상대에게도 그렇게 말할 수 있다는 점을 감수했다.
 SIMULATION_SYSTEM = f"""당신은 소개팅 시뮬레이터이자 매칭 리포트 작가입니다.
 두 사람의 페르소나(온보딩 대화에서 추출한 연애 성향)를 받아,
 ① 두 사람이 처음 만난 소개팅에서 나누는 대화를 대본으로 쓰고
@@ -285,12 +267,14 @@ SIMULATION_SYSTEM = f"""당신은 소개팅 시뮬레이터이자 매칭 리포�
 - 대화는 가볍게 시작해 서로의 주말·관심사·연애 스타일(연락, 거리감, 데이트)로 자연스럽게 흘러갑니다.
   성향이 부딪치는 지점이 있으면 억지로 감추지 말고 대화에 드러나게 하세요 — 리포트가 그 장면을 인용합니다.
 - 존댓말, 편안한 구어체, 한 줄 1~3문장. 이모지 금지. "ㅎㅎ" 정도만.
+  단, 그 인물 프로필에 "대화 스타일"이 있으면 그 인물의 대사는 그 스타일(반말·이모티콘·자주 쓰는 말 포함, 리스트 앞쪽을 주로 사용)을 따릅니다.
 - 마지막 왕복은 소개팅 끝날 때처럼 — 다음 약속을 잡거나, 아쉬운 듯 마무리.
 
 # ② 리포트 규칙
 {_REPORT_RULES}
 - highlights 의 turn_index 는 위 대본에서 그 줄의 순번(0부터, a 의 첫 줄이 0)입니다.
 - 누가 어떤 성향·이상형인지는 **프로필 기준**으로 씁니다. a 의 특성을 b 의 것으로, b 의 특성을 a 의 것으로 바꿔 쓰지 마세요.
+- a·b 는 대본의 speaker 값일 뿐입니다. 리포트 문장에서는 a 를 a 의 닉네임, b 를 b 의 닉네임으로 바꿔 부르세요.
 
 # 출력
 JSON 객체 하나만. 설명·마크다운·코드펜스 금지.
@@ -608,111 +592,3 @@ def _validate_output(
     )
     full_text = "\n".join([*(line.text for line in script.transcript), report_text])
     return result, full_text
-
-
-# ══ 2. 리포트만 — 대화록을 밖에서 줄 때 (/report/preview) ═══
-
-SYSTEM = f"""당신은 소개팅 매칭 리포트를 쓰는 작가입니다.
-두 사람의 성향 점수(이미 계산됨)와 가상 소개팅 대화록을 읽고, 두 사람이 서로 얼마나 맞는지 설명합니다.
-
-원칙:
-{_REPORT_RULES}
-
-출력은 JSON 하나만:
-{_REPORT_SHAPE}"""
-
-
-class ReportAgent:
-    @observe(name="simulation-report-preview-workflow", capture_input=False, capture_output=False)
-    async def write(
-        self,
-        *,
-        persona_a: PersonaResponse,
-        persona_b: PersonaResponse,
-        transcript: Transcript,
-        name_a: str,
-        name_b: str,
-        area_scores: dict[str, int | None],
-        dim_scores: dict[str, int | None],
-        trace_metadata: LangfuseMetadata | None = None,
-        db: AsyncSession | None = None,
-        user_key: str | None = None,
-        session_id: str | None = None,
-    ) -> ReportNarrative:
-        """실패하면 LLMError. 호출부(report.build_report)가 템플릿으로 폴백한다."""
-        user = "\n\n".join(
-            [
-                "# 궁합 규칙\n" + _rules_section(),
-                _persona_section(name_a, persona_a),
-                _persona_section(name_b, persona_b),
-                "# 계산된 점수\n" + _scores_section(area_scores, dim_scores),
-                "# 대화록\n" + _transcript_section(transcript, name_a, name_b),
-            ]
-        )
-        with propagate_langfuse_metadata(trace_metadata):
-            data = await _call_json(
-                system=SYSTEM,
-                messages=[{"role": "user", "content": user}],
-                max_tokens=1800,
-                timeout=get_settings().simulation_narrative_timeout_s,
-                name="simulation-report-preview",
-                metadata=trace_metadata,
-            )
-        try:
-            narrative = ReportNarrative.model_validate(data)
-        except ValidationError as e:
-            raise LLMError(f"invalid narrative: {e}") from e
-        mode = effective_mode(user_key)
-        if mode != "off":
-            text = " ".join(
-                [
-                    narrative.headline,
-                    narrative.summary,
-                    *narrative.area_comments.values(),
-                    *narrative.strengths,
-                    *narrative.cautions,
-                    narrative.date_comment,
-                ]
-            )
-            checked = validate(
-                text,
-                GuardrailContext(
-                    surface="simulation_report",
-                    speaker_name=name_a,
-                    partner_name=name_b,
-                    task="report",
-                    style="report",
-                    max_chars=4000,
-                ),
-            )
-            bad = checked.grade in {Grade.RETRYABLE, Grade.BLOCK}
-            result = ValidationResult(
-                status="SHADOW_FAIL"
-                if bad and mode == "shadow"
-                else "FALLBACK"
-                if bad
-                else "WARN"
-                if checked.grade == Grade.WARN
-                else "PASS",
-                grade=checked.grade,
-                initial_grade=checked.grade,
-                regenerated=False,
-                violations=checked.violations,
-                latency_ms=checked.latency_ms,
-            )
-            if db:
-                await record_guardrail(
-                    db,
-                    feature="simulation",
-                    operation="report",
-                    session_id=session_id,
-                    user_id=user_key,
-                    mode=mode,
-                    result=result,
-                    initial_text=text,
-                )
-            if bad and mode == "enforce":
-                self.last_validation = result
-                raise LLMError("report guardrail validation failed", reason="guardrail")
-            narrative.validation = result
-        return narrative

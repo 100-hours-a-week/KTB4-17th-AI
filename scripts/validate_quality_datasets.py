@@ -18,9 +18,8 @@ DATASET_COUNTS = {
     "persona_build": 60,
     "practice_reply": 70,
     "simulation_run": 36,
-    "simulation_report_preview": 24,
 }
-EXPECTED_SPLITS = {"calibration": 66, "regression": 198, "blind_holdout": 66}
+EXPECTED_SPLITS = {"calibration": 61, "regression": 184, "blind_holdout": 61}
 REQUIRED_TOP_LEVEL = {"input", "expectedOutput", "metadata"}
 REQUIRED_METADATA = {
     "caseId",

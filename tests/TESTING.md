@@ -48,7 +48,6 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - 페르소나 없음 404 (커밋 안 함), LLM 실패 503 + 롤백
 - 없는 시뮬레이션 404, 저장된 리포트 조회
 - 목록은 `user_id`/`persona_id` 중 정확히 하나
-- `/report/preview?use_llm=false` → 템플릿 서술
 
 ### ② LLM 파싱·검증 (21개)
 
@@ -58,14 +57,13 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 - 대본 + 리포트 파싱, 모르는 키는 무시
 - 요청 턴 수·토큰 예산(`3000 + 300×turns`)이 프롬프트에 반영
 - LLM 에러 / JSON 아님 / 한 줄짜리 대본 / 모르는 화자 / 리포트 없음 → 모두 `SimulationFailed`
-- ReportAgent: 서술 파싱, 대화록 없을 때 안내 문구, 헤드라인 60자 초과 → `LLMError`
 
 **practice** (`test_practice_agents.py`, 5)
 - 빈 조각(`None`, `""`, choices 없음)은 건너뛰고 텍스트만 스트리밍
 - system 프롬프트가 맨 앞, 그다음 대화 이력
 - 첫 인사면 지시문을 user 메시지로 붙임
 - 프로바이더 예외(401 등) → `LLMError`
-- 내 페르소나가 있을 때만 "민수님에 대해 참고할 것" 섹션
+- 내 페르소나가 있을 때만 "대화 상대 민수님" 섹션 (이름·MBTI만, 취미·일상·데이트 취향은 넣지 않음)
 
 ### ③ 비즈니스 규칙 (28개)
 
@@ -206,7 +204,7 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
 ## 온보딩 — 답변에 근거한 특성만 · MBTI 말투 · 모름은 null (red → green)
 
 합의한 seam 네 곳에서만 테스트한다: `/build` 결과(`build_draft`), 페르소나 불러오기(`load_persona`),
-프로필 문장(`describe`), 궁합 계산(`build_report`). 가짜는 LLM 경계(`_call`, 추출·태깅 에이전트)에만 둔다.
+프로필 문장(`describe`), 궁합 계산(`assemble_report`). 가짜는 LLM 경계(`_call`, 추출·태깅 에이전트)에만 둔다.
 
 - **답변에 근거한 차원만** (`tests/test_persona_build_fallback.py`)
   - 질문이 겨눈 차원(`topic.covers`)이 아니라 태깅이 **그 답변**에서 짚은 차원(`tags.primary`)만 인정
@@ -272,3 +270,52 @@ uv run pytest tests/test_practice_service.py -v   # 파일 하나
   - "규칙 위반이면 전체 템플릿"을 고정하던 기존 테스트를 새 동작으로 교체
 - `onboarding_phrase_timeout_s` 2.5 → 5.0
 - 세 조각 모두 테스트를 먼저 쓰고 실패를 확인한 뒤 구현
+
+## 페르소나 추출 — 대화 스타일 추출 및 점수 보정 (red → green)
+
+> 2026-10-06 / 2026-10-08 · `feat/persona-extraction`
+
+실제 대화(연습대화·카카오톡)에서 사용자의 말투·대화 습관을 관찰하여 페르소나에 반영하고, 관계 성향 점수 4개를 70:30으로 보정한다.
+
+### 세 가지 seam과 테스트 파일
+1. **HTTP API** (`tests/test_extraction_api.py`)
+   - `POST /v1/persona-extraction/practice`: 202 Accepted + 백그라운드 예약, DB 커밋 후 백그라운드 실행
+   - `POST /v1/persona-extraction/conversation`: 파일(.txt) 또는 text 파라미터 수신, UTF-8 BOM 지원, 크기 제한(413), 정확히 하나만 전송(422)
+   - `GET /v1/persona-extraction/jobs/{job_id}`: 작업 상태 조회 (200, 404)
+   - `DELETE /v1/persona-extraction/style`: 대화 스타일 삭제 및 온보딩 점수 복원 (200, 없는 경우 400)
+   - 도메인 예외 매핑: `PersonaNotFound` (404), `JobInProgress` (409), `NothingToExtract` (409), `SpeakerNotFound` / `TooFewUtterances` / `UnknownFormat` (422)
+
+2. **LLM 파싱·검증** (`tests/test_extraction_agents.py`, `tests/test_extraction_parsers.py`)
+   - 카카오톡 파서 3종(PC 날짜줄+대괄호, Android, iOS), 오전/오후 12시 변환, 사진/이모티콘 등 첨부 필터링, 알 수 없는 포맷 `UnknownFormat`
+   - `StyleAgent`: 이전 스타일과 발화 목록 전달, 빈도순 정렬 및 어미 괄호 힌트 루브릭, LLM 에러 및 형식 오류 시 `ExtractionFailed` 래핑
+
+3. **비즈니스 규칙 및 서비스** (`tests/test_extraction_rules.py`, `tests/test_extraction_service.py`, `tests/test_persona_style.py`, `tests/test_practice_repository.py`)
+   - 문구 필터링(`clean_phrases`): PII(전화번호·메일·링크·숫자) 필터링, 30자 초과 문구 제거, 닉네임 제외, 최대 10개
+   - 점수 가중 보정(`blend_scores`): 기존 점수*0.7 + 관찰값*0.3 반올림, 기존 null이면 관찰값 채우고 신뢰도 LOW
+   - 동시성 및 제약: 사용자당 활성 작업(pending/running) 1개만 허용(인덱스 제약), 오래 멈춘 running 작업은 stale failed 처리 후 새 작업 허용
+   - 발화 중복 방지: 동일 발화(시간, 해시, 순번) 중복 건너뜀, 새 발화 최소 10개 미만 시 거절
+   - 발화 분석 및 반영: 최근 최대 200개 발화만 LLM에 전달하되 업로드된 전체 발화에 `reflected_persona_id` 마킹
+   - 실패 시 보존: LLM 호출 실패 시 작업만 failed로 남고 발화는 미반영 상태 유지
+   - 온보딩 재빌드 시 초기화: 온보딩으로 재빌드하면 `conversation_style`은 None으로 초기화되고 기존 반영된 발화는 재사용되지 않음
+   - 대화 스타일 삭제: 원본 온보딩 확정 페르소나의 점수로 복구된 새 확정 버전 생성, 기존 발화 반영 표시는 유지하여 이후 대화부터 추출
+
+## LLM 호출 재시도
+
+`tests/test_llm_retry.py` · seam: OpenAI 호환 클라이언트 (`_get_client`, 외부 경계만 가짜)
+
+- Langfuse 14일 기록에서 실패 대부분이 우리 쪽 타임아웃·요청 한도(429)·생성 도중 공급자 오류. 같은 요청을 몇 초 뒤 다시 보내면 대개 성공
+- 재시도 대상: 우리 타임아웃, 429, 5xx, 연결 실패, 빈 응답 — 인증·요청 형식 오류는 한 번에 실패
+- 횟수 `LLM_RETRY_ATTEMPTS` 기본 1, 타임아웃은 시도마다 새로. 재시도마다 Langfuse `llm-retry` 이벤트(WARNING)
+- 연습대화 스트리밍은 첫 조각을 보내기 전까지만 재시도 (이미 보낸 글자를 다시 보내면 답변이 겹친다)
+
+## 온보딩 — 타임아웃 상향 · 늦은 태깅 이어받기 (red → green)
+
+`tests/test_persona_tagging_handoff.py` · seam: 온보딩 → /build 전체 (대화·태깅·추출 에이전트만 가짜, 이벤트 루프 하나)
+
+배포 후 Langfuse 확인: 태깅이 4·8초, 질문 생성이 5초, 추출이 15초에서 끊겨 폴백. /build 는 태그 없는 답을 하나씩 8초씩 다시 태깅해 추출 전까지 45초를 썼다
+
+- 타임아웃: 태깅·질문 생성·연습대화 15초, 재태깅·첫 턴 20초 (재태깅 > 태깅, 첫 턴 > 일반 턴 불변식 유지)
+- 온보딩 태깅이 대기 시간을 넘기면 사용자는 다음 질문으로 넘어가고 태깅은 뒤에서 계속 — 처음 기다린 시간이 늦은 태깅보다 짧은지 테스트
+- /build 는 그 호출을 이어받는다 — 같은 답을 다시 태깅하지 않고 늦게 끝난 결과가 근거로 쓰이는지 테스트
+- 이어받은 호출이 실패했을 때만 새로 태깅, 태그 없는 답들은 동시에 (하나씩이면 답 수만큼 길어지는지 시간으로 확인)
+- 대기 시간 초과·동시 재태깅 두 조각은 기존 코드로 먼저 실패 확인

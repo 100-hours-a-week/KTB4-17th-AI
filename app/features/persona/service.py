@@ -6,6 +6,7 @@ agents는 "어떻게 말할까"만 맡는다.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from datetime import UTC, datetime
@@ -21,7 +22,7 @@ from .agents import (
     ExtractionAgent,
     TaggingAgent,
 )
-from .models import OnboardingSession, PersonaRecord
+from .models import OnboardingSession, OnboardingTurn, PersonaRecord
 from .repository import PersonaRepository
 from .schemas import (
     ALL_DIMENSIONS,
@@ -39,12 +40,14 @@ from .schemas import (
     TOPICS_BY_ID,
     Change,
     ConfirmPersonaResponse,
+    ConversationStyle,
     Gap,
     Narrative,
     PersonaResponse,
     RawExtraction,
     Segment,
     Summary,
+    Tags,
     Topic,
     TurnResponse,
     UpdateNicknameResponse,
@@ -52,6 +55,39 @@ from .schemas import (
 )
 
 logger = logging.getLogger(__name__)
+
+# ── 늦은 태깅 이어받기 ──────────────────────────────────
+# 온보딩 중 태깅이 대기 시간(onboarding_tag_timeout_s)을 넘기면 사용자는 다음 질문으로 넘어가고,
+# 태깅 호출은 버리지 않고 뒤에서 끝까지 돌린다. /build 재태깅은 처음부터 다시 부르지 않고 이 호출을 이어받는다.
+# 서버 메모리라 재시작되면 사라진다 — 그때는 /build 가 새로 태깅한다 (결과는 같고 시간만 더 든다).
+_PENDING_TAGS: dict[int, asyncio.Task[Tags | None]] = {}
+# 이어받지 않은(온보딩을 끝내지 않은) 호출 결과를 메모리에 두는 시간
+_PENDING_TAG_TTL_S = 3600.0
+
+
+def _keep_pending_tag(turn_id: int, task: asyncio.Task[Tags | None]) -> None:
+    _PENDING_TAGS[turn_id] = task
+
+    def forget() -> None:
+        if _PENDING_TAGS.get(turn_id) is task:
+            del _PENDING_TAGS[turn_id]
+
+    # 결과를 꺼내 두지 않으면 asyncio 가 "Task exception was never retrieved" 경고를 남긴다
+    task.add_done_callback(lambda t: t.cancelled() or t.exception())
+    asyncio.get_running_loop().call_later(_PENDING_TAG_TTL_S, forget)
+
+
+async def _pending_tag_result(turn_id: int) -> Tags | None:
+    """온보딩 때 뒤로 넘긴 태깅이 있으면 그 결과(아직 도는 중이면 끝날 때까지 기다림). 없거나 실패면 None."""
+    task = _PENDING_TAGS.pop(turn_id, None)
+    if task is None:
+        return None
+    try:
+        return await task
+    except Exception as e:  # tag() 는 LLM 실패를 None 으로 돌려준다 — 그 밖의 예외도 새로 태깅으로 넘긴다
+        logger.warning("pending tagging for turn %s failed: %s", turn_id, e)
+        return None
+
 
 # 온보딩 전체 질문 수. 나중에 질문 수를 바꿀 때는 이 값만 수정하면 된다.
 ONBOARDING_TOTAL_TURNS = 10
@@ -364,6 +400,11 @@ def persona_response(
         confidence=record.confidence,
         narrative=Narrative.model_validate(record.narrative) if record.narrative else None,
         summaries=[Summary.model_validate(s) for s in record.summaries] if record.summaries else [],
+        conversation_style=(
+            ConversationStyle.model_validate(record.conversation_style)
+            if getattr(record, "conversation_style", None)
+            else None
+        ),
         accuracy=accuracy_of(record.confidence),
         gaps=gaps or [],
         changes=changes or [],
@@ -412,31 +453,42 @@ class OnboardingService:
         - 보강 질문은 그 차원만 겨눈 질문이라 답했으면 그 차원으로 인정
         secondary 처럼 곁가지로만 스친 차원은 넣지 않는다."""
         dims: set[str] = set()
+        untagged: list[OnboardingTurn] = []
         for turn in session.turns:
             if not turn.answer or turn.skipped or (turn.tags or {}).get("off_topic"):
                 continue
             if turn.topic_id.startswith("supplement:"):
                 dims.add(turn.topic_id.removeprefix("supplement:"))
                 continue
-            primary = (turn.tags or {}).get("primary")
             if turn.tags is None:
-                tags = await self.tagging.tag(
-                    turn.question,
-                    turn.answer,
-                    timeout=get_settings().persona_retag_timeout_s,
-                    trace_metadata=build_langfuse_metadata(
-                        feature="persona",
-                        operation="retagging",
-                        user_id=session.user_id,
-                        session_id=session.id,
-                        turnIndex=turn.turn_index,
-                        topicId=turn.topic_id,
-                    ),
-                )
-                # 또 실패하면 이 답에서 무엇이 드러났는지 알 수 없다 — 질문으로 짐작하지 않고 인정하지 않는다
-                primary = tags.primary if tags else []
-            dims.update(primary or [])
+                untagged.append(turn)
+                continue
+            dims.update(turn.tags.get("primary") or [])
+        # 태그 없는 답들은 한꺼번에 — 하나씩 기다리면 답 수만큼 /build 가 길어진다
+        for primary in await asyncio.gather(*(self._retag(session, turn) for turn in untagged)):
+            dims.update(primary)
         return dims
+
+    async def _retag(self, session: OnboardingSession, turn: OnboardingTurn) -> list[str]:
+        """온보딩 때 뒤로 넘긴 태깅을 이어받는다. 이어받을 게 없거나 실패했을 때만 새로 태깅한다.
+
+        또 실패하면 이 답에서 무엇이 드러났는지 알 수 없다 — 질문으로 짐작하지 않고 인정하지 않는다."""
+        tags = await _pending_tag_result(turn.id)
+        if tags is None:
+            tags = await self.tagging.tag(
+                turn.question,
+                turn.answer,
+                timeout=get_settings().persona_retag_timeout_s,
+                trace_metadata=build_langfuse_metadata(
+                    feature="persona",
+                    operation="retagging",
+                    user_id=session.user_id,
+                    session_id=session.id,
+                    turnIndex=turn.turn_index,
+                    topicId=turn.topic_id,
+                ),
+            )
+        return tags.primary if tags else []
 
     def _controls(self, session: OnboardingSession) -> dict:
         answered = self._answered(session)
@@ -551,18 +603,28 @@ class OnboardingService:
         topic = TOPICS_BY_ID[session.pending_topic_id]
         question = session.turns[-1].question
 
-        tags = await self.tagging.tag(
-            question,
-            answer,
-            trace_metadata=build_langfuse_metadata(
-                feature="persona",
-                operation="tagging",
-                user_id=session.user_id,
-                session_id=session.id,
-                turnIndex=session.turn_index,
-                topicId=topic.id,
-            ),
+        tagging = asyncio.create_task(
+            self.tagging.tag(
+                question,
+                answer,
+                trace_metadata=build_langfuse_metadata(
+                    feature="persona",
+                    operation="tagging",
+                    user_id=session.user_id,
+                    session_id=session.id,
+                    turnIndex=session.turn_index,
+                    topicId=topic.id,
+                ),
+            )
         )
+        try:
+            # shield: 기다림을 멈춰도 태깅 호출 자체는 취소하지 않는다
+            tags = await asyncio.wait_for(asyncio.shield(tagging), get_settings().onboarding_tag_timeout_s)
+        except TimeoutError:
+            # 늦은 태깅은 뒤에서 계속 돌리고 /build 가 이어받는다. 지금은 태깅 실패와 같이 진행
+            logger.warning("tagging exceeded onboarding wait, continuing in background (turn %s)", session.turns[-1].id)
+            _keep_pending_tag(session.turns[-1].id, tagging)
+            tags = None
 
         # 질문과 무관한 답이면 한 번만 가볍게 되묻는다. 턴은 소모하지 않고 답도 저장하지 않는다
         if tags is not None and tags.off_topic and not (session.turns[-1].tags or {}).get("reasked"):

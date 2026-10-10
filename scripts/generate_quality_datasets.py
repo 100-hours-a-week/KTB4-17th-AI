@@ -36,18 +36,17 @@ COUNTS = {
     "persona_build": 60,
     "practice_reply": 70,
     "simulation_run": 36,
-    "simulation_report_preview": 24,
 }
-SPLITS = {"calibration": 66, "regression": 198, "blind_holdout": 66}
+SPLITS = {"calibration": 61, "regression": 184, "blind_holdout": 61}
 TOTAL = sum(COUNTS.values())
 SOURCES = [PLAN, PS, PA, PV, PP, "app/features/persona/api.py", QA, QS, QV, SA, SS, SV, SR, CONFIG]
 METHOD = "astra-xhigh-v1"
-VERSION = "1.12.0"
+VERSION = "1.13.0"
 DATASET_SPLITS = {
     name: dict(
         zip(
             SPLITS,
-            {60: (12, 36, 12), 70: (14, 42, 14), 80: (16, 48, 16), 36: (7, 22, 7), 24: (5, 14, 5)}[count],
+            {60: (12, 36, 12), 70: (14, 42, 14), 80: (16, 48, 16), 36: (7, 22, 7)}[count],
             strict=True,
         )
     )
@@ -2623,7 +2622,6 @@ PAIR_CARDS = [
 PAIR_SPLIT_CAL = (0, 2, 4)
 PAIR_SPLIT_HOLD = (6, 7, 10)
 SIM_VARIANT_COUNTS = (3, 4, 1, 4, 3, 4, 1, 3, 4, 3, 3, 3)
-PREVIEW_VARIANT_COUNTS = (2, 3, 1, 3, 2, 2, 1, 2, 2, 2, 2, 2)
 
 
 def persona_accuracy(confidence: dict) -> int:
@@ -3111,259 +3109,6 @@ def simulations(ds: Dataset):
             )
 
 
-def previews(ds: Dataset):
-    for i, card in enumerate(PAIR_CARDS):
-        pa, pb = pair(i, card)
-        kind = card[0]
-        family = f"simulation-pair-{kind}"
-        split = split_at(i, PAIR_SPLIT_CAL, PAIR_SPLIT_HOLD)
-        for j in range(PREVIEW_VARIANT_COUNTS[i]):
-            transcript = fixed_transcript(card, j)
-            inp = {
-                "task": "simulation_report_preview",
-                "persona_a": pa,
-                "persona_b": pb,
-                "nickname_a": "가상나래",
-                "nickname_b": "가상보람",
-                "transcript": {"turns": transcript},
-                "useLlm": j == 0,
-            }
-            warm_range = [60, 90] if i in (2, 3, 10) else [35, 75]
-            ex = expectation(
-                "고정 대화록을 다시 쓰지 않고 리포트 서술만 생성한다.",
-                "이상형 외 차원 점수와 위험 조합은 ruleOracle을 유지한다. 이상형 판정이 채워지면 영역 평균·총점·등급을 다시 계산하며 사전 등급을 고정하지 않는다.",
-                "인용은 해당 turn_index 원문과 정확히 일치한다.",
-                "직업·재산·외모에 대한 근거가 없는 대화에서 구체적 개인 사실을 지어내지 않는다.",
-                evidence=[
-                    evidence(transcript[2]["text"], [], "transcript.turns[2].text"),
-                    evidence(transcript[3]["text"], [], "transcript.turns[3].text"),
-                ],
-                forbidden=["원문 밖 인용", "조건 점수만으로 ideal 적합도 단정", "결혼 성공 확률로 점수 해석"],
-                ruleOracle=score_oracle(pa, pb),
-                scoreLayer="pre_llm_rules_ideal_unjudged",
-                acceptableRanges={"ideal_warmth": {"min": warm_range[0], "max": warm_range[1], "allowNull": True}},
-                referenceLabels={
-                    "ideal_status": None,
-                    "ideal_vitality": None,
-                    "acceptableNullDimensions": ["ideal_warmth", "ideal_vitality", "ideal_status"],
-                },
-                highlightContract={
-                    "validTurnIndices": list(range(len(transcript))),
-                    "candidateEvidence": [{"turn_index": k, "quote": transcript[k]["text"]} for k in (2, 3)],
-                    "maxItems": 6,
-                },
-                runtime={"maxTokens": 1800, "timeoutSeconds": 60},
-            )
-            category = "fixed_transcript"
-            flags = ["ideal_label_human_review_pending"]
-            if j == 1:
-                category = [
-                    "template_no_llm",
-                    "timeout_template",
-                    "invalid_json_template",
-                    "highlight_bad_index",
-                    "highlight_bad_quote",
-                    "ideal_null",
-                    "ideal_out_of_range",
-                    "risk_caution_truncation",
-                    "rule_grade_boundary",
-                    "low_accuracy",
-                    "no_transcript",
-                    "defaulted_persona_scores",
-                ][i]
-                if i <= 2:
-                    inp["useLlm"] = i != 0
-                    if i:
-                        inp["faultInjection"] = {"kind": "timeout" if i == 1 else "invalid_json"}
-                    ex["faultContract"] = {
-                        "narrativeSource": "template",
-                        "qualitySuccess": False,
-                        "ruleScoresPreserved": True,
-                        "idealAreaScore": None,
-                    }
-                elif i in (3, 4):
-                    inp["useLlm"] = True
-                    inp["candidateNarrative"] = {
-                        "headline": "인용 검사",
-                        "summary": "고정 대화록과 비교해요.",
-                        "highlights": [
-                            {
-                                "kind": "click",
-                                "turn_index": 999 if i == 3 else 2,
-                                "quote": transcript[2]["text"] if i == 3 else "대화에 없는 합성 문장",
-                                "why": "실제 구현의 검증 공백 확인",
-                            }
-                        ],
-                    }
-                    ex["codeBoundary"] = {
-                        "schemaAccepted": True,
-                        "assembleReportPreservesHighlight": True,
-                        "qualitySuccess": False,
-                        "note": "preview assemble_report는 index·quote를 검증하지 않는다.",
-                    }
-                    flags.append("known_code_gap_preview_highlight")
-                elif i == 5:
-                    inp["useLlm"] = True
-                    inp["candidateNarrative"] = {
-                        "headline": "판단을 유보해요",
-                        "summary": "근거가 없는 영역은 비워 둬요.",
-                        "ideal_fit": {"ideal_warmth": None, "ideal_status": None},
-                    }
-                    ex["codeBoundary"] = {"schemaAccepted": True, "idealAreaScore": None}
-                elif i == 6:
-                    inp["useLlm"] = True
-                    inp["candidateNarrative"] = {
-                        "headline": "범위 경계",
-                        "summary": "범위를 벗어난 후보 점수예요.",
-                        "ideal_fit": {"ideal_status": 101},
-                    }
-                    ex["codeBoundary"] = {
-                        "schemaAccepted": True,
-                        "qualitySuccess": False,
-                        "note": "ReportNarrative.ideal_fit 값에는 현재 ge/le 제약이 없다. 평가 계약은 0~100이다.",
-                    }
-                    flags.append("known_code_gap_ideal_range")
-                elif i == 7:
-                    inp["useLlm"] = True
-                    inp["candidateNarrative"] = {
-                        "headline": "주의점 누락 경계",
-                        "summary": "위험 조합의 주의 문장을 확인해요.",
-                        "cautions": [f"모델이 쓴 합성 주의 {n}" for n in range(1, 6)],
-                    }
-                    ex["codeBoundary"] = {
-                        "riskIds": score_oracle(pa, pb)["riskIds"],
-                        "riskCautionMayBeTruncated": True,
-                        "qualitySuccess": False,
-                        "note": "위험 주의를 append 후 cautions[:5]로 자르므로 앞의 5개에 밀려 유실된다.",
-                    }
-                    flags.append("known_code_gap_risk_caution_truncation")
-                elif i == 8:
-                    inp["ruleProbe"] = {"function": "grade_of", "scores": [44, 45, 69, 70]}
-                    ex["codeBoundary"] = {"grades": ["CAUTION", "OK", "OK", "GOOD"]}
-                elif i == 9:
-                    inp["persona_a"] = copy.deepcopy(pa)
-                    inp["persona_a"]["confidence"] = {
-                        d: "HIGH" if n < 4 else "MEDIUM" if n < 7 else "LOW" for n, d in enumerate(SCORED)
-                    }
-                    # 앱에서 값이 없으면 항상 LOW 다. HIGH/MEDIUM 차원은 실제로 답한 값(모자란 값은 중간 50)으로 채운다
-                    for n, d in enumerate(SCORED):
-                        if n < 7 and inp["persona_a"]["scores"][d] is None:
-                            inp["persona_a"]["scores"][d] = 50
-                    inp["persona_a"]["accuracy"] = persona_accuracy(inp["persona_a"]["confidence"])
-                    inp["persona_b"] = copy.deepcopy(pb)
-                    inp["persona_b"]["scores"] = {
-                        d: 50 if v is None else v for d, v in inp["persona_b"]["scores"].items()
-                    }
-                    inp["persona_b"]["confidence"] = {d: "MEDIUM" for d in SCORED}
-                    inp["persona_b"]["accuracy"] = persona_accuracy(inp["persona_b"]["confidence"])
-                    ex["ruleOracle"] = score_oracle(inp["persona_a"], inp["persona_b"])
-                    ex["codeBoundary"] = {
-                        "reportAccuracy": 39,
-                        "lowAccuracyNoteRequired": True,
-                        "thresholdExclusive": 40,
-                    }
-                elif i == 10:
-                    inp["transcript"] = {"turns": []}
-                    ex["requiredEvidence"] = []
-                    ex["highlightContract"] = {"validTurnIndices": [], "candidateEvidence": [], "maxItems": 0}
-                    ex["codeBoundary"] = {"idealFit": {}, "highlights": [], "narrativeSource": "template"}
-                else:
-                    ex["codeBoundary"] = {
-                        "missingDimensionScore": None,
-                        "missingDimensionDisplay": BACKEND_UNKNOWN_DISPLAY,
-                        "idealAreaScore": None,
-                        "overallScore": score_oracle(pa, pb)["overallScore"],
-                        "notOverallNoAreasDefault": True,
-                    }
-                if not inp["useLlm"]:
-                    ex["runtime"]["llmCalls"] = 0
-                    ex["faultContract"] = {
-                        "narrativeSource": "template",
-                        "qualitySuccess": False,
-                        "ruleScoresPreserved": True,
-                    }
-            if j == 2:
-                inp["useLlm"] = True
-                if i == 1:
-                    category = "explicit_null_under_conflict"
-                    inp["candidateNarrative"] = {
-                        "headline": "박물관에서 다른 연락 리듬",
-                        "summary": "관람 중 연락 기대가 다르지만 생활 조건은 아직 모르는 상태예요.",
-                        "ideal_fit": {"ideal_status": None, "ideal_vitality": None},
-                    }
-                    ex["codeBoundary"] = {"schemaAccepted": True, "idealStatus": None, "idealVitality": None}
-                else:
-                    category = "ideal_out_of_range"
-                    inp["candidateNarrative"] = {
-                        "headline": "차 시음의 근거 범위",
-                        "summary": "차분한 대화만으로 조건 적합도를 확정하지 않아요.",
-                        "ideal_fit": {"ideal_status": 101},
-                    }
-                    ex["codeBoundary"] = {
-                        "schemaAccepted": True,
-                        "qualitySuccess": False,
-                        "note": "현재 ideal_fit 정수에는 ge/le 제약이 없지만 품질 계약은 0~100이다.",
-                    }
-                    flags.append("known_code_gap_ideal_range")
-            allowed_warmth = [None, *range(warm_range[0], warm_range[1] + 1)]
-            recalculated = [
-                score_oracle(inp["persona_a"], inp["persona_b"], {"ideal_warmth": value}) for value in allowed_warmth
-            ]
-            totals = sorted({result["overallScore"] for result in recalculated})
-            by_grade = {
-                label: [min(values), max(values)]
-                for label in ("CAUTION", "OK", "GOOD")
-                if (values := [score for score in totals if grade(score) == label])
-            }
-            ex["idealRecalculationOracle"] = {
-                "scope": "정상 LLM 판정에서 온정만 허용범위 또는 null로 판정하고 나머지 이상형 두 차원은 null인 경우; 주입 후보·template 경계는 별도 codeBoundary/faultContract로 채점",
-                "allowedWarmth": {"min": warm_range[0], "max": warm_range[1], "allowNull": True},
-                "possibleOverallScores": totals,
-                "gradeScoreIntervals": by_grade,
-                "whenAllIdealNull": {
-                    "score": recalculated[0]["overallScore"],
-                    "grade": recalculated[0]["overallGrade"],
-                },
-            }
-            ex["hardAssertions"].append(
-                "정상 온정 판정의 허용범위와 null을 적용한 총점은 "
-                + f"{totals[0]}~{totals[-1]}이며 가능한 등급별 점수는 "
-                + ", ".join(f"{label} {limits[0]}~{limits[1]}" for label, limits in by_grade.items())
-                + "이다. 주입 후보와 template 실행의 고정 판정은 별도 경계 계약을 따른다."
-            )
-            ex["hardAssertions"].append(
-                f"{kind}의 {category} 장면에서 실제로 확인된 행동과 알 수 없는 생활 조건을 구별한다."
-            )
-            ex["rubric"] = focused_rubric(
-                {
-                    "quotedSceneFaithfulness": 35,
-                    "ruleAndRiskExplanation": 30,
-                    "idealEvidenceLimits": 25,
-                    "balancedTone": 10,
-                },
-                f"{card[3]}의 두 발화에서 {kind} 특성을 설명하고 {category}의 검증 경계를 준수",
-                f"{card[3]}에서 말하지 않은 사실·이상형 적합도를 단정하거나 위험 {ex['ruleOracle']['riskIds']} 누락",
-            )
-            ds.add(
-                "simulation_report_preview",
-                family,
-                f"{family}-preview-{j}",
-                split,
-                category,
-                "hard" if j else "medium",
-                inp,
-                ex,
-                [
-                    ref(SA, "ReportAgent"),
-                    ref(SR, "build_report"),
-                    ref(SR, "assemble_report"),
-                    ref(SR, "score_dimensions"),
-                    ref(SS, "ReportNarrative"),
-                ],
-                flags,
-            )
-
-
 TAG_FOCUS = {
     "avoidance": (
         "혼자 보낼 시간을 확보하려는 선택을 개인 공간의 직접 근거로 본다.",
@@ -3551,61 +3296,6 @@ BOUNDARY_JUDGMENTS = {
         "모르는 이상형 영역은 null로 남기며 숫자 영점이나 임의 중립점으로 바꾸지 않는다.",
         "판단 유보는 지키지만 미판정 영역을 총점에 포함한다.",
         "null을 낮은 적합도로 해석한다.",
-    ),
-    "template_no_llm": (
-        "서술 템플릿 경로에서는 모델 호출 수가 영이며 결정적 규칙 결과를 유지한다.",
-        "템플릿임을 알지만 모델 생성 품질 성공으로 집계한다.",
-        "외부 모델을 호출했거나 창작 리포트를 검증했다고 주장한다.",
-    ),
-    "timeout_template": (
-        "제한 시간 초과 뒤 템플릿으로 복구한 사실과 모델 생성 실패를 동시에 기록한다.",
-        "복구는 확인하지만 모델의 시간 초과를 감춘다.",
-        "대체 서술이 존재한다는 이유로 정상 모델 응답으로 센다.",
-    ),
-    "highlight_bad_index": (
-        "존재하지 않는 턴 번호의 인용 후보가 현재 preview 조립에서 보존되는 공백을 검사한다.",
-        "번호가 잘못됐다고 말하지만 현재 저장 동작과 목표 품질을 섞는다.",
-        "존재하지 않는 턴을 근거로 통과시킨다.",
-    ),
-    "highlight_bad_quote": (
-        "턴 번호가 맞아도 원문에 없는 인용문은 품질 실패이고 현재 조립은 이를 자동 제거하지 않는다.",
-        "번호는 검사하지만 문자열 원문 일치를 놓친다.",
-        "창작한 문장을 실제 대화 인용처럼 제시한다.",
-    ),
-    "ideal_out_of_range": (
-        "백일 점의 이상형 후보는 현재 스키마가 허용해도 영점부터 백 점이라는 평가 범위를 벗어난다.",
-        "스키마 통과와 의미 품질 실패 중 한쪽만 기록한다.",
-        "스키마가 허용한다는 이유로 범위 밖 적합도를 정상으로 인정한다.",
-    ),
-    "risk_caution_truncation": (
-        "기존 주의 문장 다섯 개 뒤에 붙은 위험 경고가 잘리므로 필수 위험 주의 누락을 실패로 남긴다.",
-        "위험 점수는 맞지만 사용자에게 보이는 경고가 잘린 것을 놓친다.",
-        "내부 위험 값이 있다는 이유로 주의 문장 누락을 합격시킨다.",
-    ),
-    "rule_grade_boundary": (
-        "사십사·사십오 및 육십구·칠십의 양옆 등급을 각각 확인한다.",
-        "한 임계값만 확인하거나 이상형 재계산 전후 점수를 섞는다.",
-        "등급 경계를 한 점 잘못 적용한다.",
-    ),
-    "low_accuracy": (
-        "둘 중 낮은 정확도가 사십 미만이므로 부족한 근거에 대한 안내가 필요하다.",
-        "낮은 정확도는 계산했지만 서술에서는 확정적으로 말한다.",
-        "점수 크기가 높다는 이유로 높은 신뢰도를 주장한다.",
-    ),
-    "no_transcript": (
-        "대화록이 비었으면 템플릿을 사용하고 인용과 이상형 판정도 비워 둔다.",
-        "템플릿을 쓰지만 빈 대화에 대한 해석을 덧붙인다.",
-        "존재하지 않는 장면이나 인용을 만든다.",
-    ),
-    "defaulted_persona_scores": (
-        "개별 누락 차원의 null(모름) 처리와 모든 영역이 비었을 때 총점이 50이 되는 함수 기본값을 구분한다.",
-        "null 처리는 맞지만 총점의 산출 경로를 혼동한다.",
-        "빈 입력 점수이면 어떤 경우든 총점 오십이라고 단정한다.",
-    ),
-    "explicit_null_under_conflict": (
-        "연락 갈등이 있어도 직업·경제와 외적 활력은 드러나지 않았으므로 명시적 null을 보존한다.",
-        "갈등은 설명하지만 무관한 이상형 영역을 함께 낮춘다.",
-        "연락 갈등만으로 조건이나 매력의 부적합을 확정한다.",
     ),
 }
 
@@ -3822,7 +3512,6 @@ def schema() -> dict:
         "persona_build": ("persona_build", ["history", "session", "coverage"]),
         "practice_reply": ("practice_reply", ["partner", "history", "opening"]),
         "simulation_run": ("simulation_run", ["persona_a", "persona_b", "turns"]),
-        "simulation_report_preview": ("simulation_report_preview", ["persona_a", "persona_b", "transcript", "useLlm"]),
     }
     return {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4141,47 +3830,6 @@ def apply_simulation_scoring(ds: Dataset) -> None:
         rubric["criteriaGuide"] = dict(SIMULATION_CRITERIA_GUIDE)
 
 
-PREVIEW_CODE_INPUT_KEYS = (
-    "candidateNarrative",
-    "candidateOutput",
-    "ruleProbe",
-    "faultInjection",
-    "serviceProbe",
-    "requestProbe",
-    "storedHistory",
-)
-
-
-def apply_preview_scoring(ds: Dataset) -> None:
-    """리포트 preview: LLM 서술 케이스는 자동 지표 주 + 서술 1/3/5점 보조, 템플릿·후보 검사는 코드 동작이다."""
-    for row in ds.rows["simulation_report_preview"]:
-        inp, ex, meta = row["input"], row["expectedOutput"], row["metadata"]
-        if not inp["useLlm"] or any(k in inp for k in PREVIEW_CODE_INPUT_KEYS):
-            meta["evaluationKind"] = "code_behavior"
-            ex["autoMetrics"] = {
-                "applies": True,
-                "kind": "template_or_candidate_normalization",
-                "note": "모델의 서술 품질이 아니라 템플릿 조립·후보 정규화·규칙 계산 코드의 결정적 동작이다. codeBoundary·faultContract와 일치하면 통과한다.",
-            }
-            continue
-        meta["evaluationKind"] = "language_quality"
-        hc = ex["highlightContract"]
-        ex["autoMetrics"] = {
-            "applies": True,
-            "formatChecks": {
-                "quoteExactMatch": "각 하이라이트의 quote가 해당 turn_index 원문과 글자 그대로 같아야 한다.",
-                "highlightTurnIndices": hc["validTurnIndices"],
-                "highlightMaxItems": hc["maxItems"],
-                "idealFit": "이상형 세 차원은 0~100 정수 또는 null이어야 한다.",
-                "ruleScoresUnchanged": "이상형 외 차원 점수와 위험 조합은 ruleOracle과 같아야 한다.",
-                "recalculatedTotal": "이상형이 채워지면 영역 평균·총점·등급을 idealRecalculationOracle 범위 안에서 다시 계산해야 한다.",
-            },
-            "semanticJudgement": "규칙·위험 설명의 정확성과 균형 있는 톤은 형식 검사로 알 수 없어 사람이나 AI 심판이 본다.",
-        }
-        ex["rubric"]["role"] = "auxiliary"
-        ex["rubric"]["usage"] = "자동 지표가 판정하지 못하는 설명 서술의 질만 1/3/5점으로 사람이 본다."
-
-
 def assign_stimulus_families(ds: Dataset) -> None:
     history_families = {
         "calibration": "star-map-onboarding",
@@ -4327,7 +3975,7 @@ python3 evals/quality_datasets/audit_quality_datasets.py
 - `hardAssertions`는 원하는 품질 계약이다. `codeBoundary`는 주어진 후보 출력·상태에서 **현재 코드의 동작**이다. 둘이 다를 때 `reviewFlags`와 설명에 공백을 기록한다. 현재 코드가 허용한다고 품질 성공으로 처리하면 안 된다.
 - build `rawModel`의 근거 없는 점수 키 생략과 `postService`의 미확인 차원 null(`unknownScores`)·confidence·accuracy를 분리한다. 서비스는 답변에서 근거가 확인된 차원만 값을 남긴다. 기계적 후보 출력 검사는 `mechanical_oracle_not_semantic_label`로 구별한다. 점수의 의미는 `acceptableRanges`라는 검토 대기 범위이며 정확한 단일 정답으로 강요하지 않는다.
 - 시뮬레이션 `ruleOracle`은 `pre_llm_rules_ideal_unjudged` 단계다. 이상형 세 차원은 미판정 null이며 실제 생성 대화로 채우면 영역·총점을 다시 계산해야 한다. 입력 점수 누락은 50이 아니라 null(모름)이며 그 차원의 규칙 점수도 null이다. 백엔드 계약(#63) 때문에 화면 표시값 `dimensionDisplay`만 50이다. 모든 영역이 비어 총점 50이 되는 `overall_score` 직접 호출 검사와 구분한다.
-- 고정 preview의 인용 후보는 원문을 그대로 담고 `ideal_*`의 판단 불확실성을 남겼다. LLM 실패/seed/fallback/template은 회복성 성공과 별개로 모델 품질 성공에 포함하지 않는다.
+- LLM 실패/seed/fallback/template은 회복성 성공과 별개로 모델 품질 성공에 포함하지 않는다.
 
 ## 출처와 검토 상태
 
@@ -4337,7 +3985,7 @@ python3 evals/quality_datasets/audit_quality_datasets.py
 
 ## 분할과 누수 방지
 
-같은 원형의 high/low 태깅과 build 파생은 `evidence-*` family에 묶었다. 동일 persona pair의 simulation과 report-preview는 같은 family에 묶되 family별 항목 수를 조절하여 각 Dataset도 20/60/20(36건은 7/22/7, 24건은 5/14/5)으로 맞췄다. 대화 주제 및 practice 프로필 변형은 각각 한 family다. `splitGroup=familyId`이며 전역 family와 prototype의 split 이동이 없다. `caseId`는 데이터셋과 안정적인 작성 순번이다. 중복을 피하려 입력에 무의미한 case ID를 덧붙이지 않는다.
+같은 원형의 high/low 태깅과 build 파생은 `evidence-*` family에 묶었다. 동일 persona pair의 simulation은 같은 family에 묶되 family별 항목 수를 조절하여 각 Dataset도 20/60/20(36건은 7/22/7)으로 맞췄다. 대화 주제 및 practice 프로필 변형은 각각 한 family다. `splitGroup=familyId`이며 전역 family와 prototype의 split 이동이 없다. `caseId`는 데이터셋과 안정적인 작성 순번이다. 중복을 피하려 입력에 무의미한 case ID를 덧붙이지 않는다.
 
 `blind_holdout`은 데이터 분할 표식이다. 같은 저장소에 평문으로 제공되므로 접근 통제된 진짜 비공개 holdout을 보장하지 않는다. 프롬프트 작성자가 본 이후에는 새 원형을 독립 작성하여 봉인해야 한다. 자체 audit는 입력 발화·인용·후보 출력의 전체 문자열과 개별 문장을 검사한다. 정확 일치는 공백·종결 부호를 정규화하고 한 글자 답도 포함한다. 코드로 고정된 첫 인사 한 문장만 예외다. 근사 검사는 NFKC·문장부호·공백 정규화 뒤 SequenceMatcher 비율 0.76 이상, 문자 3-gram Dice 0.45 이상, 공통 문자 18자 이상을 동시에 요구한다. 20자 미만 관용문과 단일 문자 반복 길이 fixture는 근사 검사에서 제외한다. 실제 사례와 오탐 대조군을 단위 테스트로 확인한다. 이 검사는 문장 구조 유사를 찾는 휴리스틱이며 모든 의미 동등성을 증명하지는 않는다.
 
@@ -4346,6 +3994,8 @@ v1.2에서는 지적된 holdout 25건을 사건·문장 구조·대화 행위가
 태깅의 간접 근거 9건은 기록·관찰·선택의 정황을 각각 따로 작성하고 보수적인 빈 secondary도 허용한다. split마다 짧은 답·농담·욕설/불성실 답을 배치하여 주제 내 판단 유보와 무관 답변을 구분한다. holdout에는 관계 점검 뒤 따뜻한 분위기, 갈등 이탈 중 거절 불안, 경제 안정 선호와 가족 소개 생각이라는 서로 다른 간접 라벨을 둔다. 부족한 답변 안에 내부 차원 이름을 넣지 않는다.
 
 온보딩의 turn0 9건은 모두 weekend이고, history가 있는 51건은 첫 assistant 메시지에 실제 고정 intro를 포함하며 weekend 문답으로 시작한다. 첫 인사 파서·실패 fixture는 서로 다른 조건을 검사한다. 마지막 관계 방향 질문에는 코드가 요구하는 세 선택지, 진지하게 만날 사람·편하게 알아가기·아직 잘 모르겠어요를 자연스럽게 제시한다.
+
+v1.13에서는 `/report/preview` API와 리포트 단독 생성 경로(ReportAgent)를 앱에서 제거하면서 `simulation_report_preview` 데이터셋 24건을 뺐다. 나머지 다섯 데이터셋의 JSONL은 바꾸지 않았다. 아래 v1.12 이전 기록의 preview 언급은 당시 기록이다.
 
 v1.12에서는 리포트 preview의 채점 방식을 정했다. LLM 서술 케이스는 인용 원문 일치·하이라이트 번호·이상형 범위·규칙 점수 불변·총점 재계산을 자동 지표(`autoMetrics.formatChecks`)로 판정하고 설명 서술의 질만 1/3/5점으로 사람이 본다(`rubric.role=auxiliary`). 템플릿·후보 검사는 `code_behavior`다. 이 리포트는 분석 문서라 몰입(20~30대 말투) 기준은 적용하지 않는다. 짧은 대화록·카테고리 편중·빈약한 프로필은 한계로 명시했다.
 
@@ -4367,9 +4017,9 @@ v1.4에서는 v1.3 생성 이후 바뀐 앱 코드에 맞춰 기대값만 정정
 
 v1.3에서는 검토에서 막힌 항목만 고쳤다. low_confidence와 missing_scores의 데이트 기피 항목은 실제 상황으로 바꿨고, 문장 골격이 같던 build 044, practice 024·060, preview 016, tagging 013·034·054를 다른 사건으로 다시 썼다. 짧은 무성 답 011·019·063·075는 질문 관련 답으로 두되, 스키마 주석의 무관 답변 해석도 허용 대안으로 남겼다.
 
-build 일반 30건은 별도로 작성한 3~4턴 대화에서 두 사건과 취미·일과·데이트 근거를 분리한다. 질문에는 내부 차원 이름을 넣지 않는다. build 033의 아직 시도하지 않은 연락 계획은 필수 점수 근거로 강제하지 않는다. practice 60개 및 preview 48개 페르소나는 열다섯 score/confidence 키와 accuracy_of 공식에 맞는 정확도를 가진다.
+build 일반 30건은 별도로 작성한 3~4턴 대화에서 두 사건과 취미·일과·데이트 근거를 분리한다. 질문에는 내부 차원 이름을 넣지 않는다. build 033의 아직 시도하지 않은 연락 계획은 필수 점수 근거로 강제하지 않는다. practice 60개 페르소나는 열다섯 score/confidence 키와 accuracy_of 공식에 맞는 정확도를 가진다.
 
-preview는 이상형 외 차원과 위험만 고정한다. 온정의 허용범위 또는 null을 반영한 총점·등급의 가능한 값은 `idealRecalculationOracle`로 기록한다. 케이스별 가능한 총점 집합과 등급 구간은 각 항목의 `idealRecalculationOracle`에 있다. 주입 후보와 template 실행은 별도 코드 경계 계약을 따른다. 모든 데이터셋의 루브릭은 내부 slug나 객체 repr 대신 사례의 판정 이유·실제 발화·금지 조건을 명시한다.
+모든 데이터셋의 루브릭은 내부 slug나 객체 repr 대신 사례의 판정 이유·실제 발화·금지 조건을 명시한다.
 
 ## 발견한 현재 코드와 품질 계약의 차이
 
@@ -4377,7 +4027,7 @@ preview는 이상형 외 차원과 위험만 고정한다. 온정의 허용범�
 - build headline은 프롬프트 40자와 schema 60자, summary title/content는 20/40자와 40/200자로 다르다.
 - practice는 오류 없이 빈 스트림이 끝나면 빈 답변을 저장할 수 있다.
 - simulation은 요청보다 짧아도 정규화 후 두 줄 이상이면 서비스가 허용한다. 화자 병합과 자르기는 모델 원본 품질을 가릴 수 있다.
-- run은 highlight 범위만 필터링하고 quote 일치는 검사하지 않는다. preview 조립은 index와 quote 모두 검사하지 않는다.
+- run은 highlight 범위만 필터링하고 quote 일치는 검사하지 않는다.
 - ReportNarrative의 ideal_fit은 현재 값의 0~100 범위 제약이 없다.
 - 위험 caution을 뒤에 붙인 후 `[:5]`로 자르므로 기존 caution 5개가 있으면 위험 문장이 유실될 수 있다.
 
@@ -4394,7 +4044,6 @@ def artifacts() -> dict[str, bytes]:
     practices(ds)
     practices_out_of_scope(ds)
     simulations(ds)
-    previews(ds)
     refine_rubrics(ds)
     add_immersion_criteria(ds)
     apply_conversation_scoring(ds)
@@ -4402,7 +4051,6 @@ def artifacts() -> dict[str, bytes]:
     apply_build_scoring(ds)
     apply_practice_scoring(ds)
     apply_simulation_scoring(ds)
-    apply_preview_scoring(ds)
     assign_stimulus_families(ds)
     integrity = check_internal(ds)
     output = {
@@ -4457,7 +4105,6 @@ def artifacts() -> dict[str, bytes]:
             "페르소나 build는 성향 차원 하나가 통째로 한 분할에만 있고(차원당 높음·낮음 2건), 차원별 표본이 2건뿐이다. 점수 허용 범위(높음 70~95, 낮음 5~30)는 사람 검토 전 초안이다",
             "연습대화는 상대 프로필이 매우 빈약하고(정확도 13 이하, 온보딩을 마친 실제 사용자보다 훨씬 낮음), 내 프로필(me)이 전 문제에서 비어 있으며, 대화 이력이 짧다(대부분 3개 메시지, 실제 상한은 40개). 풍부한 프로필·내 프로필 참조·긴 대화 이어가기는 검사하지 않는다",
             "시뮬레이션 대본은 24개 카테고리가 분할마다 치우쳐 있고(위험 경계 64는 calibration, 65는 regression 등) 프로필 쌍이 12개뿐이며, 23문제는 아는 성향이 2개뿐이다. 분할별 점수 차이에는 카테고리 차이가 섞인다",
-            "리포트 preview는 대화록이 6줄 위주(최대 8줄)라 실제 최대 30줄에서 인용을 고르는 능력은 검사하지 않고, 프로필이 빈약하며, 특수 카테고리가 1건씩 분할에 흩어져 있다",
             "온보딩 태깅 카테고리가 분할마다 치우쳐 있다(인용 지시 실행 4건은 blind_holdout에만, 근거 부족 5건은 regression에만). 분할별 점수 차이에는 카테고리 차이가 섞인다",
         ],
     }
@@ -4480,12 +4127,12 @@ def main() -> int:
         if mismatches:
             print("재현성 검사 FAIL: " + ", ".join(mismatches))
             return 1
-        print(f"재현성 검사 PASS: 6개 JSONL, {TOTAL}건, schema/manifest/README 일치")
+        print(f"재현성 검사 PASS: 5개 JSONL, {TOTAL}건, schema/manifest/README 일치")
         return 0
     args.output_dir.mkdir(parents=True, exist_ok=True)
     for name, body in output.items():
         (args.output_dir / name).write_bytes(body)
-    print(f"생성 완료: {args.output_dir} (6개 JSONL / {TOTAL}건 / split {'·'.join(map(str, SPLITS.values()))})")
+    print(f"생성 완료: {args.output_dir} (5개 JSONL / {TOTAL}건 / split {'·'.join(map(str, SPLITS.values()))})")
     return 0
 
 

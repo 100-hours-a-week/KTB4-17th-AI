@@ -22,17 +22,14 @@ from app.core.observability import build_langfuse_metadata
 from app.features.persona.lookup import LoadedPersona, load_persona
 from app.features.persona.schemas import PersonaBrief, PersonaRef, PersonaResponse
 
-from .agents import ReportAgent, SimulationAgent, SimulationFailed
+from .agents import SimulationAgent, SimulationFailed
 from .models import SimulationRecord
-from .report import assemble_report, build_report, score_layer
+from .report import assemble_report, score_layer
 from .repository import SimulationRepository
 from .schemas import (
     GRADE_LABEL,
     MatchingReport,
     ReportInput,
-    ReportPreviewDetail,
-    ReportPreviewResponse,
-    ReportPreviewSummary,
     ScriptLine,
     SimulationRequest,
     SimulationResponse,
@@ -53,10 +50,6 @@ class PersonaNotFound(Exception):
 
 
 class SimulationNotFound(Exception):
-    pass
-
-
-class ReportPreviewNotFound(Exception):
     pass
 
 
@@ -264,71 +257,6 @@ class SimulationService:
                     me=me,
                     partner=partner,
                     turns=r.turns,
-                    overall_score=score,
-                    grade=grade_of(score),
-                    grade_label=GRADE_LABEL[grade_of(score)],
-                    headline=overall.get("headline", ""),
-                    created_at=r.created_at,
-                )
-            )
-        return out
-
-    # ── /report/preview 기록 (내부 확인용) ──────────────────
-    # DB 조회 없이 요청 본문을 그대로 쓰는 테스트/미리보기라 항상 저장한다 — 확정 여부 검사 없음은 의도된 설계.
-
-    async def preview_report(self, inp: ReportInput, use_llm: bool) -> ReportPreviewResponse:
-        report = await build_report(
-            inp,
-            ReportAgent() if use_llm else None,
-            trace_metadata=build_langfuse_metadata(
-                feature="simulation",
-                operation="reportPreview",
-                session_id=inp.transcript.simulation_id,
-                useLlm=use_llm,
-                transcriptTurns=len(inp.transcript.turns),
-            ),
-            db=self.db,
-        )
-        record = await self.repo.save_preview(
-            persona_a=inp.persona_a.model_dump(mode="json"),
-            persona_b=inp.persona_b.model_dump(mode="json"),
-            nickname_a=inp.nickname_a,
-            nickname_b=inp.nickname_b,
-            transcript=[t.model_dump() for t in inp.transcript.turns],
-            use_llm=use_llm,
-            report=report.model_dump(mode="json"),
-            narrative_source=report.narrative_source,
-        )
-        return ReportPreviewResponse(preview_id=record.id, report=report, validationResult=report.validationResult)
-
-    async def get_preview(self, preview_id: str) -> ReportPreviewDetail:
-        record = await self.repo.get_preview(preview_id)
-        if record is None:
-            raise ReportPreviewNotFound(preview_id)
-        return ReportPreviewDetail(
-            preview_id=record.id,
-            persona_a=PersonaResponse.model_validate(record.persona_a),
-            persona_b=PersonaResponse.model_validate(record.persona_b),
-            nickname_a=record.nickname_a,
-            nickname_b=record.nickname_b,
-            transcript=Transcript(turns=[Turn.model_validate(t) for t in record.transcript]),
-            use_llm=record.use_llm,
-            report=MatchingReport.model_validate(record.report),
-            created_at=record.created_at,
-        )
-
-    async def list_previews(self, limit: int) -> list[ReportPreviewSummary]:
-        out = []
-        for r in await self.repo.list_previews(limit):
-            overall = r.report.get("overall", {})
-            score = int(overall.get("score", 0))
-            out.append(
-                ReportPreviewSummary(
-                    preview_id=r.id,
-                    nickname_a=r.nickname_a,
-                    nickname_b=r.nickname_b,
-                    use_llm=r.use_llm,
-                    narrative_source=r.narrative_source,
                     overall_score=score,
                     grade=grade_of(score),
                     grade_label=GRADE_LABEL[grade_of(score)],

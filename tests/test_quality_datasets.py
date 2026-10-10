@@ -35,18 +35,18 @@ def test_dataset_files_exist(validation_result):
 
 
 def test_dataset_total_count(validation_result):
-    """정확한 6종 건수 및 전체 330건 검사"""
+    """정확한 5종 건수 및 전체 306건 검사"""
     result, root, _ = validation_result
     assert root.is_dir(), "데이터셋 디렉터리가 없습니다."
-    assert len(result["counts"]) == 6, f"6종의 데이터셋이 아닙니다. 결과: {len(result['counts'])}"
-    assert result["total"] == 330, f"전체 330건이 아닙니다. 결과: {result['total']}"
+    assert len(result["counts"]) == 5, f"5종의 데이터셋이 아닙니다. 결과: {len(result['counts'])}"
+    assert result["total"] == 306, f"전체 306건이 아닙니다. 결과: {result['total']}"
 
 
 def test_dataset_splits(validation_result):
-    """split 66/198/66 검사 (calibration 66, regression 198, blind_holdout 66)"""
+    """split 61/184/61 검사 (calibration 61, regression 184, blind_holdout 61)"""
     result, root, _ = validation_result
     assert root.is_dir(), "데이터셋 디렉터리가 없습니다."
-    expected_splits = {"calibration": 66, "regression": 198, "blind_holdout": 66}
+    expected_splits = {"calibration": 61, "regression": 184, "blind_holdout": 61}
     assert result["splits"] == expected_splits, f"Split 비율이 일치하지 않습니다: {result['splits']}"
 
 

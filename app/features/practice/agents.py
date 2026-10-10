@@ -19,6 +19,7 @@ from functools import lru_cache
 from langfuse import get_client
 from langfuse.openai import AsyncOpenAI
 
+from app.core import llm_retry
 from app.core.config import get_settings
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.profile import describe
@@ -64,34 +65,52 @@ async def _stream(
     # OpenAI 규격에서는 system 프롬프트를 messages 최상단에 role="system" 메시지로 전달합니다.
     payload_messages = [{"role": "system", "content": system}, *messages]
 
-    try:
-        async with asyncio.timeout(stream_timeout):
-            # OpenRouter 및 로컬 서버로 스트리밍 요청 전송
-            stream = await client.chat.completions.create(
-                name="practice-reply",
-                model=settings.llm_model,  # .env 의 LLM_MODEL (e.g. anthropic/claude-3.5-sonnet 또는 local-model)
-                messages=payload_messages,  # type: ignore[arg-type]
-                max_tokens=max_tokens,
-                stream=True,
-                stream_options={"include_usage": True},
-                metadata=metadata,
-            )
-            # 스트림에서 청크를 받아 텍스트 조각을 yield
-            async for chunk in stream:
-                if chunk.choices and chunk.choices[0].delta.content:
-                    yield chunk.choices[0].delta.content
-    except TimeoutError as e:
-        # 전체 스트림 시간이 타임아웃을 초과한 경우
-        raise LLMError(f"timeout after {stream_timeout}s") from e
-    except LLMError:
-        raise
-    except Exception as e:
-        # 모델 서버 연결 거부, 유효하지 않은 모델명, API Key 인증 실패 등 모든 예외를 LLMError로 통일
-        raise LLMError(str(e)) from e
+    # 재시도는 첫 조각을 내보내기 전까지만 — 이미 사용자에게 보낸 글자를 다시 보내면 답변이 겹친다
+    total = llm_retry.attempts()
+    for attempt in range(1, total + 1):
+        sent = False
+        try:
+            async with asyncio.timeout(stream_timeout):
+                # OpenRouter 및 로컬 서버로 스트리밍 요청 전송
+                stream = await client.chat.completions.create(
+                    name="practice-reply",
+                    model=settings.llm_model,  # .env 의 LLM_MODEL (e.g. anthropic/claude-3.5-sonnet 또는 local-model)
+                    messages=payload_messages,  # type: ignore[arg-type]
+                    max_tokens=max_tokens,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    metadata=metadata,
+                )
+                # 스트림에서 청크를 받아 텍스트 조각을 yield
+                async for chunk in stream:
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        sent = True
+                        yield chunk.choices[0].delta.content
+            return
+        except Exception as e:
+            if isinstance(e, TimeoutError):
+                # 전체 스트림 시간이 타임아웃을 초과한 경우
+                error = LLMError(f"timeout after {stream_timeout}s")
+            elif isinstance(e, LLMError):
+                error = e
+            else:
+                # 모델 서버 연결 거부, 유효하지 않은 모델명, API Key 인증 실패 등 모든 예외를 LLMError로 통일
+                error = LLMError(str(e))
+            if not sent and attempt < total and llm_retry.is_retryable(e):
+                logger.warning("practice-reply attempt %d failed (%s), retrying", attempt, error)
+                llm_retry.record_retry(name="practice-reply", attempt=attempt, reason=str(error))
+                await asyncio.sleep(llm_retry.RETRY_BACKOFF_S)
+                continue
+            if error is e:
+                raise
+            raise error from e
 
 
 # ══ 프롬프트 ═══════════════════════════════════════════════
 
+# 대화 스타일 우선 (2026-10-05 결정): 프로필에 "대화 스타일"(실제 대화에서 관찰한 말투)이 있으면
+# 아래 고정 규칙의 "존댓말 유지·이모지 금지"보다 그 스타일을 따른다. 재현 정확도를 택한 결정이라,
+# 반말·이모티콘을 쓰던 사람이면 처음 보는 상대에게도 그렇게 말할 수 있다는 점을 감수했다.
 SYSTEM_TEMPLATE = """\
 당신은 "{partner}" 본인입니다. {me}님과 오늘 처음 메신저로 대화합니다.
 아래 프로필은 당신의 연애 성향입니다. 이 사람으로서 말하고 행동하세요.
@@ -116,6 +135,9 @@ SYSTEM_TEMPLATE = """\
 - 상대가 화제를 바꾸면 따라갑니다. 어색하면 어색한 대로 — 성향이 안 맞는 지점은 감추지 않아도 됩니다.
 
 ## 성향을 말투로
+- 프로필에 "대화 스타일"이 있으면 그 말투(존댓말/반말, 자주 쓰는 말, 어미, 웃음, 이모티콘)를 그대로 씁니다.
+  어미나 추임새 등 리스트 항목은 앞쪽에 적힌 것을 주된 말투로 쓰고, 뒤쪽은 가끔씩만 자연스럽게 섞어 씁니다.
+  아래 성향 설명이나 MBTI 힌트와 다르면 대화 스타일이 우선입니다.
 - 연락 빈도·긍정적 상호작용이 높으면 답이 길고 "ㅎㅎ" 가 잦고, 낮으면 짧고 담백하게.
 - 거리 두기가 높으면 자기 시간 얘기를 먼저, 자기·감정 표현이 낮으면 속내를 바로 꺼내지 않기.
 - 관계 진지도가 높으면 가벼운 농담보다 진지한 관심을, 낮으면 편하게.
@@ -123,6 +145,7 @@ SYSTEM_TEMPLATE = """\
 ## 절대 하지 않는 것
 - 평가·진단·조언 ("잘 하고 계세요", "회피형이시네요" ✕). 상대 말을 요약하지 않기.
 - 이모지. 존댓말 유지 (상대가 반말하자고 해도 한 번은 "ㅎㅎ 저는 이게 편해요" 정도로).
+  단, 프로필에 "대화 스타일"이 있으면 반말·이모티콘 여부는 그 스타일을 따릅니다.
 - AI·인공지능·챗봇·언어 모델·페르소나·연기라는 단어를 답변에 넣지 않기. 누가 되냐고 물으면
   "{partner}예요"처럼 1인칭으로 답하고, 프로필에 있는 관심사나 일상 하나만 짧게 얹습니다.
   "AI야?", "인공지능이야?"라고 물어도 동의하지 않습니다. "네"로 받지 않습니다.
@@ -131,8 +154,9 @@ SYSTEM_TEMPLATE = """\
 """
 
 ME_SECTION = """\
-## {me}님에 대해 참고할 것 (이미 아는 척은 하지 말고, 화제를 고를 때만)
+## 대화 상대 {me}님 (기본 정보만)
 {me_profile}
+이 정보만 압니다. {me}님의 취미·일상·성향은 대화에서 직접 들은 것만 씁니다.
 """
 
 OPENING_INSTRUCTION = (
@@ -141,6 +165,14 @@ OPENING_INSTRUCTION = (
 )
 
 FALLBACK_REPLY = "아, 잠깐 딴생각했어요 ㅎㅎ 방금 얘기 한 번만 더 해줄래요?"
+
+
+def _me_basics(name: str, me: PersonaResponse) -> str:
+    """상대 역할에게 주는 내 정보 — 이름·MBTI만. 관심사·일상·성향은 대화로 알아가야 한다."""
+    lines = [f"- 이름: {name}"]
+    if me.mbti:
+        lines.append(f"- MBTI: {me.mbti}")
+    return "\n".join(lines)
 
 
 def _with_ieyo(name: str) -> str:
@@ -178,7 +210,7 @@ class PartnerAgent:
     ) -> str:
         me_section = ""
         if me is not None:
-            me_section = ME_SECTION.format(me=my_name, me_profile=describe(my_name, me)) + "\n"
+            me_section = ME_SECTION.format(me=my_name, me_profile=_me_basics(my_name, me)) + "\n"
         return SYSTEM_TEMPLATE.format(
             partner=partner_name,
             me=my_name,
