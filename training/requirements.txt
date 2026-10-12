@@ -1,0 +1,12 @@
+# 파인튜닝 전용 의존성. 서버 이미지(pyproject.toml)에는 넣지 않는다. 학습 GPU 서버에서만 설치한다.
+# trl 1.15 는 손실 계산에 Triton 커널을 무조건 써서 CUDA 가 없으면 학습이 돌지 않는다.
+# 1.14.0 은 로컬(CPU·Apple Silicon)에서 몇 스텝 점검과 GPU 학습이 같은 코드로 돈다.
+torch==2.14.1
+transformers==5.19.0
+trl==1.14.0
+peft==0.21.2
+datasets==5.1.0
+accelerate==1.15.0
+# --load-in-4bit (QLoRA) 를 쓸 때만. CUDA 전용
+bitsandbytes; sys_platform == "linux"
+# build_sft.py 가 서빙 코드(TAG_PROMPT)를 import 하므로 학습 서버에서도 프로젝트 의존성이 필요하다: uv sync

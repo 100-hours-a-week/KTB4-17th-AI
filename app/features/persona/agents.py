@@ -558,6 +558,24 @@ JSON만 출력하세요. 설명·마크다운 금지.
 """
 
 
+def tagging_messages(question: str, answer: str) -> list[dict]:
+    """태깅 호출의 system 을 뺀 메시지. 파인튜닝 학습 데이터(training/tagging)도 이 함수로 만든다.
+
+    학습 때와 서빙 때 입력 형식이 조금이라도 다르면 튜닝한 모델이 제 성능을 못 낸다.
+    """
+    return [{"role": "user", "content": f"질문: {question}\n답변: {answer}"}]
+
+
+def parse_tags(raw: dict) -> Tags:
+    """모델 JSON → Tags. 모델이 없는 차원명을 지어냈을 수 있으므로 걸러낸다."""
+    valid = set(ALL_DIMENSIONS)
+    return Tags(
+        primary=[d for d in raw.get("primary", []) if d in valid],
+        secondary=[d for d in raw.get("secondary", []) if d in valid],
+        off_topic=bool(raw.get("off_topic", False)),
+    )
+
+
 class TaggingAgent:
     @observe(name="persona-tagging-workflow", capture_input=False, capture_output=False)
     async def tag(
@@ -579,7 +597,7 @@ class TaggingAgent:
             try:
                 raw = await _call_json(
                     system=TAG_PROMPT,
-                    messages=[{"role": "user", "content": f"질문: {question}\n답변: {answer}"}],
+                    messages=tagging_messages(question, answer),
                     max_tokens=120,
                     timeout=timeout if timeout is not None else get_settings().onboarding_tag_timeout_s,
                     name="persona-tagging",
@@ -593,13 +611,7 @@ class TaggingAgent:
                 )
                 return None
 
-            valid = set(ALL_DIMENSIONS)
-            return Tags(
-                # 모델이 없는 차원명을 지어냈을 수 있으므로 걸러낸다
-                primary=[d for d in raw.get("primary", []) if d in valid],
-                secondary=[d for d in raw.get("secondary", []) if d in valid],
-                off_topic=bool(raw.get("off_topic", False)),
-            )
+            return parse_tags(raw)
 
 
 # ══ 추출 ════════════════════════════════════════════════
