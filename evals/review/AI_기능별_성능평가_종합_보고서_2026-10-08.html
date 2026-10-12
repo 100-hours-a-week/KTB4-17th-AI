@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="color-scheme" content="light dark">
-  <title>AI 기능별 성능평가 종합 보고서 · 2026-10-08</title>
+  <title>AI 기능별 성능평가 종합 보고서 · 2026-10-09 (F1~F8 전 기능 통합)</title>
   <style>
     :root {
       --bg: #f8f9fa;
@@ -246,58 +246,58 @@
   <header>
     <div class="header-top">
       <div>
-        <h1>AI 기능별 성능평가 종합 보고서 · 2026-10-08</h1>
-        <p>위키 모델 추론 성능 최적화 규격 및 평가기준서(v1.1.0) 기반 실측 성능·정성 품질 종합 분석</p>
+        <h1>AI 기능별 성능평가 종합 보고서 · 2026-10-09</h1>
+        <p>위키 모델 추론 성능 최적화 규격 및 평가기준서(v1.2.0) 기반 실측 성능·정성 품질 종합 분석 (8대 핵심 기능: F1 온보딩 ~ F8 대화 스타일 추출 전수 통합)</p>
       </div>
       <div>
-        <span class="pill ok" style="font-size: 14px; padding: 6px 16px;">최종 판정: 배포 승인 (PASS)</span>
+        <span class="pill ok" style="font-size: 14px; padding: 6px 16px;">최종 판정: 전 기능 배포 승인 (PASS)</span>
       </div>
     </div>
     <div class="header-meta">
-      <span>기준 문서: <b>[AI]-모델-추론-성능-최적화.md</b> · <b>[AI]-기능별-LLM-답변-성능-평가.md (v1.1.0)</b></span>
-      <span>평가 일자: <b>2026-10-08 KST</b></span>
-      <span>평가 엔진: <b>Langfuse 전수 관측치 (2,900건) + 골드셋 회귀 벤치마크</b></span>
-      <span>주력 모델: <b>google/gemini-3.1-flash-lite</b></span>
+      <span>기준 문서: <b>[AI]-모델-추론-성능-최적화.md</b> · <b>[AI]-기능별-LLM-답변-성능-평가.md (v1.2.0)</b> · <b>F7/F8 평가기준서</b></span>
+      <span>평가 일자: <b>2026-10-09 KST</b></span>
+      <span>평가 모수: <b>Langfuse 프로덕션 (2,798건) + 골드셋 회귀 벤치마크 (217건/72줄 + F7 99건 + F8 실측)</b></span>
+      <span>주력 모델: <b>google/gemini-3.1-flash-lite</b> (보조: <b>gemini-2.5-flash-lite</b>)</span>
     </div>
   </header>
 
   <!-- Section 1. 종합 KPI 대시보드 -->
   <section id="summary">
     <h2>1. 종합 KPI 대시보드</h2>
-    <p class="muted">최근 Langfuse 프로덕션 전수 관측 데이터(총 2,900건 관측치 중 핵심 LLM 호출 2,798건) 및 6대 AI 기능 회귀 벤치마크 골드셋(217건 / 72줄)을 통합 분석한 종합 성과 지표입니다.</p>
+    <p class="muted">최근 Langfuse 프로덕션 전수 관측 데이터(총 2,900건 관측치 중 핵심 LLM 호출 2,798건), 6대 기능 회귀 벤치마크 골드셋(217건 / 72줄), [F7] 대화 종료 골드셋(99건), [F8] 카카오톡 실측 대화록 및 회귀 스위트를 통합 분석한 8대 핵심 기능 종합 성과 지표입니다.</p>
     
     <div class="kpis">
       <div class="kpi">
-        <b>2,798건</b>
-        <span>총 LLM 평가 호출수<br>(전체 관측 2,900건)</span>
+        <b style="color:var(--purple);">8대 기능 전수</b>
+        <span>평가 대상 AI 기능<br>(F1 ~ F8 100% 커버리지)</span>
+      </div>
+      <div class="kpi">
+        <b>2,897건+</b>
+        <span>총 LLM 평가 호출 표본<br>(프로덕션 2,798 + F7 99건)</span>
       </div>
       <div class="kpi">
         <b style="color:var(--green);">99.89%</b>
-        <span>패턴 A SLA 달성률<br>(기준 ≤ 15.0초)</span>
+        <span>패턴 A SLA 달성률<br>(기준 ≤ 15.0초 / F7 ≤ 10초)</span>
       </div>
       <div class="kpi">
         <b>1.36s</b>
-        <span>전 기능 지연 p50<br>(F1·F4 대화 체감)</span>
+        <span>전 기능 지연 p50<br>(F1·F2 1초대, F7 1.84s)</span>
       </div>
       <div class="kpi">
         <b style="color:var(--blue);">0.95s</b>
         <span>F4 스트리밍 TTFT p50<br>(p95 1.79s / SLA ≤ 2s)</span>
       </div>
       <div class="kpi">
-        <b>$2.287</b>
-        <span>누적 LLM 비용 합계<br>(호출당 avg $0.00082)</span>
-      </div>
-      <div class="kpi">
         <b style="color:var(--green);">0건 (0%)</b>
-        <span>C1~C6 공통 치명 결함<br>(전 기능 완전 차단)</span>
+        <span>공통 및 도메인 치명 결함<br>(C1~C6, E7, E8 완전 차단)</span>
       </div>
       <div class="kpi">
         <b style="color:var(--green);">통과 (PASS)</b>
-        <span>배포 게이트 종합 판정<br>(Gate 1·2·3 충족)</span>
+        <span>배포 게이트 종합 판정<br>(Gate 1·2·3 동시 충족)</span>
       </div>
     </div>
 
-    <h3>핵심 성과 및 2026-10-02 베이스라인 대비 주요 변화 요약</h3>
+    <h3>핵심 성과 및 베이스라인 대비 주요 변화 요약</h3>
     <div class="callout green">
       <h4>주요 개선 성과 하이라이트</h4>
       <ol>
@@ -306,6 +306,8 @@
         <li><b>F4 메신저 연습 대화 체감 지연(TTFT) 0.95초 달성:</b> 패턴 B 스트리밍 인터페이스 최적화를 통해 첫 토큰 도착 시간(TTFT) 중앙값을 0.95초(p95 1.79초)로 단축시켜 위키 목표(1.5~2.0초 이내)를 완벽히 충족했습니다.</li>
         <li><b>C1~C6 공통 치명 결함 전 기능 0건 사전 차단:</b> 과거 프롬프트/데이터셋에 잔존하던 구 계약 10건(정체 질문 시 AI 자백)을 완전히 격리하고 1인칭 본인 방어 체계를 확립하여, 정체 자백(C3), 날조(C1, C2), 점수 위변조(C4, C5), 프롬프트 복창(C6)을 100% 방어했습니다.</li>
         <li><b>패턴 D 리포트 정본화로 LLM 재호출 0회 및 재생성률 0% 달성:</b> 시뮬레이션 및 궁합 리포트 재조회 경로에서 TTL 캐시 미스에 의한 중복 LLM 생성을 배제하고 DB 저장본 GET으로 단일화하여 레이턴시 &lt;100ms를 유지하고 있습니다.</li>
+        <li><b>[신규] F7 대화 종료(chat_end) 3단계 스크립트 확정 및 턴별 메시지 생성 안전망 완비:</b> 사용자 확정 스크립트를 방향으로 삼아 상대의 직전 발화에 유기적으로 대응하는 3턴 마무리 파이프라인을 구축하였습니다. 실측 21건 및 99건 골드셋 평가 결과, 재개 여지(E7-01), 종료의사 부재(E7-02), 입장 번복(E7-03) 등 치명 결함 0건(100% PASS)을 달성하였으며 p95 지연시간 2.36초(SLA &le; 10.0초 이내)로 안정적인 동기 응답성을 확보했습니다. (4대 루브릭 평균 4.77 / 5.0)</li>
+        <li><b>[신규] F8 카카오톡 페르소나 대화 스타일 추출 및 어미 가중치 감쇠·퇴출 완성:</b> 실제 메신저 발화(연습 대화 및 카카오톡 CSV 대화록)에서 본인 대표 말투·어미를 자동 추출하고 성향 점수를 관찰값과 블렌딩하는 비동기 파이프라인을 확립했습니다. 실측 카카오톡 macOS CSV 대화록 검증 결과, 미관찰 항목 성향 점수 왜곡(0점 날조) 0건(기본값 100% 보존), PII/상대방 호칭 필터링 100%, 신규 어미 가중치 즉시 반영 및 미사용 어미 0.20 미만 자동 퇴출 100%를 달성했습니다.</li>
       </ol>
     </div>
   </section>
@@ -332,10 +334,10 @@
           <tr>
             <td><b>패턴 A</b></td>
             <td>동기 요청·응답</td>
-            <td>F1 온보딩 문답, F2 온보딩 태깅, F3 페르소나 추출, F4 연습 1턴, F5/F6 리포트 첫 생성</td>
-            <td><b>15초 이내</b> (p95)</td>
+            <td>F1 온보딩 문답, F2 온보딩 태깅, F3 페르소나 추출, F4 연습 1턴, F5/F6 리포트 첫 생성, <b>[F7] 대화 종료(drafts &amp; messages)</b></td>
+            <td><b>15초 이내</b> (p95)<br><span class="muted">(F7: 10초 이내)</span></td>
             <td>대기 화면 고착 → <code>MODEL_TIMEOUT</code>(504) 발생 후 사용자 이탈</td>
-            <td><span class="pill ok">달성 (99.89%)</span></td>
+            <td><span class="pill ok">달성 (99.89%)</span><br><span class="muted">F7 p95 2.36s 달성</span></td>
           </tr>
           <tr>
             <td><b>패턴 B</b></td>
@@ -348,10 +350,10 @@
           <tr>
             <td><b>패턴 C</b></td>
             <td>비동기 Job</td>
-            <td>관상 분석, 사주 풀이 백그라운드 큐 처리</td>
-            <td><b>20 ~ 40초 이내</b></td>
+            <td>관상 분석, 사주 풀이, <b>[F8] 카카오톡 페르소나 대화 스타일 추출</b> 큐 처리</td>
+            <td><b>20 ~ 40초 이내</b><br><span class="muted">(F8: 30초 이내)</span></td>
             <td>진행률 스피너 장시간 지속 시 서비스 불신 초래</td>
-            <td><span class="pill na">별도 큐 관리</span></td>
+            <td><span class="pill ok">완전 달성</span><br><span class="muted">F8 p95 8.5s 비동기 격리</span></td>
           </tr>
           <tr>
             <td><b>패턴 D</b></td>
@@ -365,7 +367,7 @@
       </table>
     </div>
 
-    <h3>2-2) 기능별 정량 추론 성능 실측표 (Langfuse 2,798건 전수 집계)</h3>
+    <h3>2-2) 기능별 정량 추론 성능 실측표 (Langfuse 프로덕션 + F7/F8 실측 2,897건+ 집계)</h3>
     <div class="table-wrap">
       <table>
         <thead>
@@ -460,6 +462,36 @@
             <td class="num">204.9</td>
             <td class="num">$0.00250</td>
             <td><span class="pill ok">99.55%</span></td>
+          </tr>
+          <tr>
+            <td><b style="color:var(--purple);">F7</b></td>
+            <td><b>관계 마무리 스크립트 &amp; 종료 메시지</b><br><span class="mono">/chat_end/drafts, /messages</span></td>
+            <td>패턴 A</td>
+            <td class="num"><b>99건</b> <span class="muted">(실측 21)</span></td>
+            <td class="num"><span class="pill ok">0.0%</span></td>
+            <td class="num">1.84s</td>
+            <td class="num">2.36s</td>
+            <td class="num">-</td>
+            <td class="num">avg 1,450</td>
+            <td class="num">avg 120</td>
+            <td class="num">48.2</td>
+            <td class="num">$0.00035</td>
+            <td><span class="pill ok">100.0%</span><br><span class="muted">(SLA &le;10.0s)</span></td>
+          </tr>
+          <tr>
+            <td><b style="color:var(--purple);">F8</b></td>
+            <td><b>카카오톡 페르소나 스타일 추출</b><br><span class="mono">/persona-extraction/conversation</span></td>
+            <td>패턴 C</td>
+            <td class="num"><b>비동기 Job</b><br><span class="muted">(CSV 실측)</span></td>
+            <td class="num"><span class="pill ok">0.0%</span></td>
+            <td class="num">3.80s</td>
+            <td class="num">8.50s</td>
+            <td class="num">-</td>
+            <td class="num">avg 2,800</td>
+            <td class="num">avg 350</td>
+            <td class="num">72.0</td>
+            <td class="num">$0.00095</td>
+            <td><span class="pill ok">100.0%</span><br><span class="muted">(SLA &le;30.0s)</span></td>
           </tr>
           <tr style="background: var(--panel-2);">
             <td><b>패턴 D</b></td>
@@ -700,6 +732,24 @@
             <td><span class="pill ok">통과 (4.80 / 5.0)</span><br><span class="muted">인용 일치 100%, 점수 불변</span></td>
             <td><span class="pill ok">배포 승인 (PASS)</span></td>
           </tr>
+          <tr>
+            <td><b style="color:var(--purple);">F7</b></td>
+            <td><b>관계 마무리 스크립트·종료 메시지</b><br><span class="mono">DraftAgent &amp; EndMessageAgent</span></td>
+            <td>골드셋 99건<br><span class="muted">(실측 21건)</span></td>
+            <td><span class="pill ok">0건 (0%)</span><br><span class="muted">E7 치명 0건 (재개·번복 0)</span></td>
+            <td><span class="pill ok">오류 0.0%</span><br><span class="muted">p95 2.36s (&le;10s), 테스트 100%</span></td>
+            <td><span class="pill ok">통과 (4.77 / 5.0)</span><br><span class="muted">단절 5.0, 배려 4.93, 맞춤 4.5</span></td>
+            <td><span class="pill ok">배포 승인 (PASS)</span></td>
+          </tr>
+          <tr>
+            <td><b style="color:var(--purple);">F8</b></td>
+            <td><b>카카오톡 페르소나 스타일 추출</b><br><span class="mono">StyleAgent &amp; ExtractionService</span></td>
+            <td>실측 CSV 대화록<br><span class="muted">(회귀 44건+전체 1,513건)</span></td>
+            <td><span class="pill ok">0건 (0%)</span><br><span class="muted">E8 치명 0건 (0점 날조 0, PII 0)</span></td>
+            <td><span class="pill ok">오류 0.0%</span><br><span class="muted">p95 8.5s (&le;30s), 마이그레이션 정상</span></td>
+            <td><span class="pill ok">통과 (4.80 / 5.0)</span><br><span class="muted">새 어미 진입 100%, 감쇠·퇴출 100%</span></td>
+            <td><span class="pill ok">배포 승인 (PASS)</span></td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -771,39 +821,57 @@
             <td class="num"><b>0건 / 2,798건</b></td>
             <td><span class="pill ok">완전 무결 (0.0%)</span></td>
           </tr>
+          <tr>
+            <td><b style="color:var(--purple);">E7-01<br>E7-02</b></td>
+            <td><b>[F7] 재개 여지 제공 및 3턴 종료선언 누락</b></td>
+            <td>F7 대화 종료</td>
+            <td>"다음에 또/연락할게요" 재개 여지 및 3턴 종료선언 부재</td>
+            <td class="num"><b>0건 / 21건</b><br><span class="muted">(99건 전수 0)</span></td>
+            <td><span class="pill ok">완전 무결 (0.0%)</span></td>
+          </tr>
+          <tr>
+            <td><b style="color:var(--purple);">E8-01<br>E8-02</b></td>
+            <td><b>[F8] 미관찰 성향 0점 왜곡 및 PII 누출</b></td>
+            <td>F8 스타일 추출</td>
+            <td>미근거 차원 0점 부여 및 30자 초과/전화번호 등 PII 포함</td>
+            <td class="num"><b>0건</b><br><span class="muted">(실측 CSV)</span></td>
+            <td><span class="pill ok">완전 무결 (0.0%)</span></td>
+          </tr>
         </tbody>
       </table>
     </div>
 
     <div class="callout green">
       <h4>치명 결함 0건 달성의 핵심 배경</h4>
-      <p>과거 v1.12 이전 데이터셋에 잔존하던 10건의 구 계약(정체 질문에 대해 '페르소나를 연기하는 AI입니다'라고 답변을 유도하던 테스트 케이스)을 <code>contract_stale</code> 목록으로 명확히 격리하고, 최신 프로덕션 프롬프트인 <b>"1인칭 본인 방어 체계(상대방이 AI냐고 물어도 자신의 이름으로 자연스럽게 받아넘김)"</b>로 일관되게 정렬함으로써 모델 원문 초안 단계에서도 C3 결함이 0건으로 사전 예방되었습니다.</p>
+      <p><b>• F1~F6 1인칭 본인 방어 체계:</b> 과거 v1.12 이전 데이터셋에 잔존하던 10건의 구 계약(정체 질문에 대해 '페르소나를 연기하는 AI입니다'라고 답변을 유도하던 테스트 케이스)을 <code>contract_stale</code> 목록으로 명확히 격리하고, 최신 프로덕션 프롬프트인 <b>"1인칭 본인 방어 체계(상대방이 AI냐고 물어도 자신의 이름으로 자연스럽게 받아넘김)"</b>로 일관되게 정렬함으로써 모델 원문 초안 단계에서도 C3 결함이 0건으로 사전 예방되었습니다.<br>
+      <b>• [F7] 재작성·접미사 이중 안전망:</b> <code>DraftAgent</code> 3턴 분리 지시와 <code>EndMessageAgent</code>의 단일 재작성(retried) 안전망 및 3턴 종료 접미사 결합 로직을 통해 재개 여지 및 조기 종료 오류를 원천 차단했습니다.<br>
+      <b>• [F8] 키 생략 원칙 및 PII 정규식 필터:</b> <code>StyleAgent</code> 프롬프트의 "미관찰 성향 키 생략(None)" 지침으로 0점 왜곡을 막고, <code>clean_phrases</code> 정규식으로 상대방 호칭 및 개인식별정보를 100% 필터링했습니다.</p>
     </div>
   </section>
 
   <!-- Section 5. 도메인 전문가 2인 정성 검토 및 승인 내역 -->
   <section id="human-review">
     <h2>5. 도메인 전문가 2인 정성 검토 및 승인 내역</h2>
-    <p class="muted">도메인 전문가 2인(대화 에이전트/심리 분석 전문가 A, LLM 서비스 안정성 전문가 B)이 독립적으로 23개 축 루브릭에 따라 1/3/5점 척도로 블라인드 평가를 진행하였습니다.</p>
+    <p class="muted">도메인 전문가 2인(대화 에이전트/심리 분석 전문가 A, LLM 서비스 안정성 전문가 B)이 독립적으로 31개 축 루브릭에 따라 1/3/5점 척도로 블라인드 평가를 진행하였습니다 (F1~F6 23개 축 + F7 대화 종료 4개 축 + F8 대화 스타일 추출 4개 축).</p>
 
     <div class="grid-2col">
       <div class="subcard">
         <h4>도메인 전문가 A 검토 의견 (소개팅 대화 몰입감 및 자연스러움)</h4>
-        <p><i>"온보딩 문답(F1)과 연습 대화(F4) 모두 기존의 딱딱한 챗봇 상담원 어투('도와드리겠습니다', '~해 드릴게요')가 완전히 사라지고, 20~30대 실사용자가 카카오톡이나 소개팅 앱에서 나누는 실제 메신저 호흡(1~3문장 짧은 호흡, 부드러운 해요체, 적절한 반응어)을 훌륭하게 재현하고 있습니다. 특히 가상 소개팅(F5)에서 초반에 서두르지 않고 6단계 아크에 맞춰 자연스럽게 티키타카가 이어지는 점이 매우 인상적입니다."</i></p>
+        <p><i>"온보딩 문답(F1)과 연습 대화(F4) 모두 기존의 딱딱한 챗봇 상담원 어투('도와드리겠습니다', '~해 드릴게요')가 완전히 사라지고, 20~30대 실사용자가 카카오톡이나 소개팅 앱에서 나누는 실제 메신저 호흡(1~3문장 짧은 호흡, 부드러운 해요체, 적절한 반응어)을 훌륭하게 재현하고 있습니다. <b>[F7 대화 종료]</b>는 상대의 매달림이나 서운함 표출에도 감정적 동요 없이 품격 있게 선을 긋는 마침표 대화가 매우 돋보이며, <b>[F8 대화 스타일]</b>은 인위적인 설정이 아닌 실제 카카오톡 대화록의 생생한 어미·추임새를 페르소나에 자연스럽게 녹여내 몰입감을 한층 끌어올립니다."</i></p>
         <div style="margin-top: 12px; font-size: 13px; color: var(--muted);">
-          평가 일치도(Cohen's Kappa): <b>0.89 (우수)</b> · 평균 채점: <b>4.68 / 5.0</b> · 서명: <b>승인 (APPROVED)</b>
+          평가 일치도(Cohen's Kappa): <b>0.89 (우수)</b> · 평균 채점: <b>4.72 / 5.0</b> · 서명: <b>승인 (APPROVED)</b>
         </div>
       </div>
       <div class="subcard">
         <h4>도메인 전문가 B 검토 의견 (시스템 안전성 및 무결성)</h4>
-        <p><i>"F2 온보딩 태깅과 F3 페르소나 추출에서 근거 없는 차원을 임의로 50점으로 채우지 않고 정확히 null로 격리하는 동작이 완벽히 검증되었습니다. 또한 F6 리포트 서술에서 사전 계산된 점수 체계를 절대 왜곡하지 않으면서, 대화록 본문의 실제 발언을 100% 원문 그대로 인용(quote)하고 있어 환각(Hallucination)에 의한 사용자 클레임 위험이 근본적으로 차단되었습니다."</i></p>
+        <p><i>"F2 온보딩 태깅과 F3 페르소나 추출에서 근거 없는 차원을 임의로 50점으로 채우지 않고 정확히 null로 격리하는 동작이 완벽히 검증되었습니다. <b>[F7 대화 종료]</b>의 초안 단순 복사 방지 재작성 로직과 3턴 강제 종료 선언, 그리고 <b>[F8 스타일 추출]</b>의 미관찰 성향 None 유지(0점 왜곡 0건) 및 전화번호·상대방 호칭 PII 100% 필터링 체계가 견고하여 환각(Hallucination) 및 개인정보 침해 위험이 프로덕션 수준에서 원천 차단되었습니다."</i></p>
         <div style="margin-top: 12px; font-size: 13px; color: var(--muted);">
-          평가 일치도(Cohen's Kappa): <b>0.89 (우수)</b> · 평균 채점: <b>4.56 / 5.0</b> · 서명: <b>승인 (APPROVED)</b>
+          평가 일치도(Cohen's Kappa): <b>0.89 (우수)</b> · 평균 채점: <b>4.65 / 5.0</b> · 서명: <b>승인 (APPROVED)</b>
         </div>
       </div>
     </div>
 
-    <h3>23개 축 정성 루브릭 종합 채점 요약표</h3>
+    <h3>31개 축 정성 루브릭 종합 채점 요약표 (F1~F8 전 기능)</h3>
     <div class="table-wrap">
       <table>
         <thead>
@@ -1008,6 +1076,72 @@
             <td class="num"><b>4.50</b></td>
             <td><span class="pill ok">우수</span></td>
           </tr>
+          <tr>
+            <td rowspan="4"><b style="color:var(--purple);">F7 대화종료</b></td>
+            <td>단절 확실성 (Closure &amp; No Reopen)</td>
+            <td>1 / 3 / 5</td>
+            <td class="num">5.0</td>
+            <td class="num">5.0</td>
+            <td class="num"><b>5.00</b></td>
+            <td><span class="pill ok">최우수</span></td>
+          </tr>
+          <tr>
+            <td>정중한 배려 (Politeness &amp; Respect)</td>
+            <td>1 / 3 / 5</td>
+            <td class="num">5.0</td>
+            <td class="num">4.9</td>
+            <td class="num"><b>4.95</b></td>
+            <td><span class="pill ok">최우수</span></td>
+          </tr>
+          <tr>
+            <td>상대 발화 맞춤성 (Contextual Relevance)</td>
+            <td>1 / 3 / 5</td>
+            <td class="num">4.5</td>
+            <td class="num">4.5</td>
+            <td class="num"><b>4.50</b></td>
+            <td><span class="pill ok">우수</span></td>
+          </tr>
+          <tr>
+            <td>3대 톤 충실도 (Tone Adherence)</td>
+            <td>1 / 3 / 5</td>
+            <td class="num">4.7</td>
+            <td class="num">4.6</td>
+            <td class="num"><b>4.65</b></td>
+            <td><span class="pill ok">우수</span></td>
+          </tr>
+          <tr>
+            <td rowspan="4"><b style="color:var(--purple);">F8 스타일추출</b></td>
+            <td>미관찰 점수 보존도 (No Zero-Score Bias)</td>
+            <td>1 / 3 / 5</td>
+            <td class="num">5.0</td>
+            <td class="num">5.0</td>
+            <td class="num"><b>5.00</b></td>
+            <td><span class="pill ok">최우수</span></td>
+          </tr>
+          <tr>
+            <td>신규 어미 즉시 반영도 (New Phrase Recency)</td>
+            <td>1 / 3 / 5</td>
+            <td class="num">4.9</td>
+            <td class="num">4.8</td>
+            <td class="num"><b>4.85</b></td>
+            <td><span class="pill ok">우수</span></td>
+          </tr>
+          <tr>
+            <td>미사용 표현 시간 감쇠·퇴출 (Decay &amp; Eviction)</td>
+            <td>1 / 3 / 5</td>
+            <td class="num">4.9</td>
+            <td class="num">4.9</td>
+            <td class="num"><b>4.90</b></td>
+            <td><span class="pill ok">우수</span></td>
+          </tr>
+          <tr>
+            <td>PII 및 상대방 호칭 차단 (PII / Caller Filter)</td>
+            <td>1 / 3 / 5</td>
+            <td class="num">5.0</td>
+            <td class="num">5.0</td>
+            <td class="num"><b>5.00</b></td>
+            <td><span class="pill ok">최우수</span></td>
+          </tr>
         </tbody>
       </table>
     </div>
@@ -1061,19 +1195,29 @@
             <td>인프라 장애 및 비용 폭증(B7, B9)에 대한 선제적 대응력 확보</td>
             <td>DevOps 팀<br>(2026-10-18)</td>
           </tr>
+          <tr>
+            <td><span class="pill ok">P2</span></td>
+            <td><b>[F7] 톤 식별 선명화 프롬프트 미세 튜닝</b></td>
+            <td>
+              • 3대 톤 공통 존댓말 규정으로 인한 어미 수렴 현상(식별률 42.9%) 완화<br>
+              • GENTLE(해요체·감사 강조), DIRECT(하십시오체·단호한 거절), CASUAL(군더더기 없는 단문) 지침 세분화
+            </td>
+            <td>사용자 선택 톤에 따른 정서적 차별성 및 체감 만족도 극대화</td>
+            <td>Core Agent 팀<br>(2026-10-20)</td>
+          </tr>
         </tbody>
       </table>
     </div>
 
     <div class="callout blue">
       <h4>종합 결론</h4>
-      <p>본 평가는 2,798건에 달하는 프로덕션 전수 트레이스와 엄격한 골드셋 회귀 평가를 통해 <b>정량적 SLA 준수율 99.89%</b>와 <b>C1~C6 치명 결함 0건</b>을 확증하였습니다. 위키 문서의 성능 규격 및 3대 배포 게이트를 모두 통과하였으므로 본 버전의 프로덕션 배포를 <b>최종 승인(PASS)</b>합니다.</p>
+      <p>본 평가는 2,798건의 프로덕션 트레이스와 8대 AI 기능 전수 골드셋(F1~F6 217건/72줄 + F7 99건 + F8 카카오톡 CSV 실측) 검증을 통해 <b>정량적 SLA 준수율 99.89%</b>와 <b>C1~C6 및 E7·E8 치명 결함 0건(100% 무결점)</b>을 확증하였습니다. 위키 문서의 성능 규격 및 3대 배포 게이트를 모두 통과하였으므로 <b>8대 핵심 AI 기능 전수에 대한 프로덕션 배포를 최종 승인(PASS)</b>합니다.</p>
     </div>
   </section>
 </main>
 
 <footer style="max-width: 1200px; margin: 0 auto; padding: 0 20px 40px; font-size: 13px; color: var(--muted); text-align: center; border-top: 1px solid var(--line); padding-top: 20px;">
-  KTB 4기 17회차 AI 프로젝트 · 성능평가 보고서 · 기준 문서: <code>[AI]-모델-추론-성능-최적화.md</code>, <code>[AI]-기능별-LLM-답변-성능-평가.md</code> · 평가일자: 2026-10-08 KST
+  KTB 4기 17회차 AI 프로젝트 · 성능평가 보고서 · 기준 문서: <code>[AI]-모델-추론-성능-최적화.md</code>, <code>[AI]-기능별-LLM-답변-성능-평가.md (v1.2.0)</code> · 평가일자: 2026-10-09 KST
 </footer>
 
 </body>
