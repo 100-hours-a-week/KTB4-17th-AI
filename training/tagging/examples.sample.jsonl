@@ -1,0 +1,6 @@
+{"id": "sample-001", "question": "쉬는 날엔 보통 뭐 하세요?", "answer": "주말엔 거의 집에서 혼자 책 읽으면서 충전해요. 사람 많은 데는 좀 피곤하더라고요.", "primary": ["routine"], "secondary": ["avoidance"], "off_topic": false, "source": "team_written", "reviewed_by": null}
+{"id": "sample-002", "question": "연락은 얼마나 자주 하는 게 편하세요?", "answer": "하루에 한두 번이면 충분해요. 바쁠 땐 저녁에 몰아서 얘기하는 것도 괜찮고요.", "primary": ["contact_rhythm"], "secondary": [], "off_topic": false, "source": "team_written", "reviewed_by": null}
+{"id": "sample-003", "question": "다툼이 생기면 어떻게 푸는 편이에요?", "answer": "일단 제 감정부터 가라앉히고, 다음 날 차분하게 뭐가 문제였는지 같이 정리해요.", "primary": ["problem_solving"], "secondary": ["withdrawal"], "off_topic": false, "source": "team_written", "reviewed_by": null}
+{"id": "sample-004", "question": "어떤 데이트를 좋아하세요?", "answer": "ㅋㅋ 오늘 점심 뭐 먹을지가 더 고민이에요", "primary": [], "secondary": [], "off_topic": true, "source": "team_written", "reviewed_by": null}
+{"id": "sample-005", "question": "연애할 때 상대에게 고민을 털어놓는 편이에요?", "answer": "큰일은 꼭 말해요. 혼자 끙끙 앓으면 오히려 관계가 멀어지는 것 같아서요.", "primary": ["disclosure"], "secondary": [], "off_topic": false, "source": "team_written", "reviewed_by": null}
+{"id": "sample-006", "question": "피하고 싶은 데이트가 있어요?", "answer": "줄 오래 서는 맛집은 좀 힘들어요. 기다리다 지쳐서 대화도 잘 안 되더라고요.", "primary": ["date_avoid"], "secondary": [], "off_topic": false, "source": "team_written", "reviewed_by": null}

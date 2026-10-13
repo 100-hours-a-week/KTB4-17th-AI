@@ -48,3 +48,8 @@ models/*
 .memsearch
 .claude/
 trouble
+
+# 파인튜닝 산출물 (학습 파일·어댑터·평가 결과). 어댑터는 모델 저장소(HF Hub·S3)에 버전으로 올린다
+training/tagging/out/
+training/tagging/adapters/
+evals/results/
