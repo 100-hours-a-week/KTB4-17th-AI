@@ -392,3 +392,35 @@ def test_later_turns_wait_at_least_five_seconds(monkeypatch):
     asyncio.run(ConversationAgent().generate(history=[], topic=_topic(), turn_index=3, total_turns=10, nickname="민수"))
 
     assert seen["timeout"] >= 5.0
+
+
+def test_call_timeout_records_failure_info(monkeypatch):
+    """타임아웃으로 끊긴 호출도 모델·제한 시간·경과 시간을 span 메타데이터로 남긴다."""
+    recorded = {}
+
+    class _Span:
+        def update_current_span(self, **kwargs):
+            recorded.update(kwargs)
+
+    class _Completions:
+        async def create(self, **kwargs):
+            await asyncio.sleep(1)
+
+    class _Chat:
+        completions = _Completions()
+
+    class _Client:
+        chat = _Chat()
+
+    monkeypatch.setattr(agents, "_get_client", lambda: _Client())
+    monkeypatch.setattr(agents, "get_client", lambda: _Span())
+
+    with pytest.raises(agents.LLMError, match="timeout after 0.05s"):
+        asyncio.run(agents._call(system="", messages=[], max_tokens=1, timeout=0.05, name="persona-tagging"))
+
+    info = recorded["metadata"]
+    assert info["llm_call"] == "persona-tagging"
+    assert info["llm_timeout_s"] == 0.05
+    assert info["llm_error_type"] == "TimeoutError"
+    assert 0.04 <= info["llm_elapsed_s"] < 1
+    assert info["llm_model"]

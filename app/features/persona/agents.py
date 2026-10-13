@@ -16,6 +16,7 @@ import asyncio  # 비동기 작업 표준 라이브러리
 import json  # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
 import re
+import time
 from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 from functools import lru_cache
 
@@ -77,6 +78,31 @@ class LLMError(Exception):
     """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다."""
 
 
+def _record_llm_failure(name: str, model: str, timeout: float, started: float, error: BaseException) -> None:
+    """실패한 LLM 호출의 진단 정보를 로그와 현재 Langfuse span 에 남긴다.
+
+    타임아웃으로 취소된 호출은 Langfuse 에 generation 이 남지 않아서, 어느 모델이 얼마나 걸려
+    끊겼는지 알 수 없었다. 부가 정보라 기록 중 예외가 나도 호출 결과에는 영향을 주지 않는다."""
+    info = {
+        "llm_call": name,
+        "llm_model": model,
+        "llm_timeout_s": timeout,
+        "llm_elapsed_s": round(time.monotonic() - started, 3),
+        "llm_error_type": type(error).__name__,
+    }
+    status_code = getattr(error, "status_code", None)
+    if status_code is not None:
+        info["llm_status_code"] = status_code
+    request_id = getattr(error, "request_id", None)
+    if request_id:
+        info["llm_request_id"] = request_id
+    logger.warning("LLM call failed: %s", info)
+    try:
+        get_client().update_current_span(metadata=info)
+    except Exception:  # noqa: BLE001 - 관측 실패가 폴백 흐름을 깨면 안 된다
+        logger.debug("failed to attach llm failure info to span", exc_info=True)
+
+
 async def _call(
     *,
     system: str,
@@ -92,6 +118,7 @@ async def _call(
     payload = [{"role": "system", "content": system}, *messages]
     total = llm_retry.attempts()
     for attempt in range(1, total + 1):
+        started = time.monotonic()
         try:
             async with asyncio.timeout(timeout):
                 resp = await client.chat.completions.create(
@@ -106,6 +133,7 @@ async def _call(
             if attempt < total and llm_retry.is_retryable(e):
                 await _before_retry(name, attempt, error)
                 continue
+            _record_llm_failure(name, settings.llm_model, timeout, started, e)
             raise error from e
 
         text = ""
