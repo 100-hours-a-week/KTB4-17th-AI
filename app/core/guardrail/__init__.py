@@ -17,11 +17,13 @@ from .models import (
     ValidationResult,
     Violation,
 )
+from .rules import contains_profanity
 
 __all__ = [
     "AI_DEFLECTION",
     "AppliedText",
     "CheckResult",
+    "contains_profanity",
     "Domain",
     "Grade",
     "GuardrailContext",
