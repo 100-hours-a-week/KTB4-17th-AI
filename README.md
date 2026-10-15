@@ -114,7 +114,7 @@ DB 세션은 `app/core/db.py`의 `get_db`가 제공합니다. Postgres 없이 �
 ```bash
 uv run uvicorn dev.persona.playground:app --reload --port 8000      # 페르소나 온보딩
 uv run uvicorn dev.simulation.playground:app --reload --port 8001   # 시뮬레이션 (페르소나 2개 필요)
-uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대화 (페르소나 1개 필요)
+uv run uvicorn dev.practice.server:app --reload --port 8002     # 연습대화 (페르소나 1개 필요)
 ```
 
 - UI: http://127.0.0.1:8000 · 8001 · 8002
@@ -139,7 +139,7 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
    ```
 
    ```bash
-   uv run uvicorn dev.practice.playground:app --reload --port 8002
+   uv run uvicorn dev.practice.server:app --reload --port 8002
    ```
 
    - http://localhost:8001 — 나/상대 드롭다운에 방금 만든 두 페르소나가 보이면 **시뮬레이션 실행**
@@ -220,7 +220,6 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 
 - `INTERNAL_API_KEY` 를 설정하면 이 네 API 는 `X-Internal-Api-Key` 헤더를 요구합니다.
 - 모델 파일은 Git 에 없습니다. 로컬에서는 `uv run python scripts/download_models.py` 로 받고, Docker 이미지는 빌드 때 받습니다.
-- `ENABLE_TEST_UI=true` 면 `GET /test` 에서 브라우저로 세 기능을 시험할 수 있습니다 (기본 꺼짐).
 - 백엔드 연동 계약: [docs/v2docs/backend-api-contract.md](docs/v2docs/backend-api-contract.md), 스키마 [docs/v2docs/openapi.json](docs/v2docs/openapi.json) (`uv run python scripts/export_profile_trust_openapi.py` 로 재생성). 설계 결정은 [docs/v2docs/adr/](docs/v2docs/adr/).
 
 ## 개발 도구
@@ -250,7 +249,6 @@ uv add --dev <package>    # 개발 의존성 추가
 ```
 app/
 ├── main.py                 # FastAPI 앱 엔트리포인트 (`/ai/api`)
-├── devtools/               # 프로필 신뢰 브라우저 테스트 페이지 (ENABLE_TEST_UI)
 ├── core/
 │   ├── config.py           # 환경 변수 (pydantic-settings)
 │   ├── db.py               # Postgres 엔진·세션, 공통 get_db, 공통 Base

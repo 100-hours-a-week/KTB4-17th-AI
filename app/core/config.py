@@ -130,9 +130,6 @@ class Settings(BaseSettings):
     extraction_job_stale_minutes: int = 10
 
     # ── 프로필 신뢰(대표사진 심사·얼굴 인증) ──────────────────────────
-    # /test 브라우저 테스트 페이지. 운영에서는 꺼 둔다
-    enable_test_ui: bool = Field(default=False, validation_alias="ENABLE_TEST_UI")
-
     yunet_model_path: Path = Field(
         default=Path("models/face_detection_yunet_2023mar.onnx"),
         validation_alias="YUNET_MODEL_PATH",

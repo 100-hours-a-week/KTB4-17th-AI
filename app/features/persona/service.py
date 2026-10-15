@@ -115,9 +115,6 @@ class Coverage:
     def empty_dimensions(self) -> set[str]:
         return {d for d, n in self.primary.items() if n == 0}
 
-    def has_primary(self, dimension: str) -> bool:
-        return self.primary.get(dimension, 0) > 0
-
     def to_dict(self) -> dict:
         return {"primary": dict(self.primary), "secondary": dict(self.secondary)}
 
