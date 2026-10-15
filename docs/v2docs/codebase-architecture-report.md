@@ -109,7 +109,6 @@ flowchart LR
 V2_dev/
 ├── app/                         # 실행 애플리케이션 코드
 │   ├── core/                    # 공통 설정·미디어 검증·오류·내부 인증
-│   ├── devtools/                # 브라우저 수동 테스트 화면
 │   ├── features/                # 기능별 비즈니스·AI 모듈
 │   │   ├── primary_photo/       # 대표사진 정면·품질 검사
 │   │   ├── synthetic_detection/ # 대표사진 AI 생성 위험 검사
@@ -143,7 +142,6 @@ V2_dev/
 3. 공통 prefix가 `/ai/api`인 `APIRouter`를 만든다.
 4. 세 기능 라우터를 등록한다.
 5. `/health` 헬스 체크를 등록한다.
-6. `ENABLE_TEST_UI=true`이면 `/test` 브라우저 테스트 페이지를 등록한다.
 
 ```mermaid
 flowchart TD
@@ -153,9 +151,7 @@ flowchart TD
     APP --> R2[synthetic_detection 라우터]
     APP --> R3[face_verification 라우터]
     APP --> HEALTH[/health]
-    APP --> FLAG{ENABLE_TEST_UI}
-    FLAG -->|true| TEST[/test]
-    FLAG -->|false| END[운영 API만 노출]
+    APP --> END[운영 API만 노출]
 ```
 
 ### 5.2 현재 공개 API
@@ -193,7 +189,6 @@ AI 서비스는 두 호출이 실제로 같은 파일인지 식별하지 않는�
 | 환경 변수 | 기본값 | 용도 |
 |---|---|---|
 | `INTERNAL_API_KEY` | 빈 문자열 | 백엔드→AI 서비스 내부 호출 보호 |
-| `ENABLE_TEST_UI` | `true` | `/test` 페이지 활성화 |
 | `YUNET_MODEL_PATH` | `models/face_detection_yunet_2023mar.onnx` | 얼굴 검출 |
 | `LBF_MODEL_PATH` | `models/lbfmodel.yaml` | 68개 얼굴 랜드마크 |
 | `SFACE_MODEL_PATH` | `models/face_recognition_sface_2021dec.onnx` | 동일인 비교 |
@@ -609,28 +604,9 @@ OpenCV detector, facemark, recognizer 및 ONNX 세션은 여러 요청에서 재
 
 ---
 
-## 12. 개발용 테스트 화면: `app/devtools/`
+## 12. 개발용 테스트 화면 (제거됨)
 
-### 12.1 `api.py`
-
-`/test` 경로에서 `profile_trust_test.html`을 파일 응답으로 제공한다.
-
-### 12.2 `profile_trust_test.html`
-
-별도 프론트엔드 프로젝트 없이 브라우저에서 세 기능을 직접 확인하기 위한 단일 HTML 페이지다.
-
-- 대표사진 정면 검사 카드
-- 대표사진 AI 생성 검사 카드
-- 라이브 카메라 촬영 및 동일인 비교 카드
-- 사람이 이해할 수 있는 통과·경고·실패 문구
-- 개발자용 원본 JSON 펼쳐보기
-- 라이브 영상에서 추출된 프레임 타임라인
-- 각 프레임의 자세, 검출 수, 저조도 보정, 후보 순위 표시
-- 대표사진과 실제 전송 영상 미리보기
-
-라이브 썸네일은 서버가 프레임 이미지를 응답하는 방식이 아니다. 브라우저가 이미 가지고 있는 녹화 영상에서 해당 시각을 찾아 canvas로 생성한다.
-
-운영에서는 `ENABLE_TEST_UI=false`로 비활성화해야 한다.
+`app/devtools/`와 `ENABLE_TEST_UI` 설정은 제거되었다. `/test` 브라우저 테스트 페이지는 더 이상 제공하지 않는다.
 
 ---
 
@@ -811,7 +787,6 @@ uv run uvicorn app.main:app --reload --port 8000
 
 - 빈 `INTERNAL_API_KEY`는 내부 API를 보호하지 않는다.
 - 기본 `LIVENESS_TOKEN_SECRET`은 공개된 개발값이다.
-- 기본 `ENABLE_TEST_UI=true`는 운영에서 테스트 화면을 노출한다.
 
 ### 19.6 단일 프로세스 잠금에 따른 처리량 제한
 
