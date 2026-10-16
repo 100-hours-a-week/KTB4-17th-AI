@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.guardrail import contains_profanity
 from app.core.observability import build_langfuse_metadata
 from app.features.persona.models import PersonaRecord
 from app.features.persona.repository import PersonaRepository
@@ -45,6 +46,9 @@ DECAY_FACTOR = 0.7  # 새 대화에서 관찰되지 않은 표현의 감쇠율
 WEIGHT_BOOST = 0.35  # 새 대화에서 관찰된 기존 표현의 부스트
 INITIAL_WEIGHT = 0.6  # 새로 등장한 표현의 초기 가중치
 MIN_WEIGHT_THRESHOLD = 0.2  # 이 미만으로 떨어지면 완전 퇴출(Eviction)
+# 이번 대화에 안 나온 이전 표현은 검증할 길이 없다 — 이전 가중치가 이 이상(여러 번·충분히 관찰됨)일 때만 감쇠하며 유지.
+# 가중치 기록이 없거나 낮은 표현(한두 번 우연히 들어간 것, 검증 도입 전 데이터)은 바로 퇴출한다
+MIN_KEEP_UNOBSERVED = 0.5
 # 횟수 반영: 이번 대화에서 쓰인 발화 수 n → 목표 가중치 min(1.0, 0.5 + 0.05*n). 5회 0.75, 10회 이상 1.0
 COUNT_WEIGHT_BASE = 0.5
 COUNT_WEIGHT_STEP = 0.05
@@ -56,7 +60,7 @@ def clean_phrases(phrases: list[str], *, banned: set[str], limit: int = MAX_PHRA
     out: list[str] = []
     for raw in phrases:
         p = raw.strip()
-        if not p or len(p) > _PHRASE_MAX_LEN or _PII.search(p):
+        if not p or len(p) > _PHRASE_MAX_LEN or _PII.search(p) or contains_profanity(p):
             continue
         if any(name and name in p for name in banned) or p in out:
             continue
@@ -122,7 +126,8 @@ def update_phrase_weights(
        - 기존에 있던 표현: min(1.0, prev_weight * 0.7 + WEIGHT_BOOST + rank_bonus)
        - 새로 등장한 표현: INITIAL_WEIGHT + rank_bonus
     2. 새 대화에서 관찰되지 않은 이전 표현:
-       - prev_weight * DECAY_FACTOR
+       - 이전 가중치가 MIN_KEEP_UNOBSERVED(0.5) 미만이거나 기록이 없으면 즉시 퇴출 (검증 불가)
+       - 그 외 prev_weight * DECAY_FACTOR
        - MIN_WEIGHT_THRESHOLD (0.2) 미만으로 떨어지면 자동 퇴출 (탈락)
     3. 각 필드별로 가중치 내림차순 정렬 후 상위 limit 개만 유지
     4. limit 밖으로 밀려난 표현은 가중치 딕셔너리에서 제거 (퇴출)
@@ -160,7 +165,10 @@ def update_phrase_weights(
         for phrase in old_list:
             if phrase in observed_set:
                 continue
-            decayed = round(prev_w.get(phrase, 0.5) * DECAY_FACTOR, 2)
+            before = prev_w.get(phrase)
+            if before is None or before < MIN_KEEP_UNOBSERVED:
+                continue
+            decayed = round(before * DECAY_FACTOR, 2)
             if decayed >= MIN_WEIGHT_THRESHOLD:
                 updated_weights[phrase] = decayed
 

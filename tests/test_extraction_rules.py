@@ -51,31 +51,32 @@ def test_update_phrase_weights_new_phrases_get_initial_weight():
 def test_update_phrase_weights_decay_and_eviction():
     from app.features.persona_extraction.service import update_phrase_weights
 
-    # 기존: "~요" (0.8), "~구" (0.35), "~당" (0.22)
-    # 새 대화: "~요", "~음" 만 사용 ("~구", "~당" 미사용)
-    prev_w = {"~요": 0.8, "~구": 0.35, "~당": 0.22}
-    prev_p = {"endings": ["~요", "~구", "~당"]}
+    # 기존: "~요" (0.8), "~구" (0.6), "~당" (0.22), "~잉" (기록 없음)
+    # 새 대화: "~요", "~음" 만 사용 ("~구", "~당", "~잉" 미사용)
+    prev_w = {"~요": 0.8, "~구": 0.6, "~당": 0.22}
+    prev_p = {"endings": ["~요", "~구", "~당", "~잉"]}
     current = {"endings": ["~요", "~음"]}
 
     phrases, weights = update_phrase_weights(current, previous_weights=prev_w, previous_phrases=prev_p)
 
     # "~요": 0.8 * 0.7 + 0.35 + 0.05 = 0.96 (상승)
     # "~음": 신규 0.60
-    # "~구": 0.35 * 0.7 = 0.25 (감쇠되었으나 0.20 이상이므로 3위로 유지)
-    # "~당": 0.22 * 0.7 = 0.15 (< 0.20 이므로 자동 퇴출 Eviction!)
+    # "~구": 0.6 * 0.7 = 0.42 (충분히 관찰됐던 표현이라 감쇠하며 3위로 유지)
+    # "~당": 0.22 는 0.5 미만이라 검증할 수 없어 즉시 퇴출, "~잉" 은 가중치 기록이 없어 즉시 퇴출
     assert phrases["endings"] == ["~요", "~음", "~구"]
     assert "~당" not in phrases["endings"]
     assert "~당" not in weights
-    assert weights["~구"] == 0.24
+    assert "~잉" not in phrases["endings"]
+    assert weights["~구"] == 0.42
     assert weights["~요"] == 0.96
 
 
 def test_update_phrase_weights_evicts_lowest_when_limit_exceeded():
     from app.features.persona_extraction.service import update_phrase_weights
 
-    # 기존 10개 보유 (각 0.3의 낮은 가중치)
+    # 기존 10개 보유 (각 0.55 — 감쇠 후에도 새 표현보다 낮아 밀려난다)
     old_endings = [f"~어{i}" for i in range(10)]
-    prev_w = {e: 0.3 for e in old_endings}
+    prev_w = {e: 0.55 for e in old_endings}
     prev_p = {"endings": old_endings}
 
     # 새 대화에서 새로운 강력한 어미 2개 등장 ("~요", "~음")
@@ -159,3 +160,16 @@ def test_update_phrase_weights_without_counts_keeps_old_rule():
     _, w = update_phrase_weights(phrases, {})
 
     assert w["낙낙"] == 0.65
+
+
+def test_update_phrase_weights_evicts_unverifiable_previous_phrase():
+    # 가중치가 낮거나 기록이 없는 이전 표현은 이번 대화에 안 나오면 바로 빠진다 (검증 도입 전 데이터 포함)
+    prev_p = {"frequent_phrases": ["낙낙", "기록없음", "충분히쓴말"]}
+    prev_w = {"낙낙": 0.45, "충분히쓴말": 0.8}
+    phrases, weights = update_phrase_weights({"frequent_phrases": []}, prev_w, prev_p)
+    assert phrases["frequent_phrases"] == ["충분히쓴말"]
+    assert weights == {"충분히쓴말": 0.56}
+
+
+def test_clean_phrases_drops_profanity():
+    assert clean_phrases(["ㅅㅂ", "이새끼", "새끼 고양이", "헐"], banned=set()) == ["새끼 고양이", "헐"]

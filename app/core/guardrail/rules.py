@@ -1,7 +1,14 @@
 import re
 
 # "금칙어 목록은 rules.py의 짧은 상수로 둔다."
-PROFANITY_WORDS = ["씨발", "개새끼", "병신", "지랄", "좆"]
+PROFANITY_WORDS = ["씨발", "시발", "씨바", "개새끼", "병신", "지랄", "좆", "ㅅㅂ", "ㅂㅅ", "ㅈㄹ"]
+# 지시어 + 새끼 ("이새끼", "저 새끼"). "새끼 고양이" 같은 일반 용법은 걸리지 않게 지시어를 요구한다
+PROFANITY_REGEX = re.compile(r"[이저그]\s?새끼")
+
+
+def contains_profanity(text: str) -> bool:
+    return any(w in text for w in PROFANITY_WORDS) or bool(PROFANITY_REGEX.search(text))
+
 
 # 정체성 정규식
 IDENTITY_REGEX = re.compile(
