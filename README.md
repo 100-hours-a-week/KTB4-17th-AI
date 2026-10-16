@@ -8,7 +8,7 @@
 - FastAPI, Uvicorn
 - SQLAlchemy(asyncio) + asyncpg, Alembic (PostgreSQL)
 - Anthropic SDK (페르소나 LLM)
-- aiosqlite (로컬 플레이그라운드)
+- aiosqlite (테스트용 인메모리 SQLite)
 - 패키지 매니저: [uv](https://docs.astral.sh/uv/)
 
 ## 사전 준비물
@@ -57,13 +57,13 @@ cp .env.example .env
 
 `.env` 파일을 열어 키를 채워주세요. 앱 시작 시 `.env`를 읽습니다.
 
-페르소나 온보딩의 프로덕션 LLM은 Anthropic을 사용합니다. 플레이그라운드에서는 요청 헤더 또는 환경 변수로 키를 넘깁니다.
+LLM은 OpenAI 호환 엔드포인트로 호출합니다. 엔드포인트와 키는 환경 변수로 설정합니다.
 
 | 변수 | 용도 |
 | --- | --- |
-| `ANTHROPIC_API_KEY` | Claude 호출 (프로덕션 `agents.py`, 플레이그라운드 Anthropic 경로) |
-| `GEMINI_API_KEY` | 플레이그라운드 Gemini 경로 |
-| `LLM_PROVIDER` | 플레이그라운드 기본 프로바이더 (`gemini` 또는 `anthropic`) |
+| `LLM_BASE_URL` | OpenAI 호환 LLM 엔드포인트 |
+| `LLM_API_KEY` | LLM 호출 키 |
+| `LLM_MODEL` | 사용할 모델 이름 |
 | `DATABASE_URL` | Postgres 접속 (`postgresql+asyncpg://user:pw@host:5432/db`). 비우면 로컬 docker 기본값 |
 | `DB_ECHO` | `1`이면 SQL 로그 출력 |
 
@@ -104,54 +104,7 @@ uvicorn app.main:app --reload --port 8000
 
 프로덕션 엔트리포인트의 API prefix는 `/ai/api`입니다.
 
-DB 세션은 `app/core/db.py`의 `get_db`가 제공합니다. Postgres 없이 페르소나 온보딩만 빠르게 돌려보려면 아래 플레이그라운드(SQLite)를 사용하세요.
-
-### 5. 로컬 플레이그라운드
-
-`dev/`는 `app/`을 import만 하고 한 줄도 고치지 않습니다. DB는 SQLite로, LLM은 요청별 키로 바깥에서 갈아끼웁니다. Docker 이미지에는 넣지 않는 전제입니다.
-세 플레이그라운드는 같은 SQLite(`dev/persona/playground.db`)를 씁니다 — 페르소나를 먼저 만들고, 그걸로 시뮬레이션·연습대화를 돌립니다.
-
-```bash
-uv run uvicorn dev.persona.playground:app --reload --port 8000      # 페르소나 온보딩
-uv run uvicorn dev.simulation.playground:app --reload --port 8001   # 시뮬레이션 (페르소나 2개 필요)
-uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대화 (페르소나 1개 필요)
-```
-
-- UI: http://127.0.0.1:8000 · 8001 · 8002
-- Swagger UI: http://127.0.0.1:8000/docs
-
-#### 순서대로 돌려보기
-
-1. persona 플레이그라운드 띄우기 (프로젝트 폴더에서)
-
-   ```bash
-   uv run uvicorn dev.persona.playground:app --reload --port 8000
-   ```
-
-2. 브라우저에서 http://localhost:8000 열기
-   - API 키 입력 (Gemini `AIza…` 또는 Anthropic `sk-ant-…`)
-   - 닉네임 입력 → **시작** → 하루와 10번 대화 → 자동으로 `/build` 까지 돌아서 페르소나가 저장됩니다.
-3. 닉네임을 바꿔서 한 번 더 (예: 첫 번째 "은서", 두 번째 "지훈"). 답변을 다르게 하면 성향이 달라서 시뮬레이션 결과가 더 재밌게 나옵니다.
-4. 다른 터미널 탭에서 시뮬레이션·연습대화 띄우기
-
-   ```bash
-   uv run uvicorn dev.simulation.playground:app --reload --port 8001
-   ```
-
-   ```bash
-   uv run uvicorn dev.practice.playground:app --reload --port 8002
-   ```
-
-   - http://localhost:8001 — 나/상대 드롭다운에 방금 만든 두 페르소나가 보이면 **시뮬레이션 실행**
-   - http://localhost:8002 — 상대 페르소나 골라서 **시작** → 상대가 먼저 인사함
-
-하루(온보딩 인터뷰어)는 DB 에 저장되는 페르소나가 아니라 `persona/agents.py` 의 `SYSTEM_PROMPT` 에 고정된 인물이라 따로 만들 필요가 없습니다.
-
-브라우저에서 API 키와 프로바이더를 넣거나, 헤더로 전달할 수 있습니다.
-
-- `X-Api-Key`: Gemini 또는 Anthropic 키
-- `X-Provider`: `gemini` 또는 `anthropic` (키가 `AIza`로 시작하면 Gemini로 추정)
-- `X-Tagging: 0`: 턴별 태깅 LLM 호출을 건너뛰고 주제 기본 커버리지로 폴백
+DB 세션은 `app/core/db.py`의 `get_db`가 제공합니다.
 
 ## 현재 구현 범위
 
@@ -173,7 +126,7 @@ uv run uvicorn dev.practice.playground:app --reload --port 8002     # 연습대�
 | POST | `/v1/persona/{session_id}/build` | 완료된 대화에서 미확정 가치관 초안을 생성·저장합니다. **사용자가 답변으로 근거를 드러낸 차원만** 담습니다 — 건너뛴 질문·묻지 않은 주제는 LLM 이 짐작해도 버리고, 점수는 `null`(모름), 텍스트 항목은 빈 목록입니다. 추출 LLM 이 실패하면 규칙으로 만든 임시 초안(`source: "fallback"`)을 돌려주고, 다시 부르면 LLM 추출을 재시도합니다. |
 | POST | `/v1/persona/{persona_id}/confirm` | 가치관 초안을 확정하고 같은 페르소나 행에 MBTI를 저장합니다. `mbti` 는 생략 가능 — 없으면 시작 때 받은 MBTI 를 쓰고, 그것도 없으면 MBTI 없이 확정합니다. 시작 때 값과 다르면 409. |
 
-기본 턴 수는 10회(5~15)입니다. 플레이그라운드 UI는 10으로 고정합니다.
+기본 턴 수는 10회(5~15)입니다.
 
 `scores` 의 값은 `int | null` 입니다. `null` 은 "그 차원은 답하지 않아서 모름"이고, 50 은 답변에 근거가 있는 진짜 중간값입니다.
 MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주지 않습니다. 시뮬레이션·연습대화에서 페르소나를 연기할 때 **말투 힌트**로만 약하게 쓰입니다 (`app/features/persona/profile.py` 의 `MBTI_TONE`).
@@ -220,7 +173,6 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 
 - `INTERNAL_API_KEY` 를 설정하면 이 네 API 는 `X-Internal-Api-Key` 헤더를 요구합니다.
 - 모델 파일은 Git 에 없습니다. 로컬에서는 `uv run python scripts/download_models.py` 로 받고, Docker 이미지는 빌드 때 받습니다.
-- `ENABLE_TEST_UI=true` 면 `GET /test` 에서 브라우저로 세 기능을 시험할 수 있습니다 (기본 꺼짐).
 - 백엔드 연동 계약: [docs/v2docs/backend-api-contract.md](docs/v2docs/backend-api-contract.md), 스키마 [docs/v2docs/openapi.json](docs/v2docs/openapi.json) (`uv run python scripts/export_profile_trust_openapi.py` 로 재생성). 설계 결정은 [docs/v2docs/adr/](docs/v2docs/adr/).
 
 ## 개발 도구
@@ -250,7 +202,6 @@ uv add --dev <package>    # 개발 의존성 추가
 ```
 app/
 ├── main.py                 # FastAPI 앱 엔트리포인트 (`/ai/api`)
-├── devtools/               # 프로필 신뢰 브라우저 테스트 페이지 (ENABLE_TEST_UI)
 ├── core/
 │   ├── config.py           # 환경 변수 (pydantic-settings)
 │   ├── db.py               # Postgres 엔진·세션, 공통 get_db, 공통 Base
@@ -282,11 +233,6 @@ app/
 models/                     # 비전 모델 (scripts/download_models.py 로 내려받음)
 alembic/                    # DB 마이그레이션 (env.py 가 .env 의 DATABASE_URL 사용)
 └── versions/
-dev/                        # 로컬 플레이그라운드 (`app/`을 수정하지 않음)
-├── _shared/                # SQLite·LLM 교체(bind/bind_stream), 앱 뼈대, 페르소나 목록
-├── persona/                # 온보딩 (8000)
-├── simulation/             # 시뮬레이션 (8001)
-└── practice/               # 연습대화 (8002)
 ```
 
 레이어 규칙:
@@ -295,7 +241,6 @@ dev/                        # 로컬 플레이그라운드 (`app/`을 수정하�
 - `service.py` — 무슨 주제를 언제 다룰지는 코드가 정합니다.
 - `agents.py` — 어떻게 말할지만 맡습니다. 프롬프트도 여기 있습니다.
 - `repository.py` — service는 SQLAlchemy를 직접 만지지 않습니다.
-- `dev/` — `app/`을 import만 합니다.
 
 ## 담당자
 

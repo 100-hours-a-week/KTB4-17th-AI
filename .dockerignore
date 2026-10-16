@@ -38,7 +38,6 @@ release.config.cjs
 
 # Development files
 tests/
-dev/
 docs/
 README.md
 gitconvention.md
