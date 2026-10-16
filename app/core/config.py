@@ -75,6 +75,16 @@ class Settings(BaseSettings):
         description="시뮬레이션 LLM 호출에 JSON 모드(response_format)를 켤지 여부",
     )
 
+    # ── 태깅·추출 전용 소형 모델 (RunPod vLLM, serving/vllm) ─────────────
+    # 비워 두면 태깅·추출도 위 메인 LLM 을 쓴다. 실패하면 메인 LLM 으로 넘긴다 (app/core/slm.py)
+    slm_base_url: str = Field(default="", validation_alias="SLM_BASE_URL")
+    slm_api_key: str = Field(default="", validation_alias="SLM_API_KEY")
+    # vLLM 의 --lora-modules / --served-model-name 이름. 비워 둔 작업은 메인 LLM 으로 간다
+    slm_tagging_model: str = Field(default="", validation_alias="SLM_TAGGING_MODEL")
+    slm_extraction_model: str = Field(default="", validation_alias="SLM_EXTRACTION_MODEL")
+    # SLM 이 내려간 동안(콜드 스타트 등) /health 를 다시 확인하는 간격
+    slm_probe_interval_s: float = Field(default=15.0, gt=0, validation_alias="SLM_PROBE_INTERVAL_S")
+
     # 시뮬레이션 동시 실행 최대 수 (과도한 부하 방지용 세마포어 한도)
     simulation_max_inflight: int = Field(
         default=20,
