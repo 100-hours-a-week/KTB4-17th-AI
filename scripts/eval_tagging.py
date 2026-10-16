@@ -2,9 +2,14 @@
 
     # 지금 .env 의 모델 (OpenRouter)
     uv run python scripts/eval_tagging.py --out evals/results/tagging-baseline.json
-    # 파인튜닝 모델 (vLLM 의 OpenAI 호환 서버)
-    uv run python scripts/eval_tagging.py --base-url http://gpu-host:8001/v1 --model tagging-lora \\
+    # .env 의 SLM_* 로 설정한 RunPod vLLM (serving/README.md). 모델 기본값은 SLM_TAGGING_MODEL
+    uv run python scripts/eval_tagging.py --slm --out evals/results/tagging-v1.json
+    uv run python scripts/eval_tagging.py --slm --model kanana --out evals/results/kanana-base.json
+    # 다른 OpenAI 호환 서버
+    uv run python scripts/eval_tagging.py --base-url http://gpu-host:8000/v1 --model tagging-lora \\
         --out evals/results/tagging-lora.json
+
+평가는 지정한 모델 하나만 잰다. 앱의 SLM 라우팅·메인 LLM 폴백은 끈다 (폴백이 섞이면 점수가 두 모델의 혼합이 된다).
 
 서빙 코드의 TaggingAgent 를 그대로 호출하므로 프롬프트·타임아웃·JSON 파싱·차원 필터까지 운영과 같다.
 blind_holdout 은 최종 판정 때만 본다. 개발 중에 보면 그 split 에 맞춰 튜닝하게 돼 의미가 없어진다.
@@ -34,6 +39,7 @@ def _arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--split", choices=SPLITS, action="append", help="여러 번 줄 수 있음. 기본 regression")
     parser.add_argument("--allow-holdout", action="store_true", help="blind_holdout 채점 허용 (최종 판정용)")
+    parser.add_argument("--slm", action="store_true", help=".env 의 SLM_BASE_URL·SLM_API_KEY 서버를 평가")
     parser.add_argument("--base-url", help="LLM_BASE_URL 덮어쓰기")
     parser.add_argument("--model", help="LLM_MODEL 덮어쓰기")
     parser.add_argument("--timeout", type=float, help="기본은 운영 값 ONBOARDING_TAG_TIMEOUT_S")
@@ -140,14 +146,31 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
     }
 
 
+def _point_main_llm_at_slm(args: argparse.Namespace) -> None:
+    from app.core.config import Settings
+
+    configured = Settings()  # .env 를 읽는다. 아래에서 환경변수를 바꾼 뒤 get_settings 가 다시 읽는다
+    if not configured.slm_base_url:
+        raise SystemExit("--slm 은 .env 에 SLM_BASE_URL 이 있어야 합니다")
+    os.environ["LLM_BASE_URL"] = configured.slm_base_url
+    os.environ["LLM_API_KEY"] = configured.slm_api_key
+    args.model = args.model or configured.slm_tagging_model or None
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _arguments(argv)
     # Settings 는 import 시점에 캐시되므로 덮어쓸 값은 import 전에 넣는다
+    if args.slm:
+        _point_main_llm_at_slm(args)
+    # 지정한 모델만 잰다. SLM 라우팅이 켜져 있으면 태깅이 다른 서버로 가거나 폴백이 섞인다
+    os.environ["SLM_BASE_URL"] = ""
     if args.base_url:
         os.environ["LLM_BASE_URL"] = args.base_url
     if args.model:
         os.environ["LLM_MODEL"] = args.model
     os.environ.setdefault("LANGFUSE_TRACING_ENABLED", "false")
+    if "app.core.config" in sys.modules:  # --slm 이 .env 를 읽느라 먼저 import 했으면 바뀐 환경변수로 다시 읽게
+        sys.modules["app.core.config"].get_settings.cache_clear()
 
     report = asyncio.run(_run(args))
     print(json.dumps({k: report[k] for k in ("model", "splits", "summary")}, ensure_ascii=False, indent=2))

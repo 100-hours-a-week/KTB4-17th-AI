@@ -23,6 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 from fastapi import APIRouter, FastAPI
 from langfuse import get_client
 
+from app.core import slm
 from app.features.chat_end.api import router as chat_end_router
 from app.features.face_verification.api import router as face_verification_router
 from app.features.persona.api import router as persona_router
@@ -63,10 +64,12 @@ TAGS_METADATA = [
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """프로세스 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
+    """시작 시 태깅·추출 SLM 상태를 확인하고, 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
 
+    await slm.start()
     yield
     try:
+        await slm.stop()
         await get_run_manager().shutdown()
     finally:
         get_client().shutdown()

@@ -25,7 +25,7 @@ from langfuse.openai import AsyncOpenAI
 from pydantic import ValidationError  # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import llm_retry
+from app.core import llm_retry, slm
 from app.core.config import get_settings
 from app.core.guardrail import (
     GuardrailContext,
@@ -111,19 +111,50 @@ async def _call(
     timeout: float,
     name: str = "persona-llm-call",
     metadata: LangfuseMetadata | None = None,
+    use_slm: bool = True,
 ) -> str:
-    """타임아웃·요청 한도·서버 오류·빈 응답이면 llm_retry 규칙대로 다시 보낸다. timeout 은 시도마다."""
-    settings = get_settings()
-    client = _get_client()
+    """타임아웃·요청 한도·서버 오류·빈 응답이면 llm_retry 규칙대로 다시 보낸다. timeout 은 시도마다.
+
+    태깅·추출이고 SLM 이 설정돼 있으면 먼저 SLM 에 한 번만 보내고, 실패하면 재시도 대신
+    메인 LLM 으로 넘긴다 (app/core/slm.py). 메인 LLM 쪽은 원래 재시도 규칙을 그대로 쓴다.
+    """
     payload = [{"role": "system", "content": system}, *messages]
-    total = llm_retry.attempts()
+    route = slm.route_for(name) if use_slm else None
+    if route is not None:
+        try:
+            return await _complete(route.client, route.model, payload, max_tokens, timeout, name, metadata, total=1)
+        except LLMError as e:
+            slm.record_fallback(name, e)
+    return await _complete(
+        _get_client(),
+        get_settings().llm_model,
+        payload,
+        max_tokens,
+        timeout,
+        name,
+        metadata,
+        total=llm_retry.attempts(),
+    )
+
+
+async def _complete(
+    client: AsyncOpenAI,
+    model: str,
+    payload: list[dict],
+    max_tokens: int,
+    timeout: float,
+    name: str,
+    metadata: LangfuseMetadata | None,
+    *,
+    total: int,
+) -> str:
     for attempt in range(1, total + 1):
         started = time.monotonic()
         try:
             async with asyncio.timeout(timeout):
                 resp = await client.chat.completions.create(
                     name=name,
-                    model=settings.llm_model,
+                    model=model,
                     messages=payload,  # type: ignore[arg-type]
                     max_tokens=max_tokens,
                     metadata=metadata,
@@ -133,7 +164,7 @@ async def _call(
             if attempt < total and llm_retry.is_retryable(e):
                 await _before_retry(name, attempt, error)
                 continue
-            _record_llm_failure(name, settings.llm_model, timeout, started, e)
+            _record_llm_failure(name, model, timeout, started, e)
             raise error from e
 
         text = ""
@@ -171,6 +202,18 @@ async def _before_retry(name: str, attempt: int, error: LLMError) -> None:
 # 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
 async def _call_json(**kwargs) -> dict:
     text = await _call(**kwargs)  # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
+    try:
+        return _parse_json(text)
+    except LLMError as e:
+        # SLM 이 JSON 을 깨뜨렸다면 메인 LLM 으로 한 번 더. SLM 을 안 쓰는 호출이면 그대로 실패
+        name = kwargs.get("name", "")
+        if slm.route_for(name) is None:
+            raise
+        slm.record_fallback(name, e)
+        return _parse_json(await _call(**kwargs, use_slm=False))
+
+
+def _parse_json(text: str) -> dict:
     # 코드펜스(```json, ```JSON)나 앞뒤 설명 문장이 붙어 와도 첫 { ~ 마지막 } 만 잘라 파싱한다
     start, end = text.find("{"), text.rfind("}")
     cleaned = text[start : end + 1] if start != -1 and end > start else text.strip()

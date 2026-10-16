@@ -63,13 +63,16 @@ python training/tagging/train_lora.py --base-model <HF 모델 id> \
 
 ## 3. 서빙과 평가
 
+기본 모델은 `kakaocorp/kanana-2-3b-instruct` 다. 학습(`--base-model`)과 서빙(`serving/vllm/config.yaml`)이 같아야 한다.
+서빙·RunPod·콜드 스타트는 `serving/README.md`.
+
 ```bash
-vllm serve <기본 모델> --enable-lora --lora-modules tagging-v1=training/tagging/adapters/v1/adapter --port 8001
-uv run python scripts/eval_tagging.py --base-url http://<gpu-host>:8001/v1 --model tagging-v1 \
+serving/vllm/start.sh   # RunPod Pod 안. 기본 모델·LoRA 설정은 serving/vllm/config.yaml
+uv run python scripts/eval_tagging.py --slm --model tagging-v1 \
     --out evals/results/tagging-v1.json
 ```
 
-평가 스크립트는 운영 `TaggingAgent` 를 그대로 호출하므로 프롬프트·타임아웃(4초)·JSON 파싱·차원 필터가 운영과 같다.
+평가 스크립트는 운영 `TaggingAgent` 를 그대로 호출하므로 프롬프트·타임아웃(15초)·JSON 파싱·차원 필터가 운영과 같다.
 기본은 regression split 이다. `blind_holdout` 은 최종 판정 때만 `--allow-holdout` 으로 본다.
 
 ### 전환 기준 (제안)

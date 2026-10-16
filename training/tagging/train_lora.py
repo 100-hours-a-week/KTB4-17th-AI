@@ -1,7 +1,7 @@
 """오픈 웨이트 모델에 태깅용 LoRA 어댑터를 학습한다. GPU 서버(RunPod 등)에서 실행한다.
 
     pip install -r training/requirements.txt
-    python training/tagging/train_lora.py --base-model Qwen/Qwen2.5-7B-Instruct \\
+    python training/tagging/train_lora.py --base-model kakaocorp/kanana-2-3b-instruct \\
         --data-dir training/tagging/out --output-dir training/tagging/adapters/v1
 
 학습 의존성(torch·trl 등)은 서버 이미지에 넣지 않으려고 pyproject 가 아니라 training/requirements.txt 에 둔다.
