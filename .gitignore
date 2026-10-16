@@ -32,7 +32,7 @@ scripts/judge_confusion.py
 llm_prompt_context_guide.html
 evals/review/langfuse_prod_eval_2026-10-02.html
 
-# dev 플레이그라운드 SQLite
+# 로컬 SQLite 파일
 *.db
 
 # IDE

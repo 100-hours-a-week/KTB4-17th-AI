@@ -12,7 +12,7 @@ import re
 from datetime import UTC, datetime
 
 from app.core.config import get_settings
-from app.core.guardrail import effective_mode
+from app.core.guardrail import contains_profanity, effective_mode
 from app.core.guardrail_trace import record_guardrail
 from app.core.observability import build_langfuse_metadata
 
@@ -114,9 +114,6 @@ class Coverage:
 
     def empty_dimensions(self) -> set[str]:
         return {d for d, n in self.primary.items() if n == 0}
-
-    def has_primary(self, dimension: str) -> bool:
-        return self.primary.get(dimension, 0) > 0
 
     def to_dict(self) -> dict:
         return {"primary": dict(self.primary), "secondary": dict(self.secondary)}
@@ -268,7 +265,7 @@ def narrative_contradiction(scores: dict[str, int | None], narrative: Narrative)
     return None
 
 
-# 사용자가 하지 않은 말을 짐작하는 어미. 서술은 사용자가 한 말을 옮겨 쓰는 글이라 이런 문장은 뺀다 —
+# 사용자가 하지 않은 말을 짐작하는 어미. 서술은 사용자의 답에서 확인된 성향만 요약하는 글이라 이런 짐작 문장은 뺀다 —
 # "너무 캐묻는 것은 부담스러우실 수 있겠네요"가 시뮬레이션 대본에서 상대가 한 말로 새어 나왔다.
 # "좋겠어요"처럼 사용자의 바람을 옮긴 문장은 살리려고 맨 "겠어요"는 넣지 않는다.
 _SPECULATION = re.compile(r"겠네요|수 있겠|수도 있겠|수도 있어요|것 같아요|것 같네요|듯해요|듯합니다")
@@ -426,12 +423,17 @@ class OnboardingService:
     # ── 내부 헬퍼 ─────────────────────────────────────────
 
     @staticmethod
-    def _history(session: OnboardingSession) -> list[dict]:
+    def _history(session: OnboardingSession, *, skip_off_topic: bool = False) -> list[dict]:
         """DB의 턴들을 LLM 메시지 형식으로. 답이 없는 턴(건너뜀·대기 중)은 통째로 뺀다 —
-        assistant 메시지가 연달아 두 번 오면 모델이 흐름을 잃는다."""
+        assistant 메시지가 연달아 두 번 오면 모델이 흐름을 잃는다.
+
+        skip_off_topic: 되물어도 질문과 무관했던 답(욕설·장난 등)을 질문째 뺀다. 페르소나 추출용 —
+        무관한 답이 서술·텍스트 항목에 인용돼 들어가지 않게 한다. 질문 생성용 이력은 흐름을 위해 그대로 둔다."""
         messages: list[dict] = []
         for turn in session.turns:
             if not turn.answer:
+                continue
+            if skip_off_topic and (turn.tags or {}).get("off_topic"):
                 continue
             messages.append({"role": "assistant", "content": turn.question})
             messages.append({"role": "user", "content": turn.answer})
@@ -697,7 +699,7 @@ class OnboardingService:
         self.extraction.guardrail_session_id = session.id
         try:
             raw = await self.extraction.extract(
-                self._history(session),
+                self._history(session, skip_off_topic=True),
                 answered=answered,
                 trace_metadata=build_langfuse_metadata(
                     feature="persona",
@@ -734,7 +736,11 @@ class OnboardingService:
             if values and key not in answered:
                 dropped.append(key)
                 values = []
-            texts[key] = values
+            # 욕설이 든 항목은 버린다 — narrative·summaries 는 가드레일을 거치지만 texts 는 거치지 않았다
+            clean = [v for v in values if not contains_profanity(v)]
+            if len(clean) != len(values):
+                logger.info("dropped profane %s items: %d", key, len(values) - len(clean))
+            texts[key] = clean
         if dropped:
             logger.info("dropped unanswered dimensions from extraction: %s", dropped)
 

@@ -40,7 +40,6 @@ release.config.cjs
 serving/
 training/
 tests/
-dev/
 docs/
 README.md
 gitconvention.md

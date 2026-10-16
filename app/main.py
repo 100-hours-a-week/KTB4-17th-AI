@@ -24,8 +24,6 @@ from fastapi import APIRouter, FastAPI
 from langfuse import get_client
 
 from app.core import slm
-from app.core.config import get_settings
-from app.devtools.api import router as devtools_router
 from app.features.chat_end.api import router as chat_end_router
 from app.features.face_verification.api import router as face_verification_router
 from app.features.persona.api import router as persona_router
@@ -109,12 +107,4 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# Sentry 연동 확인용. 이벤트 수신을 확인한 뒤 제거한다.
-@app.get("/sentry-debug", include_in_schema=False)
-async def trigger_error():
-    division_by_zero = 1 / 0  # noqa: F841
-
-
 app.include_router(api_router)
-if get_settings().enable_test_ui:
-    app.include_router(devtools_router)
