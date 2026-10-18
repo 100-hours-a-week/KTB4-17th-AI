@@ -16,7 +16,13 @@ from app.features.chat_end.schemas import (
     ChatEndStatus,
     DraftStatus,
 )
-from app.features.chat_end.service import DraftLocked, DraftNotFound, EndTypeMismatch, NoConfirmedDraft
+from app.features.chat_end.service import (
+    DraftLocked,
+    DraftNotFound,
+    EndTypeMismatch,
+    MessageGenerationFailed,
+    NoConfirmedDraft,
+)
 
 RECENT = [{"speaker": "REQUESTER", "content": "요즘 바쁘신가 봐요."}]
 DRAFT_ID = "a" * 32
@@ -128,7 +134,7 @@ def test_openapi_documents_error_responses():
     confirm = paths["/v1/chat_end/drafts/{draft_id}/confirm"]["post"]["responses"]
     messages = paths["/v1/chat_end/messages"]["post"]["responses"]
     assert "404" in confirm and "409" in confirm
-    assert "409" in messages
+    assert "409" in messages and "503" in messages
 
 
 def test_confirm_unknown_draft_is_404_without_commit():
@@ -159,6 +165,14 @@ def test_messages_returns_200_and_commits():
         "end_turns": 1,
         "end_reason": "상호 합의 종료",
     }
+    assert calls == [("message", "user-1"), ("commit",)]
+
+
+def test_messages_generation_failure_is_503_without_fallback_text_but_commits_the_failed_row():
+    client, calls = _client(raises=MessageGenerationFailed(1))
+    res = client.post("/v1/chat_end/messages", json=_message_body())
+    assert res.status_code == 503
+    assert set(res.json()) == {"detail"}  # 폴백 문장·status 필드를 본문에 싣지 않는다
     assert calls == [("message", "user-1"), ("commit",)]
 
 

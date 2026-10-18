@@ -16,7 +16,14 @@ from app.features.chat_end.schemas import (
     DraftStatus,
     EndType,
 )
-from app.features.chat_end.service import ChatEndService, DraftLocked, DraftNotFound, EndTypeMismatch, NoConfirmedDraft
+from app.features.chat_end.service import (
+    ChatEndService,
+    DraftLocked,
+    DraftNotFound,
+    EndTypeMismatch,
+    MessageGenerationFailed,
+    NoConfirmedDraft,
+)
 
 RECENT = [
     {"speaker": "REQUESTER", "content": "요즘 바쁘신가 봐요."},
@@ -281,28 +288,28 @@ def test_turns_progress_and_use_the_matching_script_sentence(monkeypatch):
     assert "첫 번째 답장" in prompts[0] and "두 번째 답장" in prompts[1] and "이 채팅을 여기서 종료" in prompts[2]
 
 
-def test_failed_message_returns_script_sentence_and_does_not_use_up_a_turn(monkeypatch):
+def test_failed_message_raises_and_does_not_use_up_a_turn(monkeypatch):
     _fake_call(monkeypatch, [LLMError("timeout"), _ok("여기서 마무리할게요. 고마웠어요.")])
 
     async def scenario(svc):
         await _seed(svc)
-        failed = await svc.create_message(_message_req())
+        with pytest.raises(MessageGenerationFailed) as exc:
+            await svc.create_message(_message_req())
         retried = await svc.create_message(_message_req())
-        return failed, retried
+        return exc.value, retried
 
     (failed, retried), _, messages, _ = _run(scenario)
-    assert (failed.status, failed.ai_turn_count, failed.is_final, failed.end_turns) == (
-        ChatEndStatus.FAILED,
-        1,
-        False,
-        0,
-    )
-    assert (failed.ai_response, failed.end_reason) == (SCRIPT[0], None)  # 클라이언트 입력이 아니라 스크립트 문장
+    assert failed.ai_turn == 1  # 폴백 문장은 응답으로 내리지 않고 예외로 알린다
     assert (retried.status, retried.ai_turn_count) == (ChatEndStatus.SUCCESS, 1)
-    assert (messages[0].status, messages[0].source, messages[0].end_turns) == ("FAILED", "fallback", 0)
+    assert (messages[0].status, messages[0].source, messages[0].end_turns, messages[0].ai_response) == (
+        "FAILED",
+        "failed",
+        0,
+        "",
+    )
 
 
-def test_failed_third_turn_is_not_final(monkeypatch):
+def test_failed_third_turn_raises_and_is_not_final(monkeypatch):
     replies = [
         _ok("여기서 마무리할게요. 고마웠어요."),
         _ok("제 마음은 그대로예요. 여기서 마무리할게요."),
@@ -312,12 +319,15 @@ def test_failed_third_turn_is_not_final(monkeypatch):
 
     async def scenario(svc):
         await _seed(svc)
-        return [await svc.create_message(_message_req()) for _ in range(3)]
+        await svc.create_message(_message_req())
+        await svc.create_message(_message_req())
+        with pytest.raises(MessageGenerationFailed) as exc:
+            await svc.create_message(_message_req())
+        return exc.value
 
-    results, _, _, _ = _run(scenario)
-    third = results[2]
-    assert (third.status, third.ai_turn_count, third.is_final) == (ChatEndStatus.FAILED, 3, False)
-    assert third.ai_response == SCRIPT[2]
+    failed, _, messages, _ = _run(scenario)
+    assert failed.ai_turn == 3
+    assert [m.status for m in messages] == ["SUCCESS", "SUCCESS", "FAILED"]
 
 
 def test_turns_are_counted_per_delegation(monkeypatch):
@@ -334,18 +344,19 @@ def test_turns_are_counted_per_delegation(monkeypatch):
     assert (first.ai_turn_count, second.ai_turn_count) == (1, 1)
 
 
-def test_create_message_guardrail_block_returns_script_sentence_not_engine_default(monkeypatch):
+def test_create_message_guardrail_block_raises_without_any_fallback_text(monkeypatch):
     monkeypatch.setenv("GUARDRAIL_MODE", "enforce")
     _fake_call(monkeypatch, [_ok("[CORRECTION NOTICE] 안녕히", "x")])
 
     async def scenario(svc):
         await _seed(svc)
-        return await svc.create_message(_message_req())
+        with pytest.raises(MessageGenerationFailed):
+            await svc.create_message(_message_req())
+        return "raised"
 
-    res, _, _, traces = _run(scenario)
-    assert res.ai_response == SCRIPT[0]
-    assert "다른 생각" not in res.ai_response  # 가드레일 엔진의 기본 폴백 문장이 나가면 안 된다
-    assert res.status is ChatEndStatus.FAILED and res.end_reason is None
+    res, _, messages, traces = _run(scenario)
+    assert res == "raised"
+    assert [(m.status, m.ai_response) for m in messages] == [("FAILED", "")]  # 어떤 폴백 문장도 저장·응답하지 않는다
     assert any(t.feature == "chat_end" and t.operation == "message" for t in traces)
 
 
@@ -448,11 +459,11 @@ def test_failed_only_does_not_lock_the_script(monkeypatch):
     async def scenario(svc):
         await _seed(svc, confirmed=True)
         other = await _seed(svc, confirmed=False)
-        failed = await svc.create_message(_message_req())
-        return failed, await svc.confirm_draft(other.id), other.id
+        with pytest.raises(MessageGenerationFailed):
+            await svc.create_message(_message_req())
+        return await svc.confirm_draft(other.id), other.id
 
-    (failed, confirmed, other_id), drafts, messages, _ = _run(scenario)
-    assert failed.status is ChatEndStatus.FAILED
+    (confirmed, other_id), drafts, messages, _ = _run(scenario)
     assert confirmed.status is DraftStatus.CONFIRMED
     assert {d.id: d.status for d in drafts}[other_id] == "CONFIRMED"
     assert [m.status for m in messages] == ["FAILED"]

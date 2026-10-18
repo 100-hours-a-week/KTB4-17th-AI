@@ -3,7 +3,7 @@
 POST /v1/chat_end/drafts                    : 1·2·3번째 답변 스크립트 (동기 200, PENDING 으로 저장)
 POST /v1/chat_end/drafts/{draft_id}/confirm : 스크립트 확정 (200, 멱등. 없으면 404, messages 시작 후 다른 초안이면 409)
 POST /v1/chat_end/messages                  : 확정 스크립트의 N번째 문장을 방향으로 삼은 종료 메시지
-                                              (동기 200, 실패해도 status=FAILED 로 200.
+                                              (동기 200. LLM 장애·가드레일 차단으로 못 만들면 503 — 폴백 문장은 내리지 않는다.
                                               확정 스크립트가 없거나 요청 end_type 이 확정본과 다르면 409)
 """
 
@@ -21,7 +21,14 @@ from .schemas import (
     ChatEndMessageRequest,
     ChatEndMessageResponse,
 )
-from .service import ChatEndService, DraftLocked, DraftNotFound, EndTypeMismatch, NoConfirmedDraft
+from .service import (
+    ChatEndService,
+    DraftLocked,
+    DraftNotFound,
+    EndTypeMismatch,
+    MessageGenerationFailed,
+    NoConfirmedDraft,
+)
 
 router = APIRouter(prefix="/v1/chat_end", tags=["chat-end"])
 
@@ -70,7 +77,12 @@ async def confirm_draft(
     "/messages",
     response_model=ChatEndMessageResponse,
     summary="확정 스크립트를 기반으로 종료 채팅 메시지 생성",
-    responses={409: {"description": "확정된 초안이 없거나, 요청의 end_type 이 확정본과 다름"}},
+    responses={
+        409: {"description": "확정된 초안이 없거나, 요청의 end_type 이 확정본과 다름"},
+        503: {
+            "description": "LLM 장애·가드레일 차단으로 메시지를 만들지 못함. 턴을 쓰지 않으니 같은 요청을 다시 보내면 된다"
+        },
+    },
 )
 async def create_message(
     req: ChatEndMessageRequest,
@@ -85,5 +97,8 @@ async def create_message(
         raise HTTPException(
             409, f"확정한 초안의 종료 유형({e.confirmed})과 요청의 end_type({e.requested})이 달라요"
         ) from e
+    except MessageGenerationFailed as e:
+        await db.commit()  # 실패 행과 가드레일 추적을 남긴다
+        raise HTTPException(503, "종료 메시지를 만들지 못했어요. 잠시 후 다시 시도해 주세요") from e
     await db.commit()
     return result
