@@ -38,6 +38,12 @@ SPLITS = ("calibration", "regression", "blind_holdout")
 def _arguments(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--split", choices=SPLITS, action="append", help="여러 번 줄 수 있음. 기본 regression")
+    parser.add_argument(
+        "--dataset",
+        type=Path,
+        default=DATASET,
+        help="평가 JSONL. 사람 골드셋은 evals/quality_datasets/human/persona_onboarding_tagging.jsonl",
+    )
     parser.add_argument("--allow-holdout", action="store_true", help="blind_holdout 채점 허용 (최종 판정용)")
     parser.add_argument("--slm", action="store_true", help=".env 의 SLM_BASE_URL·SLM_API_KEY 서버를 평가")
     parser.add_argument("--base-url", help="LLM_BASE_URL 덮어쓰기")
@@ -134,7 +140,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             "latency_s": round(latency, 3),
         }
 
-    cases = load_cases(args.split)
+    cases = load_cases(args.split, args.dataset)
     results = await asyncio.gather(*(one(case) for case in cases))
     return {
         "model": settings.llm_model,

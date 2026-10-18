@@ -25,7 +25,12 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--learning-rate", type=float, default=2e-4)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--grad-accum", type=int, default=2)
-    parser.add_argument("--max-length", type=int, default=1024, help="TAG_PROMPT + 질문·답변 + JSON 이 들어갈 길이")
+    parser.add_argument(
+        "--max-length",
+        type=int,
+        default=2048,
+        help="TAG_PROMPT + 질문·답변 + JSON 이 들어갈 길이. 차원 정의가 붙은 TAG_PROMPT 만 약 1,000 토큰",
+    )
     parser.add_argument("--lora-r", type=int, default=16)
     parser.add_argument("--lora-alpha", type=int, default=32)
     parser.add_argument("--lora-dropout", type=float, default=0.05)

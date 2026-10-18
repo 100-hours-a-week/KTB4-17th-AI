@@ -613,6 +613,14 @@ class ConversationAgent:  # 대화 생성 담당
 
 # ══ 태깅 ════════════════════════════════════════════════
 
+
+def _tag_definitions() -> str:
+    # 이름만 주면 모델이 영어 키로 뜻을 짐작한다(avoidance 를 갈등 회피로 읽는 식). 양 끝 설명을 같이 준다
+    lines = [f"- {key} ({d.label}): 낮음 = {d.low} / 높음 = {d.high}" for key, d in SCORED.items()]
+    lines += [f"- {key} ({label}): 사용자가 직접 말한 {label}" for key, label in TEXTUAL.items()]
+    return "\n".join(lines)
+
+
 TAG_PROMPT = f"""\
 사용자 답변이 아래 차원 중 무엇에 대한 근거를 제공하는지 판정하세요.
 
@@ -622,7 +630,17 @@ secondary: 간접적으로 추론 가능한 차원
 질문과 무관한 답변이면 둘 다 빈 배열로 두고 off_topic을 true로 하세요.
 점수는 매기지 마세요. 어떤 차원인지만 고릅니다.
 
-차원 목록: {", ".join(ALL_DIMENSIONS)}
+## 차원 정의 — 이름이 아니라 이 정의로만 판단하세요
+{_tag_definitions()}
+
+## 판정 규칙
+- primary 는 답변 속 사용자 자신의 행동·선호가 그 차원의 어느 쪽인지 직접 말해 줄 때만 넣습니다.
+- 질문이 겨눈 차원이라도 답에 근거가 없으면 넣지 않습니다. 모르겠다·기억이 안 난다·농담으로 넘김·한두 마디 대답은
+  primary 를 빈 배열로 둡니다 (질문과 관련은 있으므로 off_topic 은 false).
+- "아직 정하지 않았어요"·"생각해 본 적 없어요"처럼 질문 주제에 대한 자기 상태를 말한 답도 질문에 대한 대답입니다.
+  primary 는 비우되 off_topic 은 false 입니다. off_topic 은 질문과 상관없는 요청·잡담일 때만 true 입니다.
+- 다른 사람(친구·전 연인·상대)의 행동이나 말은 사용자의 근거가 아닙니다.
+- ideal_* 는 상대에게 바라는 점을 말할 때만, 사용자 자신의 성향이 아닙니다.
 
 JSON만 출력하세요. 설명·마크다운 금지.
 {{"primary": [], "secondary": [], "off_topic": false}}

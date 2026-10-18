@@ -34,8 +34,31 @@ OpenRouter(외부 API) 대신 오픈 웨이트 모델에 LoRA 어댑터를 학�
 `build_sft.py` 가 막는 것: 등록되지 않은 차원, primary·secondary 중복, off_topic 인데 태그가 있는 경우, 검수 없는 라벨,
 동의 근거 없는 운영 데이터, **평가 데이터셋과 같은 답변(평가 누수)**, 중복.
 
-데이터 출처는 아직 정하지 않았다. 운영 대화를 쓰려면 학습 활용 동의가 있어야 하고, Gemini 출력을 정답으로
-쓰는 증류는 제공사 약관(경쟁 모델 개발 제한)을 확인해야 한다. 기준선에서 Gemini 정답률이 낮으므로 증류 자체도 권하지 않는다.
+운영 대화를 쓰려면 학습 활용 동의가 있어야 한다. Gemini 출력을 정답으로 쓰는 증류는 제공사 약관(경쟁 모델 개발 제한)을
+확인해야 한다.
+
+### 합성 세션 + teacher 라벨 (2026-10-15)
+
+기준선의 낮은 정답률은 모델보다 `TAG_PROMPT` 문제였다. 차원 이름만 있어 모델이 영어 키로 뜻을 짐작했다.
+`TAG_PROMPT` 에 차원 정의와 유보 규칙을 넣은 뒤 골드셋(calibration+regression 60건) primary F1 이
+flash-lite 3.1 기준 0.33 → 0.88 이 됐다. 그래서 teacher 라벨을 학습 데이터 후보로 쓴다. teacher 는 출력 학습 제약이 적은
+오픈 웨이트 `qwen/qwen3.8-27b`(Apache 2.0, 공식 LICENSE 파일 확인 전제)다. 선정 근거·측정 결과는
+`docs/성능평가/10_증류_teacher_모델_선정기준.md` 에 있다(docs 는 로컬 산출물).
+
+답변을 만드는 사용자 시뮬레이터는 teacher 와 다른 계열인 `google/gemini-3.8-flash`(프롬프트 v2.1)가 기본이다.
+시드 성향 충실도가 가장 높았다(구간 일치 0.87, GLM 계열 최선 0.73). `SIM_LLM_MODEL` 로 바꿀 수 있다.
+비용은 1,000세션 기준 시뮬레이터 약 $12 + 질문 생성 약 $2 + teacher 라벨링 약 $28, 합계 약 $42 다.
+
+```bash
+uv run python scripts/generate_synthetic_onboarding.py --n 200 --out data/synthetic/sessions.jsonl   # 시드 성향 → 합성 온보딩
+uv run python scripts/label_with_teacher.py --synthetic data/synthetic/sessions.jsonl --out-dir data/teacher/run1
+uv run python scripts/check_synthetic_labels.py data/teacher/run1 --sessions data/synthetic/sessions.jsonl
+uv run python training/tagging/from_teacher.py data/teacher/run1/tagging.jsonl --out data/tagging.jsonl
+uv run python training/tagging/build_sft.py data/tagging.jsonl --allow-unreviewed   # 검수 전에는 시험용으로만
+```
+
+teacher 라벨은 `reviewed_by` 가 비어 있어 사람이 확인하기 전에는 학습에 들어가지 않는다. 검수는 5회 샘플 판정 일치율
+(`aggregate.agreement`)이 낮은 것부터 본다. teacher 자체의 골드셋 점수는 `scripts/score_teacher_gold.py` 로 잰다.
 
 ```bash
 uv run python training/tagging/build_sft.py data/tagging.jsonl --out training/tagging/out
