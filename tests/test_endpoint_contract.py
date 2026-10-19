@@ -57,6 +57,16 @@ EXPECTED_DOCUMENTED_ENDPOINTS = {
     ("POST", "/ai/api/v2/persona-extraction/conversation"),
     ("GET", "/ai/api/v2/persona-extraction/jobs/{job_id}"),
     ("DELETE", "/ai/api/v2/persona-extraction/style"),
+    ("POST", "/ai/api/v2/practice/start"),
+    ("POST", "/ai/api/v2/practice/{session_id}/opening"),
+    ("POST", "/ai/api/v2/practice/{session_id}/messages"),
+    ("POST", "/ai/api/v2/practice/{session_id}/retry"),
+    ("POST", "/ai/api/v2/practice/{session_id}/opening/stream"),
+    ("POST", "/ai/api/v2/practice/{session_id}/messages/stream"),
+    ("POST", "/ai/api/v2/practice/{session_id}/retry/stream"),
+    ("GET", "/ai/api/v2/practice"),
+    ("GET", "/ai/api/v2/practice/{session_id}"),
+    ("POST", "/ai/api/v2/practice/{session_id}/end"),
 }
 
 

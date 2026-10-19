@@ -39,6 +39,8 @@ class UserPersonaCore(Base):
     last_processed_message_id: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # 20분 무응답 트리거 판정을 위한 마지막 사용자 발화 시각
     last_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # 연습대화에서 "말 편하게 해도 될까요?"를 거절한 시각. 있으면 이 사용자에게는 다시 묻지 않는다
+    casual_speech_declined_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
 
