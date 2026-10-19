@@ -67,6 +67,10 @@ EXPECTED_DOCUMENTED_ENDPOINTS = {
     ("GET", "/ai/api/v2/practice"),
     ("GET", "/ai/api/v2/practice/{session_id}"),
     ("POST", "/ai/api/v2/practice/{session_id}/end"),
+    ("POST", "/ai/api/v2/simulation"),
+    ("GET", "/ai/api/v2/simulation"),
+    ("GET", "/ai/api/v2/simulation/jobs/{job_id}"),
+    ("GET", "/ai/api/v2/simulation/{simulation_id}"),
 }
 
 
