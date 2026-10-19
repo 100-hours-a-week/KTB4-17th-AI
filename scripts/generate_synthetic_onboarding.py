@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATOR_VERSION = "synthetic-onboarding/2.1"
+GENERATOR_VERSION = "synthetic-onboarding/2.2"
 SCHEMA_VERSION = 1
 DEFAULT_OUT = ROOT / "data" / "synthetic" / "onboarding_sessions.jsonl"
 DEFAULT_SIM_MODEL = "google/gemini-3.8-flash"
@@ -289,7 +289,7 @@ def unknown_style(profile: SeedProfile, dim: str) -> str:
 
 def focus_section(profile: SeedProfile, dims: list[str]) -> str:
     """이번 질문이 겨누는 차원의 내 성향 — 수준별 행동 예시와 "잘 모름"이면 대답 방식까지."""
-    from app.features.persona.schemas import SCORED
+    from app.features.persona.schemas import SCORED, TEXTUAL
 
     lines = ["[이번 질문과 관련된 내 성향] — 이 내용과 어긋나지 않게 답하세요"]
     for dim in dims:
@@ -313,7 +313,13 @@ def focus_section(profile: SeedProfile, dims: list[str]) -> str:
             examples = " / ".join(cues[level])
             lines.append(f"- {d.label}: {side} (이런 사람 예: {examples})")
     known = [d for d in dims if d in SCORED and profile.levels[d] != "unanswered"]
-    if not known:
+    textual = [d for d in dims if d in TEXTUAL]
+    if textual:
+        # 관심사·일상·데이트는 점수형 성향이 아니라 [나라는 사람]의 사실이다. 이 줄이 없으면 아래 "모두 잘 모름"
+        # 분기에 걸려 주말·관심사 질문에도 짧게 얼버무리게 된다 (선호·기피 데이트가 거의 안 나오던 원인)
+        labels = ", ".join(TEXTUAL[d] for d in textual)
+        lines.append(f"- {labels}: [나라는 사람]에 적힌 내 사실대로, 이번 질문에 맞는 것 한두 개를 구체적으로 말하세요")
+    elif not known:
         lines.append("이번 질문에 관련된 성향은 모두 잘 모르는 것이니, 위 방식대로 한두 문장으로 짧게만 답하세요.")
     lines.append("예시 문장은 그대로 쓰지 말고, 비슷한 나만의 경험·장면으로 바꿔 말하세요.")
     lines.append("위에 없는 다른 성향은 이번 답에서 꺼내지 마세요.")

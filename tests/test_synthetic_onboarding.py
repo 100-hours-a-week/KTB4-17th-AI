@@ -141,6 +141,17 @@ def test_v2_focus_section_by_level():
         assert key not in text
 
 
+def test_textual_topic_is_answered_from_profile_facts_not_as_unknown():
+    """주말·관심사 주제는 점수형 차원이 없다. "모두 잘 모름 — 짧게만"으로 빠지면 데이트 취향이 안 나온다."""
+    from scripts.generate_synthetic_onboarding import focus_section
+
+    profile = sample_profile(random.Random("t"), seed_id="seed-t")
+    text = focus_section(profile, ["routine", "date_prefer", "date_avoid"])
+
+    assert "모두 잘 모르는 것" not in text
+    assert "일상, 선호 데이트, 피하고 싶은 것" in text
+
+
 def test_v2_system_prompt_hides_dimension_levels():
     from scripts.generate_synthetic_onboarding import UserSimulator
 

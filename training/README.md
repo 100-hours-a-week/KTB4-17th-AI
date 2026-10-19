@@ -57,6 +57,20 @@ uv run python training/tagging/from_teacher.py data/teacher/run1/tagging.jsonl -
 uv run python training/tagging/build_sft.py data/tagging.jsonl --allow-unreviewed   # 검수 전에는 시험용으로만
 ```
 
+#### 시뮬레이터를 API 대신 프론티어 모델 채팅(구독)으로
+
+`scripts/manual_simulator.py` 가 같은 시드 프로필·주제 순서·답변 방식으로 **붙여넣기용 프롬프트**(세션 5개씩)를 만들고,
+채팅이 돌려준 JSON 을 위와 같은 세션 JSONL 로 바꾼다. 하루 질문은 주제의 시드 질문이라 API 비용이 0 이다(운영 질문보다 짧다).
+
+```bash
+uv run python scripts/manual_simulator.py export --n 40 --seed 300 --out-dir data/manual/run300
+# batch_000.md … 를 채팅에 하나씩 붙여 넣고, 답(JSON)을 data/manual/run300/answers/batch_000.json … 으로 저장
+uv run python scripts/manual_simulator.py import data/manual/run300 --model <모델 이름> --out data/synthetic/manual-run300.jsonl
+```
+
+시뮬레이터 모델이 바뀌었으므로 **처음 40세션은 충실도부터 잰다** (`check_synthetic_labels.py` 의 구간 일치 —
+API 기본값 Gemini 3.8 flash 0.87). 시드는 API 생성(100·200)과 겹치지 않게 쓴다.
+
 teacher 라벨은 `reviewed_by` 가 비어 있어 사람이 확인하기 전에는 학습에 들어가지 않는다. 검수는 5회 샘플 판정 일치율
 (`aggregate.agreement`)이 낮은 것부터 본다. teacher 자체의 골드셋 점수는 `scripts/score_teacher_gold.py` 로 잰다.
 
