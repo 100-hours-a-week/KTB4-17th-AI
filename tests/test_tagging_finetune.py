@@ -116,6 +116,41 @@ def test_summary_reports_off_topic_counts_and_failures():
     assert summary["exact_pct"] == 50.0
     assert summary["failure_pct"] == 50.0
     assert summary["off_topic_positive"] == {"cases": 1, "caught": 1}
+    assert summary["gate"] == {"primary_and_off_topic_pct": 50.0, "passed": False}
+
+
+def test_summary_micro_f1_counts_each_label():
+    from scripts.eval_tagging import label_counts
+
+    expected = {
+        "autoMetrics": {
+            "primary": {"accepted": [["anxiety", "contact_rhythm"]]},
+            "secondary": {"accepted": [[]]},
+            "off_topic": {"accepted": [False]},
+        }
+    }
+    half = {"primary": ["anxiety"], "secondary": [], "off_topic": False}  # 2개 중 1개 맞춤 → 완전 일치는 0
+    rows = [
+        {
+            "category": "direct",
+            "expected_off_topic": False,
+            "latency_s": 0.5,
+            "score": score(half, expected),
+            "counts": label_counts(half, expected),
+        },
+        {
+            "category": "direct",
+            "expected_off_topic": False,
+            "latency_s": 0.5,
+            "score": score(None, expected),
+            "counts": label_counts(None, expected),
+        },
+    ]
+
+    summary = summarize(rows)
+
+    assert summary["primary_pct"] == 0.0
+    assert summary["primary_f1_pct"] == 40.0  # tp=1, fp=0, fn=3
 
 
 def test_blind_holdout_needs_explicit_flag():

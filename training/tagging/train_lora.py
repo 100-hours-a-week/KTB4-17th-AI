@@ -25,6 +25,11 @@ from pathlib import Path
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--base-model", required=True, help="Hugging Face 모델 id 또는 로컬 경로")
+    parser.add_argument(
+        "--revision",
+        default=None,
+        help="기본 모델 커밋. serving/vllm/config.yaml 의 revision 과 같게 둬야 학습·서빙 가중치가 같다",
+    )
     parser.add_argument("--data-dir", type=Path, required=True, help="build_sft.py 출력 폴더")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--epochs", type=float, default=3)
@@ -83,8 +88,8 @@ def main() -> None:
             bnb_4bit_quant_type="nf4",
             bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
         )
-    tokenizer = AutoTokenizer.from_pretrained(args.base_model)
-    model = AutoModelForCausalLM.from_pretrained(args.base_model, **model_kwargs)
+    tokenizer = AutoTokenizer.from_pretrained(args.base_model, revision=args.revision)
+    model = AutoModelForCausalLM.from_pretrained(args.base_model, revision=args.revision, **model_kwargs)
 
     config = SFTConfig(
         output_dir=str(args.output_dir),
@@ -130,6 +135,7 @@ def main() -> None:
     run_metrics = {
         "mode": "qlora" if args.load_in_4bit else "lora",
         "base_model": args.base_model,
+        "revision": args.revision,
         "gpu": torch.cuda.get_device_name(0) if cuda else "cpu",
         "dtype": str(model_kwargs["dtype"]).removeprefix("torch."),
         "train_rows": len(dataset["train"]),

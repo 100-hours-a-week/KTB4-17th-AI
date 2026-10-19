@@ -33,6 +33,9 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 DATASET = PROJECT_ROOT / "evals/quality_datasets/persona_onboarding_tagging.jsonl"
 SPLITS = ("calibration", "regression", "blind_holdout")
+# docs/성능평가/02_F2 5절 배포 게이트: primary·off_topic 동시 일치 85% 이상, None 실패 5% 이하
+GATE_MATCH_PCT = 85.0
+GATE_FAILURE_PCT = 5.0
 
 
 def _arguments(argv: list[str] | None = None) -> argparse.Namespace:
@@ -86,9 +89,31 @@ def score(output: dict[str, Any] | None, expected: dict[str, Any]) -> dict[str, 
     return result
 
 
+def label_counts(output: dict[str, Any] | None, expected: dict[str, Any]) -> dict[str, list[int]]:
+    """primary·secondary 의 (tp, fp, fn). 허용 대안 중 예측과 가장 가까운 것 기준, 실패는 정답을 모두 놓친 것으로 센다."""
+    from scripts.quality_metrics import tagging_item
+
+    item = tagging_item({"status": "ok", "mode": "model", "result": output}, expected)
+    return {field: list(item[field]) for field in ("primary", "secondary")}
+
+
+def micro_f1(results: list[dict[str, Any]], field: str) -> float | None:
+    rows = [r["counts"][field] for r in results if "counts" in r]
+    if not rows:
+        return None
+    tp, fp, fn = (sum(row[i] for row in rows) for i in range(3))
+    return round(100 * 2 * tp / (2 * tp + fp + fn), 1) if tp + fp + fn else 100.0
+
+
 def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
     def rate(rows: list[dict[str, Any]], key: str) -> float:
         return round(100 * sum(r["score"][key] for r in rows) / len(rows), 1) if rows else 0.0
+
+    gate_match = (
+        round(100 * sum(r["score"]["primary"] and r["score"]["off_topic"] for r in results) / len(results), 1)
+        if results
+        else 0.0
+    )
 
     by_category: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for r in results:
@@ -107,6 +132,13 @@ def summarize(results: list[dict[str, Any]]) -> dict[str, Any]:
             "caught": sum(r["score"]["off_topic"] for r in off_topic_cases),
         },
         "failure_pct": rate(results, "failed"),
+        # 문항 단위 완전 일치보다 촘촘하다 — 라벨 하나만 틀려도 0점이 되지 않는다
+        "primary_f1_pct": micro_f1(results, "primary"),
+        "secondary_f1_pct": micro_f1(results, "secondary"),
+        "gate": {
+            "primary_and_off_topic_pct": gate_match,
+            "passed": gate_match >= GATE_MATCH_PCT and rate(results, "failed") <= GATE_FAILURE_PCT,
+        },
         "latency_p50_s": round(statistics.median(latencies), 3) if latencies else None,
         "latency_p95_s": round(latencies[max(0, int(len(latencies) * 0.95) - 1)], 3) if latencies else None,
         "by_category": {
@@ -137,6 +169,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
             "expected_off_topic": case["expectedOutput"]["referenceLabels"]["off_topic"],
             "output": output,
             "score": score(output, case["expectedOutput"]),
+            "counts": label_counts(output, case["expectedOutput"]),
             "latency_s": round(latency, 3),
         }
 

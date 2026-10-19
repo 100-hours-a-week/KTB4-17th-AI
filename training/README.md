@@ -89,7 +89,24 @@ python training/tagging/train_lora.py --base-model <HF 모델 id> \
 
 같은 인자로 `--load-in-4bit` 만 바꿔 두 번 학습하고 `run_metrics.json` 과 평가 점수로 고른다.
 Colab 은 `training/notebooks/lora_qlora_compare_colab.ipynb` (L4·A100 권장 — T4 는 BF16 이 없어 LoRA 가 FP32 로 올라간다).
+결과·지표·게이트를 모으는 표는 `training/RESULTS.md`.
 품질 차이가 1%p 이내면 더 싼 쪽, 넘으면 품질이 좋은 쪽을 고르되 그 차이가 비용만큼 가치 있는지 표로 남긴다(제안).
+
+### 로컬 GPU (RTX 3060 노트북 6GB · RAM 32GB)
+
+Kanana-2 3B(약 3.2B 파라미터)는 BF16 가중치만 약 6.4GB 라 **LoRA 는 6GB 에 안 들어간다. QLoRA 태깅만 가능**하고, 추출(4,096 토큰)은
+출력층 계산(4,096 × 어휘 128,256)만 수 GB 라 6GB 에서는 어렵다. 리눅스(WSL2 Ubuntu 권장 — bitsandbytes·CUDA 설치가 쉽다)에서:
+
+```bash
+pip install -r training/requirements.txt
+python training/tagging/train_lora.py --base-model kakaocorp/kanana-2-3b-instruct \
+    --revision 6a5d7889964c4c590299d16e309eabab1f73f8a9 --data-dir training/tagging/out --output-dir /tmp/trial \
+    --load-in-4bit --gradient-checkpointing --max-length 1280 --batch-size 1 --grad-accum 16 --max-steps 20
+```
+
+- 먼저 `--max-steps 20` 으로 메모리(`run_metrics.json` 의 `train_reserved_gib`)와 스텝당 시간을 본다. 화면 출력에도 VRAM 이 쓰여 실제 여유는 5GB 남짓이다.
+- 배치 1이라 L4 보다 몇 배 느리다(태깅 3에폭 수 시간 예상 — 시험 실행 값으로 다시 잰다). 전기료 말고는 비용이 없어 시험·디버깅용으로 좋다.
+- LoRA·QLoRA **비교**는 같은 GPU 에서 해야 하므로 로컬이 아니라 L4 이상에서 한다.
 
 ### 추출
 
