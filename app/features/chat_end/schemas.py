@@ -15,7 +15,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-MAX_MESSAGE_LEN = 500  # practice MAX_MESSAGE_LEN 과 같다
+MAX_MESSAGE_LEN = 1000  # practice MAX_MESSAGE_LEN 과 같다
 MAX_RECENT_MESSAGES = 20
 # 스크립트 한 문장·종료 메시지 한 건의 글자 수 한도. 문장 수는 제한하지 않는다. 마지막 턴은 본문 + closing 을 합쳐서 센다
 # 검사는 agents/service 에서 하고 모델 검증에는 걸지 않는다 (초과는 경미한 문제라 500 으로 만들지 않는다)

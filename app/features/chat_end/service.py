@@ -6,8 +6,8 @@
                            같은 위임에서 messages 가 이미 시작됐으면 다른 초안은 확정할 수 없다
   create_message(req)      요청 end_type 이 확정 스크립트의 end_type 과 다르면 거절한다.
                            확정 스크립트의 N번째 문장(N = 성공한 답장 수 + 1, 최대 3)을 방향으로 종료 메시지 생성 →
-                           가드레일(재생성 1회) → 저장. 실패하면 status=FAILED, ai_response 는 그 N번째 스크립트 문장
-                           (엔진 기본 폴백 문장이 종료 메시지로 나가면 안 된다)
+                           가드레일(재생성 1회) → 저장. 실패하면 FAILED 행을 남기고 MessageGenerationFailed 를 던진다
+                           (폴백 문장을 응답으로 내리지 않는다. 라우트가 503 으로 바꾼다)
 
 커밋은 라우트(api.py)가 한다.
 """
@@ -54,6 +54,14 @@ class DraftLocked(Exception):
 
 class NoConfirmedDraft(Exception):
     """이 위임에 확정된 스크립트가 없다. 먼저 drafts → confirm 을 거쳐야 한다."""
+
+
+class MessageGenerationFailed(Exception):
+    """LLM 장애·가드레일 차단으로 종료 메시지를 만들지 못했다. FAILED 행은 이미 저장됐고 턴은 쓰지 않는다."""
+
+    def __init__(self, ai_turn: int) -> None:
+        self.ai_turn = ai_turn
+        super().__init__(f"ai_turn={ai_turn}")
 
 
 class EndTypeMismatch(Exception):
@@ -226,7 +234,7 @@ class ChatEndService:
         if ok and result is not None:
             text, end_reason, status, source = checked.text, result.end_reason, ChatEndStatus.SUCCESS, "llm"
         else:
-            text, end_reason, status, source = fallback, None, ChatEndStatus.FAILED, "fallback"
+            text, end_reason, status, source = "", None, ChatEndStatus.FAILED, "failed"  # 나가는 문장이 없다
         end_turns = ai_turn if status is ChatEndStatus.SUCCESS else 0
 
         row = await self.repo.save_message(
@@ -243,6 +251,8 @@ class ChatEndService:
             end_reason=end_reason,
             source=source,
         )
+        if status is ChatEndStatus.FAILED:  # 폴백 문장을 응답으로 내리지 않는다. 행은 남겨 실패율을 셀 수 있게 한다
+            raise MessageGenerationFailed(ai_turn)
         return ChatEndMessageResponse(
             room_id=req.room_id,
             message_id=row.id,

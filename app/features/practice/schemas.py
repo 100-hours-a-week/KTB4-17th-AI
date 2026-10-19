@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.core.guardrail import ValidationResult
 from app.features.persona.schemas import PersonaBrief, PersonaRef
 
-MAX_MESSAGE_LEN = 500
+MAX_MESSAGE_LEN = 1000
 # LLM 에 넘기는 최근 메시지 수. 더 오래된 건 잊는다 — 연습 대화는 길어도 한 세션 안의 얘기라 이 정도면 맥락이 산다
 HISTORY_WINDOW = 40
 

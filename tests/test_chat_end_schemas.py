@@ -66,7 +66,7 @@ def test_message_request_strips_whitespace():
         {"recent_messages": []},
         {"recent_messages": _recent(21)},
         {"recent_messages": [{"speaker": "TARGET", "content": "   "}]},
-        {"recent_messages": [{"speaker": "TARGET", "content": "가" * 501}]},
+        {"recent_messages": [{"speaker": "TARGET", "content": "가" * 1001}]},
         {"recent_messages": [{"speaker": "OTHER", "content": "안녕"}]},
         {"end_type": "ANGRY"},
         {"room_id": 0},
