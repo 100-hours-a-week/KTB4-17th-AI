@@ -38,6 +38,7 @@ from app.features.synthetic_detection.api import router as synthetic_detection_r
 from app.v2.persona.api import router as v2_persona_router
 from app.v2.persona.embedder import get_embedder
 from app.v2.persona.service import idle_sweeper_loop
+from app.v2.persona_extraction.api import router as v2_persona_extraction_router
 
 description = """
 별이삼샵 어플리케이션의 AI API입니다.
@@ -120,6 +121,7 @@ api_router.include_router(face_verification_router)
 
 # v2
 api_router.include_router(v2_persona_router)
+api_router.include_router(v2_persona_extraction_router)
 
 
 @app.get("/health", status_code=200, summary="헬스 체크", tags=["health"])

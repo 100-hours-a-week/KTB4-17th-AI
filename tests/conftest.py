@@ -16,6 +16,7 @@ import app.features.persona_extraction.models  # noqa: F401
 import app.features.practice.models  # noqa: F401  테이블을 metadata 에 등록
 import app.features.simulation.models  # noqa: F401
 import app.v2.persona.models  # noqa: F401
+import app.v2.persona_extraction.models  # noqa: F401
 from app.core.db import Base
 from app.features.persona.models import OnboardingSession, PersonaRecord
 

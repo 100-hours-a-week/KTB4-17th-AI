@@ -54,6 +54,9 @@ EXPECTED_DOCUMENTED_ENDPOINTS = {
     ("GET", "/ai/api/v2/persona/memory/{user_id}"),
     ("POST", "/ai/api/v2/persona/memory/{user_id}/sync"),
     ("POST", "/ai/api/v2/persona/memory/cleanup-tentative"),
+    ("POST", "/ai/api/v2/persona-extraction/conversation"),
+    ("GET", "/ai/api/v2/persona-extraction/jobs/{job_id}"),
+    ("DELETE", "/ai/api/v2/persona-extraction/style"),
 }
 
 
