@@ -1,4 +1,4 @@
-name: CI AI
+name: CI AI-prod-v2
 
 on:
   pull_request:
