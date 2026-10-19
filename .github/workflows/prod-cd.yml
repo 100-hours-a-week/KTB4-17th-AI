@@ -1,5 +1,8 @@
-name: AI Production CD
+name: CD AI-prod-v2
 
+# DEV에서 검증한 이미지를 재빌드 없이 Release Tag로 승격한 뒤 ECS에 배포한다.
+# - workflow_call: release.yml이 Release Tag 생성 직후 호출
+# - workflow_dispatch: 기존 Release Tag로 수동 재배포 (main 브랜치에서 실행)
 on:
     workflow_call:
         inputs:
@@ -14,10 +17,13 @@ on:
                 required: true
                 type: string
 
+# 운영 배포는 한 번에 하나만 실행하고, 진행 중인 배포는 취소하지 않는다.
+# release.yml의 group(ai-release-and-production)과 이름이 달라야 서로 대기하지 않는다.
 concurrency:
     group: ai-ecs-production
     cancel-in-progress: false
 
+# id-token: GitHub OIDC로 AWS role(AWS_ROLE_ARN)을 assume하기 위해 필요
 permissions:
     contents: read
     id-token: write
@@ -29,6 +35,7 @@ env:
     RELEASE_TAG: ${{ inputs.release_tag }}
 
 jobs:
+    # environment 없이 실행되므로 OIDC sub는 ref:refs/heads/main 기준으로 발급된다.
     promote_image:
         name: Promote AI DEV Image
         runs-on: ubuntu-latest
@@ -38,6 +45,7 @@ jobs:
             image_digest: ${{ steps.promote.outputs.digest }}
 
         steps:
+            # Release Tag 기준으로 checkout, 부모 commit 조회를 위해 전체 history 필요
             - name: Checkout release source
               uses: actions/checkout@v7
               with:
@@ -59,11 +67,14 @@ jobs:
               run: |
                   set -euo pipefail
 
+                  # COMMITS = [release commit, 첫 번째 parent(main), 두 번째 parent(dev)]
+                  # parent가 2개인 merge commit이 아니면 실패
                   RELEASE_SHA=$(git rev-parse "${RELEASE_TAG}^{commit}")
                   read -ra COMMITS <<< "$(git rev-list --parents -n 1 "$RELEASE_SHA")"
                   test "${#COMMITS[@]}" -eq 3
                   DEV_SHA="${COMMITS[2]}"
 
+                  # main에만 있는 변경(hotfix 등)이 섞이면 DEV 이미지와 코드가 달라지므로 중단
                   test "$(git rev-parse "$RELEASE_SHA^{tree}")" = \
                        "$(git rev-parse "$DEV_SHA^{tree}")"
 
@@ -83,6 +94,7 @@ jobs:
                     --image-ids "imageTag=$DEV_SHA" \
                     --query 'imageDetails[0].imageDigest' \
                     --output text)
+                  # 이미지가 없으면 "None" 등이 반환되므로 digest 형식으로 검증
                   [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
 
                   echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
@@ -105,6 +117,7 @@ jobs:
                   # ECS task digest 검증을 위해 현재 single-platform 빌드만 허용한다.
                   jq -e 'has("manifests") | not' manifest.json
 
+                  # Release Tag가 이미 어떤 이미지에 붙어 있는지 조회
                   aws ecr describe-images \
                     --repository-name "$ECR_REPOSITORY" > tags.json
                   EXISTING=$(jq -r --arg tag "$RELEASE_TAG" \
@@ -121,6 +134,7 @@ jobs:
                       --image-digest "$DIGEST" > /dev/null
                   fi
 
+                  # 승격 결과 Release Tag가 DEV digest를 가리키는지 최종 확인
                   ACTUAL=$(aws ecr describe-images \
                     --repository-name "$ECR_REPOSITORY" \
                     --image-ids "imageTag=$RELEASE_TAG" \
@@ -131,6 +145,9 @@ jobs:
                   echo "Promoted: $DIGEST -> $RELEASE_TAG"
                   echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
+    # environment: production이 있으면 OIDC sub가 environment:production으로 발급된다.
+    # IAM trust policy에 해당 sub가 등록되어 있어야 한다.
+    # (docs/v2docs/ai-prod-cd-iam-permissions.md 참고)
     deploy:
         name: Deploy AI to ECS
         needs: promote_image
@@ -138,6 +155,7 @@ jobs:
         timeout-minutes: 50
         environment: production
 
+        # CONTAINER_NAME은 Task Definition의 containerDefinitions[].name과 같아야 한다.
         env:
             ECS_CLUSTER: star23-ecs-cluster
             ECS_SERVICE: star23-ai-service
@@ -159,12 +177,14 @@ jobs:
                   aws ecs describe-services \
                     --cluster "$ECS_CLUSTER" \
                     --services "$ECS_SERVICE" > service.json
+                  # 서비스가 정확히 1개 조회되고 중지(desiredCount 0) 상태가 아닌지 확인
                   jq -e '(.failures | length) == 0 and (.services | length) == 1
                     and .services[0].desiredCount > 0' service.json
 
                   ARN=$(jq -er '.services[0].taskDefinition' service.json)
                   echo "arn=$ARN" >> "$GITHUB_OUTPUT"
 
+            # 태그 대신 digest로 이미지를 지정해 승격한 이미지와 정확히 같은 이미지가 배포되게 한다.
             - name: Render AI image
               id: render
               uses: aws-actions/amazon-ecs-render-task-definition@v1
@@ -173,6 +193,8 @@ jobs:
                   container-name: ${{ env.CONTAINER_NAME }}
                   image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ needs.promote_image.outputs.image_digest }}
 
+            # 새 Task Definition revision 등록 후 롤링 배포
+            # 서비스가 안정될 때까지 최대 20분 대기, 실패 시 서비스의 circuit breaker가 롤백한다.
             - name: Deploy AI
               uses: aws-actions/amazon-ecs-deploy-task-definition@v2
               with:
