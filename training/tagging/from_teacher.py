@@ -3,7 +3,9 @@
     uv run python training/tagging/from_teacher.py data/teacher/pilot200/tagging.jsonl --out data/tagging.jsonl
     uv run python training/tagging/build_sft.py data/tagging.jsonl --allow-unreviewed   # 검수 전 파이프라인 시험
 
-teacher 의 5회 샘플 다수결을 정답 후보로 옮긴다. reviewed_by 는 비워 둔다 — 모델이 만든 라벨이라 사람이 확인하기
+teacher 의 5회 샘플 다수결을 정답 후보로 옮긴다. --min-vote-share 를 주면 차원마다 그 비율 이상 표를 받은 것만 남긴다
+(1.0 = 만장일치). 교사 Qwen 은 정답에 없는 차원을 덧붙이는 경향이 있어, 골드셋 63건에서 만장일치로 바꾸면
+primary F1 83.1 → 89.2, 놓친 라벨은 0건 그대로였다 (training/RESULTS.md). reviewed_by 는 비워 둔다 — 모델이 만든 라벨이라 사람이 확인하기
 전에는 build_sft.py 가 학습을 막는다(--allow-unreviewed 는 파이프라인 시험용). 검수할 때는 agreement 가 낮은 것부터 본다.
 
 옮기지 않는 것:
@@ -26,7 +28,18 @@ sys.path.insert(0, str(PROJECT_ROOT))
 from training.tagging.data import TagExample, eval_answers, normalize  # noqa: E402
 
 
-def convert(row: dict, *, min_agreement: float, leaked: frozenset[str] = frozenset()) -> tuple[TagExample | None, str]:
+def _voted(votes: dict[str, float], share: float) -> list[str]:
+    # 득표율은 소수 셋째 자리로 반올림돼 있다 (label_with_teacher.aggregate_tags)
+    return sorted(d for d, v in votes.items() if v >= share - 1e-6)
+
+
+def convert(
+    row: dict,
+    *,
+    min_agreement: float,
+    leaked: frozenset[str] = frozenset(),
+    min_vote_share: float | None = None,
+) -> tuple[TagExample | None, str]:
     """teacher 태깅 한 행 → (TagExample, 건너뛴 이유). 옮기면 이유는 빈 문자열."""
     if row.get("source") != "synthetic":
         return None, "합성 데이터가 아님"
@@ -39,9 +52,14 @@ def convert(row: dict, *, min_agreement: float, leaked: frozenset[str] = frozens
         return None, "판정 일치율 낮음"
     maj = agg["majority"]
     off = bool(maj["off_topic"])
-    primary = [] if off else sorted(set(maj["primary"]))
-    # 같은 차원이 primary 와 secondary 에 동시에 다수결을 얻으면 primary 로만 둔다 (data.validate 규칙)
-    secondary = [] if off else sorted(set(maj["secondary"]) - set(primary))
+    if min_vote_share is None:
+        primary_votes, secondary_votes = maj["primary"], maj["secondary"]
+    else:
+        primary_votes = _voted(agg.get("primaryVotes", {}), min_vote_share)
+        secondary_votes = _voted(agg.get("secondaryVotes", {}), min_vote_share)
+    primary = [] if off else sorted(set(primary_votes))
+    # 같은 차원이 primary 와 secondary 에 동시에 표를 얻으면 primary 로만 둔다 (data.validate 규칙)
+    secondary = [] if off else sorted(set(secondary_votes) - set(primary))
     example = TagExample(
         id=row["id"],
         question=row["input"]["question"],
@@ -59,6 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("input", type=Path, help="label_with_teacher.py 의 tagging.jsonl")
     parser.add_argument("--out", type=Path, required=True, help="TagExample JSONL")
     parser.add_argument("--min-agreement", type=float, default=0.6, help="이보다 일치율이 낮은 행은 뺀다")
+    parser.add_argument(
+        "--min-vote-share",
+        type=float,
+        default=None,
+        help="차원마다 이 비율 이상 표를 받아야 남긴다. 1.0 = 만장일치. 없으면 다수결",
+    )
     args = parser.parse_args(argv)
 
     kept: list[TagExample] = []
@@ -67,7 +91,9 @@ def main(argv: list[str] | None = None) -> int:
     for line in args.input.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        example, reason = convert(json.loads(line), min_agreement=args.min_agreement, leaked=leaked)
+        example, reason = convert(
+            json.loads(line), min_agreement=args.min_agreement, leaked=leaked, min_vote_share=args.min_vote_share
+        )
         if example is None:
             skipped[reason] += 1
         else:
