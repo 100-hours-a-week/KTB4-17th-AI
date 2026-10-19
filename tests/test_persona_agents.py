@@ -424,3 +424,17 @@ def test_call_timeout_records_failure_info(monkeypatch):
     assert info["llm_error_type"] == "TimeoutError"
     assert 0.04 <= info["llm_elapsed_s"] < 1
     assert info["llm_model"]
+
+
+def test_tag_prompt_defines_every_dimension_and_keeps_output_contract():
+    from app.features.persona.schemas import ALL_DIMENSIONS, SCORED
+
+    # 이름만 있으면 모델이 영어 키로 뜻을 짐작한다 — 모든 차원에 정의가 붙어야 한다
+    for key in ALL_DIMENSIONS:
+        assert f"- {key} (" in agents.TAG_PROMPT
+    d = SCORED["avoidance"]
+    assert f"avoidance ({d.label}): 낮음 = {d.low} / 높음 = {d.high}" in agents.TAG_PROMPT
+    assert "primary 를 빈 배열로" in agents.TAG_PROMPT
+    assert "아직 정하지 않았어요" in agents.TAG_PROMPT
+    # TaggingAgent 파싱과 증류 student 가 기대하는 출력 형식
+    assert agents.TAG_PROMPT.rstrip().endswith('{"primary": [], "secondary": [], "off_topic": false}')

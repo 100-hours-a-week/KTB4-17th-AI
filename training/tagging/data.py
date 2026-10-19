@@ -18,6 +18,8 @@ from app.features.persona.schemas import ALL_DIMENSIONS
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 EVAL_DATASET = PROJECT_ROOT / "evals/quality_datasets/persona_onboarding_tagging.jsonl"
+# 사람이 라벨을 확정한 골드셋(scripts/gold_drafts.py 출력). 없을 수도 있다
+HUMAN_EVAL_DATASET = PROJECT_ROOT / "evals/quality_datasets/human/persona_onboarding_tagging.jsonl"
 
 Source = Literal["team_written", "synthetic", "production_consented"]
 
@@ -45,10 +47,15 @@ def normalize(text: str) -> str:
     return re.sub(r"[\s\W_]+", "", text).lower()
 
 
-def eval_answers(path: Path = EVAL_DATASET) -> set[str]:
-    """평가 데이터셋의 모든 split 답변. 학습에 섞이면 평가 점수가 부풀려진다."""
-    with path.open(encoding="utf-8") as handle:
-        return {normalize(json.loads(line)["input"]["answer"]) for line in handle if line.strip()}
+def eval_answers(*paths: Path) -> set[str]:
+    """평가 데이터셋(합성 초안 + 사람 골드셋)의 모든 split 답변. 학습에 섞이면 평가 점수가 부풀려진다."""
+    answers: set[str] = set()
+    for path in paths or (EVAL_DATASET, HUMAN_EVAL_DATASET):
+        if not path.exists():
+            continue
+        with path.open(encoding="utf-8") as handle:
+            answers |= {normalize(json.loads(line)["input"]["answer"]) for line in handle if line.strip()}
+    return answers
 
 
 def load(path: Path) -> tuple[list[TagExample], list[str]]:

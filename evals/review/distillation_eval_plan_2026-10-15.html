@@ -1,0 +1,184 @@
+<!doctype html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="color-scheme" content="light dark"><title>태깅·추출 증류 계획</title><style>
+:root{--bg:#fbfbf9;--fg:#1c1f23;--muted:#5d646c;--line:#dcded9;--card:#ffffff;--soft:#f2f2ee;--accent:#2f5d8a;--code:#f0f0ec;
+--ok:#2e7d4f;--okbg:#e7f3ec;--warn:#9a6700;--warnbg:#fbf1d9;--bad:#b3372f;--badbg:#fbe7e4}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#15181b;--fg:#e4e6e8;--muted:#9aa1a8;--line:#2f3439;--card:#1b1f23;--soft:#20252a;--accent:#7fb0dc;--code:#232a30;
+--ok:#7cc79a;--okbg:#17291f;--warn:#e0b458;--warnbg:#2b2413;--bad:#f08a80;--badbg:#301a18}}
+:root[data-theme="dark"]{--bg:#15181b;--fg:#e4e6e8;--muted:#9aa1a8;--line:#2f3439;--card:#1b1f23;--soft:#20252a;--accent:#7fb0dc;--code:#232a30;
+--ok:#7cc79a;--okbg:#17291f;--warn:#e0b458;--warnbg:#2b2413;--bad:#f08a80;--badbg:#301a18}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:16px}
+body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.7 -apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;overflow-wrap:anywhere}
+.layout{display:grid;grid-template-columns:220px minmax(0,1fr);gap:32px;max-width:1120px;margin:0 auto;padding:0 16px}
+nav.toc{position:sticky;top:0;align-self:start;max-height:100vh;overflow:auto;padding:24px 0;font-size:14px}
+nav.toc b{display:block;margin-bottom:8px;color:var(--muted);font-weight:600}
+nav.toc a{display:block;padding:4px 8px;border-left:2px solid var(--line);color:var(--muted);text-decoration:none}
+nav.toc a:hover,nav.toc a.on{color:var(--accent);border-left-color:var(--accent)}
+main{min-width:0;max-width:860px;padding:24px 0 80px}
+header.top h1{font-size:1.75rem;line-height:1.3;margin:0 0 6px}
+header.top p{color:var(--muted);margin:0}
+section{margin-top:44px}
+h2{font-size:1.35rem;margin:0 0 12px;padding-top:8px;border-top:1px solid var(--line)}
+h2 .n{color:var(--muted);font-weight:500;margin-right:6px}
+h3{font-size:1.05rem;margin:24px 0 8px}
+p,li{margin:.5em 0}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font:13px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace}
+.scroll{overflow-x:auto;margin:10px 0;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{border-bottom:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--soft);font-weight:600;white-space:nowrap}
+tr.key td{background:var(--soft)}
+.tag{display:inline-block;padding:0 8px;border-radius:999px;font-size:12px;border:1px solid var(--line);background:var(--soft);white-space:nowrap}
+.tag.ok{background:var(--okbg);color:var(--ok);border-color:transparent}
+.tag.warn{background:var(--warnbg);color:var(--warn);border-color:transparent}
+.tag.bad{background:var(--badbg);color:var(--bad);border-color:transparent}
+.note{border:1px solid var(--line);border-left:3px solid var(--warn);border-radius:0;background:var(--card);padding:10px 14px;margin:14px 0;font-size:14px}
+.formula{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:10px 14px;margin:12px 0;font-weight:500}
+.cm td,.cm th{text-align:center}
+.theme{position:fixed;right:16px;bottom:16px;padding:6px 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--fg);font:13px inherit;cursor:pointer}
+@media (max-width:820px){.layout{grid-template-columns:minmax(0,1fr)}nav.toc{position:static;max-height:none;padding:16px 0 0}}
+</style></head><body>
+<div class="layout">
+<nav class="toc"><b>목차</b>
+<a href="#s1">1. 현재 구조</a>
+<a href="#s2">2. 시작 전 제약</a>
+<a href="#s3">3. 진행 순서</a>
+<a href="#s4">4. 평가 구조</a>
+<a href="#s5">5. 태깅 척도</a>
+<a href="#s6">6. 추출 척도</a>
+<a href="#s7">7. 운영 지표</a>
+<a href="#s8">8. 판정 규칙</a>
+</nav>
+<main>
+<header class="top">
+<h1>태깅·추출 증류 계획과 평가 척도</h1>
+<p>온보딩 태깅·추출을 Gemini(teacher)에서 자체 모델(student)로 증류하기 위한 순서, 평가 척도, 통과 기준 · 2026-10-15 초안</p>
+</header>
+
+<div class="note">기준값의 "우수/합격" 경계는 초안입니다. 골드셋 사람 검수를 끝내고 Gemini 기준선을 다시 측정한 뒤 확정합니다. 현재 Gemini 수치는 <code>evals/runs/langfuse_quantitative_summary.json</code>(2026-10-07, gemini-3.1-flash-lite)과 <code>docs/성능평가/09_기능별_성능평가_결과_보고서.md</code>에서 가져왔습니다.</div>
+
+<section id="s1"><h2><span class="n">1.</span>현재 구조 (온보딩 페르소나)</h2>
+<div class="scroll"><table>
+<tr><th>단계</th><th>하는 일</th><th>모델</th><th>결과가 쓰이는 곳</th></tr>
+<tr><td>질문 생성</td><td>하루가 다음 질문 생성 (빈 차원을 많이 채우는 주제 우선)</td><td><span class="tag">Gemini 유지</span></td><td>사용자 화면</td></tr>
+<tr class="key"><td>태깅</td><td>답변마다 primary / secondary / off_topic 판정</td><td><span class="tag ok">자체 모델로 전환</span></td><td>primary → <code>answered</code> 화이트리스트<br>secondary → 다음 질문 선택<br>off_topic → 되묻기</td></tr>
+<tr class="key"><td>추출</td><td>대화 전문 + 허용 차원 목록 → 점수, 텍스트, 서술, 요약 카드</td><td><span class="tag ok">자체 모델로 전환</span></td><td>페르소나 저장 → 시뮬레이션, 연습대화</td></tr>
+<tr><td>사후 필터</td><td>목록 밖 점수 제거, 추측·모순 서술 제거</td><td><span class="tag">코드 (LLM 없음)</span></td><td>최종 페르소나</td></tr>
+</table></div>
+</section>
+
+<section id="s2"><h2><span class="n">2.</span>시작 전 제약</h2>
+<div class="scroll"><table>
+<tr><th>항목</th><th>현황</th><th>대응</th></tr>
+<tr><td>Gemini 약관</td><td>출력으로 경쟁 모델을 학습하는 데 제한이 있을 수 있음 (원문 미확인)</td><td>약관 원문 확인. 해당하면 사람 검수 라벨 중심으로 학습</td></tr>
+<tr><td>사용자 동의</td><td>연애 성향 답변을 학습에 쓰는 동의가 없음</td><td>약관·동의 항목 추가, 가명 처리</td></tr>
+<tr><td>골드셋 규모</td><td>태깅 홀드아웃 16건, off_topic 양성 8건, 전부 사람 검수 전 (<code>human_anchor_pending</code>)</td><td>사람 2인 검수 (κ ≥ 0.6), 드문 사례를 30건 이상으로 보강</td></tr>
+<tr><td>비용</td><td>세션당 약 $0.0019 → GPU 월 $500 가정 시 월 약 26만 세션이 손익분기</td><td>비용이 아니라 데이터 통제, 지연 시간, 벤더 독립으로 근거 잡기</td></tr>
+<tr><td>코드</td><td>모든 에이전트가 <code>llm_model</code> 하나를 공유</td><td>에이전트별 모델 라우팅 분리</td></tr>
+</table></div>
+</section>
+
+<section id="s3"><h2><span class="n">3.</span>진행 순서</h2>
+<div class="scroll"><table>
+<tr><th>단계</th><th>할 일</th><th>산출물</th></tr>
+<tr><td>0</td><td>약관·동의 확인, 골드셋 검수, Gemini 기준선과 노이즈 바닥 측정</td><td>목표 수치</td></tr>
+<tr><td>1</td><td>에이전트별 모델 라우팅 분리</td><td>섀도우·카나리 배포가 가능한 코드</td></tr>
+<tr><td>2</td><td>teacher 데이터 수집과 정제 (추출 원본 출력 저장 추가, 실패·필터 사례 제외)</td><td>버전이 붙은 학습 데이터셋</td></tr>
+<tr><td>3</td><td><b>태깅 먼저</b>: 한국어 인코더 다중 라벨 분류기 (CPU 서빙)</td><td>태깅 student 모델</td></tr>
+<tr><td>4</td><td>추출: 1~8B 소형 LLM에 LoRA 지도학습, guided JSON</td><td>추출 student 모델</td></tr>
+<tr><td>5</td><td>오프라인 게이트 → 섀도우 → 카나리 → 전체 배포 (Gemini 폴백 유지)</td><td>운영 배포</td></tr>
+<tr><td>6</td><td>모니터링, 재학습 트리거, 모델 레지스트리, CI 평가 게이트</td><td>MLOps 루프</td></tr>
+</table></div>
+</section>
+
+<section id="s4"><h2><span class="n">4.</span>평가 구조</h2>
+<div class="scroll"><table>
+<tr><th>구분</th><th>무엇을 재나</th><th>데이터</th><th>용도</th></tr>
+<tr><td>A. 골드 정확도</td><td>정답 대비 절대 품질</td><td>사람 검수 골드셋 (작음)</td><td>teacher와 student가 함께 틀리는 지점 확인</td></tr>
+<tr class="key"><td>B. teacher 일치도</td><td>Gemini를 얼마나 잘 따라 하나</td><td>학습에 안 쓴 실제 트래픽 (태깅 1,000건 이상, 추출 300세션 이상)</td><td><b>통과 판정</b></td></tr>
+</table></div>
+<div class="scroll"><table>
+<tr><th>척도 단계</th><th>성격</th><th>판정</th></tr>
+<tr><td>1단 · 치명 게이트</td><td>합격/불합격</td><td>1건이라도 나오면 탈락</td></tr>
+<tr><td>2단 · 대표 지표</td><td>0~1 연속값</td><td>품질 판단의 기준</td></tr>
+<tr><td>3단 · 사람 평가</td><td>1/3/5점</td><td>자동 지표로 애매한 사례만</td></tr>
+</table></div>
+</section>
+
+<section id="s5"><h2><span class="n">5.</span>태깅 척도</h2>
+<div class="scroll"><table>
+<tr><th>단계</th><th>지표</th><th>정의</th><th>기준</th></tr>
+<tr><td><span class="tag bad">1단</span></td><td>유령 차원 / 점수 필드 / JSON 실패</td><td>E2-CRIT-01~03</td><td><b>0건</b></td></tr>
+<tr class="key"><td><span class="tag ok">2단</span></td><td><b>primary F1 (micro)</b> ← 대표 지표</td><td>2PR / (P+R)</td><td>우수 ≥ 0.90 · 합격 ≥ 0.85</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>primary 정밀도</td><td>추측으로 차원을 허용하지 않는가</td><td>≥ 0.90</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>primary 재현율</td><td>실제 근거를 놓치지 않는가</td><td>≥ 0.80</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>세션 단위 answered Jaccard</td><td>세션의 primary 합집합 일치도 (실제 영향에 가장 가까움)</td><td>≥ 0.90</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>off_topic 오탐률</td><td>정상 답변을 무관 답변으로 판정</td><td>≤ 2%</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>off_topic 재현율</td><td>무관 답변을 걸러내는가</td><td>건수와 함께 보고</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>카테고리별 정확도</td><td>인젝션, 농담, 욕설, 짧은 답</td><td>인젝션 수행 0건</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>정확 일치율</td><td>기존 F2 게이트와의 연속성</td><td>≥ 85%</td></tr>
+<tr><td><span class="tag warn">3단</span></td><td>사람 1/3/5</td><td>primary 40 · secondary 25 · 관련성 25 · 스키마 10</td><td>평균 ≥ 3</td></tr>
+</table></div>
+</section>
+
+<section id="s6"><h2><span class="n">6.</span>추출 척도</h2>
+<h3>차원 판정 분류 (점수형 15개 차원을 사례마다 하나씩)</h3>
+<div class="scroll"><table class="cm">
+<tr><th></th><th>모델이 키를 생략</th><th>모델이 점수를 냄</th></tr>
+<tr><th>답하지 않은 차원</th><td><span class="tag ok">정답 생략 (TN)</span></td><td><span class="tag bad">환각 (FP)</span></td></tr>
+<tr><th>답한 차원</th><td><span class="tag bad">누락 (FN)</span></td><td><span class="tag ok">범위 안 → 정답 (TP)</span> <span class="tag bad">범위 밖 → 오차 (TP✗)</span></td></tr>
+</table></div>
+<div class="formula">차원 판정 정확도 = (정답 생략 + 범위 안 정답) / 전체 차원 수</div>
+<div class="scroll"><table>
+<tr><th>단계</th><th>지표</th><th>정의</th><th>기준</th></tr>
+<tr><td><span class="tag bad">1단</span></td><td>미답변 차원 점수 / 유형명 / 복창 / JSON 실패</td><td>E3-CRIT-01~03 + 스키마</td><td><b>0건</b></td></tr>
+<tr class="key"><td><span class="tag ok">2단</span></td><td><b>차원 판정 정확도</b> ← 대표 지표</td><td>위 식</td><td>우수 ≥ 0.95 · 합격 ≥ 0.90</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>환각률</td><td>답하지 않은 차원에 점수를 낸 비율</td><td>0%에 가깝게</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>누락률</td><td>답한 차원에 점수가 없는 비율</td><td>≤ 3%</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>범위 적중률</td><td>허용 범위 안에 든 점수 비율</td><td>≥ 0.88 (Gemini 92%)</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>구간 일치율 <i>(teacher 비교)</i></td><td>낮음(&lt;35) / 중간 / 높음(&gt;65) 구간 일치</td><td>≥ 0.90</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>MAE <i>(teacher 비교)</i></td><td>점수 차이 평균</td><td>≤ teacher 노이즈 바닥 × 1.5</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>서술 자동 점수</td><td>짐작 없음, 모순 없음, 가드레일 통과, 길이 계약, 문장별 인용의 평균 통과율</td><td>≥ 0.9</td></tr>
+<tr><td><span class="tag ok">2단</span></td><td>summaries 생존율</td><td>필터를 통과한 카드 비율</td><td>보고</td></tr>
+<tr><td><span class="tag warn">3단</span></td><td>서술 1/3/5 또는 쌍대 비교</td><td>teacher와 student 블라인드 비교</td><td>평균 ≥ 3 / 지지 않는 비율 ≥ 45%</td></tr>
+</table></div>
+<p><small>텍스트형 4개(관심사, 루틴, 데이트 선호·기피)는 같은 분류를 쓰되, "범위 안" 대신 항목이 사용자 발화에 근거하는지로 판정합니다.</small></p>
+</section>
+
+<section id="s7"><h2><span class="n">7.</span>운영 지표</h2>
+<div class="scroll"><table>
+<tr><th>지표</th><th>현재 Gemini</th><th>student 목표</th></tr>
+<tr><td>태깅 지연</td><td>p50 1.00s / p95 1.74s</td><td>p95 ≤ 0.5s</td></tr>
+<tr><td>추출 지연</td><td>p50 2.32s / p95 4.67s</td><td>p95 ≤ 5s</td></tr>
+<tr><td>오류율</td><td>0%</td><td>≤ 1%</td></tr>
+<tr><td>Gemini 폴백률</td><td>—</td><td>≤ 2%</td></tr>
+<tr><td>비용</td><td>세션당 약 $0.0019</td><td>인프라 고정비 포함 1,000세션당 비용 + 손익분기 세션 수로 보고</td></tr>
+</table></div>
+</section>
+
+<section id="s8"><h2><span class="n">8.</span>판정 규칙</h2>
+<div class="scroll"><table>
+<tr><th>규칙</th><th>내용</th></tr>
+<tr><td>분할 사용</td><td>calibration은 임계값 조정, regression은 개발 중 반복, blind_holdout은 배포 후보마다 1회</td></tr>
+<tr><td>데이터 분리</td><td>턴이 아니라 사용자·세션 단위 (누수 방지)</td></tr>
+<tr><td>비열등성</td><td>student−teacher 차이의 paired bootstrap 95% 신뢰구간 하한 &gt; −3%p</td></tr>
+<tr><td>치명 결함</td><td>평균 점수와 무관하게 1건이면 탈락</td></tr>
+</table></div>
+</section>
+</main>
+</div>
+<button class="theme" id="theme" type="button">테마 전환</button>
+<script>
+(function(){
+  var root=document.documentElement,btn=document.getElementById('theme');
+  try{var t=localStorage.getItem('theme');if(t)root.dataset.theme=t;}catch(e){}
+  btn.addEventListener('click',function(){
+    var dark=root.dataset.theme?root.dataset.theme==='dark':matchMedia('(prefers-color-scheme: dark)').matches;
+    root.dataset.theme=dark?'light':'dark';
+    try{localStorage.setItem('theme',root.dataset.theme);}catch(e){}
+  });
+  var links=[].slice.call(document.querySelectorAll('nav.toc a'));
+  var io=new IntersectionObserver(function(es){es.forEach(function(e){if(e.isIntersecting){links.forEach(function(a){a.classList.toggle('on',a.getAttribute('href')==='#'+e.target.id);});}});},{rootMargin:'0px 0px -70% 0px'});
+  document.querySelectorAll('main section').forEach(function(s){io.observe(s);});
+})();
+</script>
+</body></html>

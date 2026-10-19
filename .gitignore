@@ -53,3 +53,11 @@ trouble
 training/tagging/out/
 training/tagging/adapters/
 evals/results/
+
+# 증류 데이터 (scripts/generate_synthetic_onboarding.py · label_with_teacher.py 출력). 크고 다시 만들 수 있다
+data/synthetic/
+data/teacher/
+data/simfid/
+
+# 골드셋 초안 작업 파일(scripts/gold_drafts.py). 확정 골드셋은 evals/quality_datasets/human/ 에 남긴다
+data/gold_work/
