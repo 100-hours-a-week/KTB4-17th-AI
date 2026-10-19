@@ -1,4 +1,4 @@
-"""선택형 라이브 얼굴 인증 API."""
+"""온보딩 필수 라이브 얼굴 인증 API (ADR 0007)."""
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from starlette.concurrency import run_in_threadpool
