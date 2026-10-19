@@ -65,6 +65,8 @@ uv run python training/tagging/build_sft.py data/tagging.jsonl --allow-unreviewe
 ```bash
 uv run python scripts/manual_simulator.py export --n 40 --seed 300 --out-dir data/manual/run300
 # batch_000.md … 를 채팅에 하나씩 붙여 넣고, 답(JSON)을 data/manual/run300/answers/batch_000.json … 으로 저장
+# 또는 구독 CLI 로 자동 실행 (이미 받은 묶음은 건너뜀, 답이 빠지면 다시 시도)
+uv run python scripts/manual_simulator.py run data/manual/run300 --cmd 'gemini -m <모델> -p "{prompt}"'
 uv run python scripts/manual_simulator.py import data/manual/run300 --model <모델 이름> --out data/synthetic/manual-run300.jsonl
 ```
 

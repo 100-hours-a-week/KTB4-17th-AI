@@ -11,7 +11,8 @@ generate_synthetic_onboarding.py 와 같은 시드 프로필·주제 순서·답
 
     # 1) 프롬프트 내보내기 — batch_000.md ... 를 채팅에 하나씩 붙여 넣는다
     uv run python scripts/manual_simulator.py export --n 100 --seed 300 --out-dir data/manual/run300
-    # 2) 채팅 답(JSON)을 data/manual/run300/answers/batch_000.json ... 으로 저장
+    # 2) 채팅 답(JSON)을 data/manual/run300/answers/batch_000.json ... 으로 저장. 구독 CLI 가 있으면 자동으로:
+    uv run python scripts/manual_simulator.py run data/manual/run300 --cmd 'gemini -m gemini-3.5-flash-lite -p "{prompt}"'
     # 3) 가져오기 → 세션 JSONL
     uv run python scripts/manual_simulator.py import data/manual/run300 --model gpt-5 \\
         --out data/synthetic/manual-run300.jsonl
@@ -26,7 +27,10 @@ import argparse
 import asyncio
 import json
 import random
+import shlex
+import subprocess
 import sys
+import time
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -148,7 +152,13 @@ def export(n: int, seed: int, batch_size: int, out_dir: Path, total_turns: int) 
         name = f"batch_{start // batch_size:03d}"
         body = "\n".join(session_prompt(p, calls) for p, calls in sessions)
         (out_dir / f"{name}.md").write_text(BATCH_HEADER + "\n" + body, encoding="utf-8")
-        batches.append({"name": name, "sessions": [p.seed_id for p, _ in sessions]})
+        batches.append(
+            {
+                "name": name,
+                "sessions": [p.seed_id for p, _ in sessions],
+                "keys": {p.seed_id: [c["key"] for c in calls] for p, calls in sessions},
+            }
+        )
     manifest = {
         "formatVersion": FORMAT_VERSION,
         "generatorVersion": gen.GENERATOR_VERSION,
@@ -235,6 +245,73 @@ def import_answers(run_dir: Path, *, model: str, out: Path) -> dict:
     return summary
 
 
+# ══ 구독 CLI 로 자동 실행 ═══════════════════════════════════
+
+
+def missing_keys(sessions: list[dict], expected: dict[str, list[str]]) -> list[str]:
+    """답에 빠진 세션·키. 비어 있으면 그 묶음은 완성이다."""
+    got = {str(s.get("session")): s.get("answers") or {} for s in sessions}
+    return [
+        f"{sid}:{key}"
+        for sid, keys in expected.items()
+        for key in keys
+        if not str(got.get(sid, {}).get(key, "")).strip()
+    ]
+
+
+def run_batches(run_dir: Path, *, cmd: str, retries: int, timeout: float, pause: float) -> dict:
+    """batch_*.md 를 하나씩 CLI 에 넣고 답(JSON)을 answers/ 에 저장한다. 이미 완성된 답은 건너뛴다(이어서 실행).
+
+    cmd 의 {prompt} 는 프롬프트 전문, {file} 은 프롬프트 파일 경로로 바뀐다. 둘 다 없으면 프롬프트를 표준 입력으로 넣는다."""
+    manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+    answers_dir = run_dir / "answers"
+    answers_dir.mkdir(exist_ok=True)
+    done, made, failed = [], [], []
+    for batch in manifest["batches"]:
+        target = answers_dir / f"{batch['name']}.json"
+        expected = batch.get("keys") or {}
+        if target.exists():
+            try:
+                if not missing_keys(parse_answers(target.read_text(encoding="utf-8")), expected):
+                    done.append(batch["name"])
+                    continue
+            except (ValueError, json.JSONDecodeError):
+                pass
+        prompt = (run_dir / f"{batch['name']}.md").read_text(encoding="utf-8")
+        command = cmd.replace("{file}", shlex.quote(str(run_dir / f"{batch['name']}.md")))
+        stdin = prompt
+        if "{prompt}" in command:
+            command, stdin = (
+                command.replace('"{prompt}"', shlex.quote(prompt)).replace("{prompt}", shlex.quote(prompt)),
+                None,
+            )
+        elif "{file}" in cmd:
+            stdin = None
+        error = ""
+        for attempt in range(retries + 1):
+            try:
+                proc = subprocess.run(
+                    command, shell=True, input=stdin, capture_output=True, text=True, timeout=timeout, check=False
+                )
+                missing = missing_keys(parse_answers(proc.stdout), expected)
+                if not missing:
+                    target.write_text(proc.stdout, encoding="utf-8")
+                    made.append(batch["name"])
+                    print(f"  {batch['name']} ok", file=sys.stderr)
+                    break
+                error = f"답 빠짐 {len(missing)}개 (예: {missing[0]})"
+            except (ValueError, json.JSONDecodeError) as e:
+                error = f"JSON 아님: {e} · {(proc.stderr or proc.stdout)[-200:]}"
+            except subprocess.TimeoutExpired:
+                error = f"{timeout:.0f}초 넘김"
+            print(f"  {batch['name']} 실패 ({attempt + 1}회): {error}", file=sys.stderr)
+            time.sleep(pause)
+        else:
+            failed.append({"batch": batch["name"], "error": error})
+        time.sleep(pause)
+    return {"done": len(done), "made": len(made), "failed": failed}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
@@ -244,6 +321,16 @@ def main(argv: list[str] | None = None) -> int:
     ex.add_argument("--batch-size", type=int, default=5, help="채팅 한 번에 붙여 넣을 세션 수")
     ex.add_argument("--out-dir", type=Path, required=True)
     ex.add_argument("--total-turns", type=int, default=None, help="기본은 운영과 같은 ONBOARDING_TOTAL_TURNS")
+    rn = sub.add_parser("run", help="구독 CLI 로 batch_*.md 를 자동 실행해 answers/ 에 저장 (이어서 실행 가능)")
+    rn.add_argument("run_dir", type=Path)
+    rn.add_argument(
+        "--cmd",
+        required=True,
+        help="CLI 명령. {prompt}=프롬프트 전문, {file}=프롬프트 파일. 둘 다 없으면 표준 입력으로 넣는다",
+    )
+    rn.add_argument("--retries", type=int, default=2, help="JSON 이 깨지거나 답이 빠졌을 때 다시 시도하는 횟수")
+    rn.add_argument("--timeout", type=float, default=600, help="한 묶음 제한 시간(초)")
+    rn.add_argument("--pause", type=float, default=5, help="호출 사이 쉬는 시간(초). 구독 사용량 한도 대비")
     im = sub.add_parser("import", help="채팅 답(JSON)을 세션 JSONL 로")
     im.add_argument("run_dir", type=Path, help="export 의 --out-dir (answers/*.json 을 읽는다)")
     im.add_argument("--model", required=True, help="답을 쓴 모델 이름 (기록용, 예: gpt-5, claude-opus)")
@@ -256,6 +343,10 @@ def main(argv: list[str] | None = None) -> int:
         manifest = export(args.n, args.seed, args.batch_size, args.out_dir, args.total_turns or ONBOARDING_TOTAL_TURNS)
         print(f"{len(manifest['batches'])}개 프롬프트 → {args.out_dir} (답은 {args.out_dir / 'answers'} 에 저장)")
         return 0
+    if args.command == "run":
+        result = run_batches(args.run_dir, cmd=args.cmd, retries=args.retries, timeout=args.timeout, pause=args.pause)
+        print(json.dumps(result, ensure_ascii=False))
+        return 0 if not result["failed"] else 1
     summary = import_answers(args.run_dir, model=args.model, out=args.out)
     print(
         json.dumps(

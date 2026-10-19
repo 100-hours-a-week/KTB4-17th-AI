@@ -79,3 +79,34 @@ def test_missing_answer_fails_only_that_session(tmp_path):
 def test_parse_answers_rejects_non_json():
     with pytest.raises(ValueError):
         ms.parse_answers("죄송하지만 답할 수 없어요")
+
+
+def test_run_fills_answers_with_cli_and_skips_done_batches(tmp_path):
+    """가짜 CLI: 표준 입력으로 받은 프롬프트의 키마다 답을 만들어 JSON 으로 낸다."""
+    ms.export(3, 11, 2, tmp_path, total_turns=10)
+    fake = tmp_path / "fake_cli.py"
+    fake.write_text(
+        "import json, re, sys\n"
+        "text = sys.stdin.read(); sessions = []\n"
+        "for block in text.split('## [세션] ')[1:]:\n"
+        "    sid = block.split()[0]\n"
+        "    keys = re.findall(r'### 키: (\\S+)', block)\n"
+        "    sessions.append({'session': sid, 'answers': {k: f'{sid} {k} 답' for k in keys}})\n"
+        "print('```json'); print(json.dumps({'sessions': sessions}, ensure_ascii=False)); print('```')\n",
+        encoding="utf-8",
+    )
+
+    first = ms.run_batches(tmp_path, cmd=f"python {fake}", retries=0, timeout=30, pause=0)
+    again = ms.run_batches(tmp_path, cmd=f"python {fake}", retries=0, timeout=30, pause=0)
+
+    assert first == {"done": 0, "made": 2, "failed": []}
+    assert again == {"done": 2, "made": 0, "failed": []}
+    assert ms.import_answers(tmp_path, model="fake", out=tmp_path / "s.jsonl")["written"] == 3
+
+
+def test_run_reports_batches_with_missing_answers(tmp_path):
+    ms.export(2, 11, 2, tmp_path, total_turns=10)
+
+    result = ms.run_batches(tmp_path, cmd="echo '{\"sessions\": []}'", retries=1, timeout=30, pause=0)
+
+    assert result["made"] == 0 and result["failed"][0]["error"].startswith("답 빠짐")
