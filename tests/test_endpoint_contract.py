@@ -51,6 +51,9 @@ EXPECTED_DOCUMENTED_ENDPOINTS = {
     ("POST", "/ai/api/v1/profile-trust/photos/primary/synthetic-check"),
     ("POST", "/ai/api/v1/profile-trust/verifications/challenges"),
     ("POST", "/ai/api/v1/profile-trust/verifications/complete"),
+    ("GET", "/ai/api/v2/persona/memory/{user_id}"),
+    ("POST", "/ai/api/v2/persona/memory/{user_id}/sync"),
+    ("POST", "/ai/api/v2/persona/memory/cleanup-tentative"),
 }
 
 

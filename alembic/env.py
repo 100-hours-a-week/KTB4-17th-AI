@@ -26,6 +26,7 @@ import app.features.persona_extraction.models  # noqa: E402, F401
 import app.features.practice.models  # noqa: E402, F401
 import app.features.simulation.models  # noqa: E402, F401
 import app.features.simulation_migration.models  # noqa: E402, F401
+import app.v2.persona.models  # noqa: F401
 from app.core.config import settings  # noqa: E402
 from app.core.db import Base  # noqa: E402
 

@@ -206,6 +206,63 @@ class Settings(BaseSettings):
     )
     liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
 
+    # ── v2 사용자 페르소나 메모리 RAG 설정 ──────────────────────────
+    embedding_model_name: str = Field(
+        default="nlpai-lab/KURE-v1-onnx-int8",
+        validation_alias="EMBEDDING_MODEL_NAME",
+        description="DB embedding_model 컬럼에 기록할 임베딩 모델 버전 식별자",
+    )
+    embedding_onnx_path: Path = Field(
+        default=Path("models/kure_v1_int8/model_quantized.onnx"),
+        validation_alias="EMBEDDING_ONNX_PATH",
+    )
+    embedding_tokenizer_path: Path = Field(
+        default=Path("models/kure_v1_int8/tokenizer.json"),
+        validation_alias="EMBEDDING_TOKENIZER_PATH",
+    )
+    embedding_pooling_mode: str = Field(
+        default="cls",
+        validation_alias="EMBEDDING_POOLING_MODE",
+        description="KURE-v1(bge-m3 계열) 및 arctic-embed-l-v2.0-ko의 기본 풀링 방식 ('cls' 또는 'mean')",
+    )
+    embedding_query_prefix: str = Field(
+        default="",
+        validation_alias="EMBEDDING_QUERY_PREFIX",
+        description="쿼리 임베딩 시 앞에 붙일 접두사 (KURE-v1은 빈 문자열, arctic-embed는 'query: ')",
+    )
+    embedding_dim: int = Field(default=1024, validation_alias="EMBEDDING_DIM")
+    embedding_max_length: int = Field(default=512, validation_alias="EMBEDDING_MAX_LENGTH")
+
+    # 실시간 검색 (retrieve) 파라미터 — pgvector <=> 는 코사인 거리(1 - similarity)
+    memory_top_k: int = Field(default=5, ge=1, le=20, validation_alias="MEMORY_TOP_K")
+    memory_max_cosine_distance: float = Field(
+        default=0.65,
+        gt=0.0,
+        lt=2.0,
+        validation_alias="MEMORY_MAX_COSINE_DISTANCE",
+        description="pgvector 코사인 거리(<=>) 상한 (0.65 = 코사인 유사도 0.35 이상만 허용)",
+    )
+    practice_v2_history_window: int = Field(
+        default=20,
+        ge=2,
+        le=40,
+        validation_alias="PRACTICE_V2_HISTORY_WINDOW",
+        description="v2 연습대화에서 LLM에 전달할 최근 메시지 수 (User 10턴 + AI 10턴 = 20)",
+    )
+
+    # 백그라운드 메모리 추출 & Reconcile 파라미터 (유사도 = 1 - 코사인 거리)
+    memory_trigger_turn_count: int = Field(default=8, ge=1, validation_alias="MEMORY_TRIGGER_TURN_COUNT")
+    memory_trigger_idle_minutes: int = Field(default=20, ge=1, validation_alias="MEMORY_TRIGGER_IDLE_MINUTES")
+    memory_context_overlap_pairs: int = Field(default=2, ge=0, le=5, validation_alias="MEMORY_CONTEXT_OVERLAP_PAIRS")
+    memory_reconcile_noop_sim: float = Field(default=0.99, validation_alias="MEMORY_RECONCILE_NOOP_SIM")
+    memory_reconcile_judge_sim: float = Field(default=0.70, validation_alias="MEMORY_RECONCILE_JUDGE_SIM")
+    memory_confidence_confirmed: float = Field(default=0.8, validation_alias="MEMORY_CONFIDENCE_CONFIRMED")
+    memory_confidence_tentative: float = Field(default=0.5, validation_alias="MEMORY_CONFIDENCE_TENTATIVE")
+    memory_tentative_ttl_days: int = Field(default=30, ge=1, validation_alias="MEMORY_TENTATIVE_TTL_DAYS")
+    memory_job_stale_minutes: int = Field(default=10, ge=1, validation_alias="MEMORY_JOB_STALE_MINUTES")
+    memory_extract_timeout_s: float = Field(default=25.0, validation_alias="MEMORY_EXTRACT_TIMEOUT_S")
+    memory_reconcile_timeout_s: float = Field(default=20.0, validation_alias="MEMORY_RECONCILE_TIMEOUT_S")
+
     @field_validator("c2pa_trust_anchors_path", mode="before")
     @classmethod
     def empty_path_is_none(cls, value: object) -> object:
