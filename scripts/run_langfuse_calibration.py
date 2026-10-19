@@ -72,6 +72,7 @@ from app.features.simulation.report import (  # noqa: E402
 from app.features.simulation.schemas import (  # noqa: E402
     grade_of,
 )
+from scripts import quality_metrics  # noqa: E402
 
 DATASETS = (
     "quality/persona/onboarding-conversation",
@@ -546,6 +547,20 @@ def task_success(*, output: Any, **_: Any) -> Evaluation:
     return Evaluation(name="task_success", value=1.0 if succeeded else 0.0, comment=comment)
 
 
+def quality_item_metrics(*, input: Any, output: Any, expected_output: Any, **_: Any) -> list[Evaluation]:
+    """태깅 primary/secondary F1·완전일치, 추출 차원 판정 정확도 (문항별)."""
+
+    metrics = quality_metrics.item_metrics(input or {}, output, expected_output or {})
+    return [Evaluation(name=m.name, value=m.value, comment=m.comment) for m in metrics]
+
+
+def quality_run_metrics(*, item_results: list[Any], **_: Any) -> list[Evaluation]:
+    """위 지표를 실행 전체로 모은 값. model 문항만 세고 실패는 오답으로 센다."""
+
+    rows = [(result.item.input or {}, result.output, result.item.expected_output or {}) for result in item_results]
+    return [Evaluation(name=m.name, value=m.value, comment=m.comment) for m in quality_metrics.run_metrics(rows)]
+
+
 def _arguments() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", choices=("all", *DATASETS), default="all")
@@ -593,7 +608,8 @@ def main() -> int:
                 ),
                 data=items,
                 task=run_item,
-                evaluators=[task_success, automatic_contract],
+                evaluators=[task_success, automatic_contract, quality_item_metrics],
+                run_evaluators=[quality_run_metrics],
                 max_concurrency=args.max_concurrency,
                 metadata={
                     "candidate": "baseline",

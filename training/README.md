@@ -83,6 +83,35 @@ python training/tagging/train_lora.py --base-model <HF 모델 id> \
 - `adapter/` 에 `data_manifest.json`(데이터·프롬프트 해시)과 `training_args.json` 이 함께 저장된다. 어댑터는 HF Hub(private)나 S3 에 버전으로 올린다.
 - 기본 모델은 한국어 성능과 **상업 이용 가능한 라이선스**를 함께 본다. 상업 이용이 제한된 라이선스도 있다.
 - `trl` 은 1.14.0 으로 고정했다. 1.15 는 Triton 커널을 무조건 써서 CUDA 가 없으면 돌지 않는다. `--max-steps 4` 로 노트북에서도 파이프라인을 점검할 수 있다.
+- 학습이 끝나면 `output-dir/run_metrics.json` 에 최대 GPU 메모리·학습 시간·비용(`--gpu-hourly-usd`)·eval loss 가 남는다.
+
+### LoRA vs QLoRA 비교
+
+같은 인자로 `--load-in-4bit` 만 바꿔 두 번 학습하고 `run_metrics.json` 과 평가 점수로 고른다.
+Colab 은 `training/notebooks/lora_qlora_compare_colab.ipynb` (L4·A100 권장 — T4 는 BF16 이 없어 LoRA 가 FP32 로 올라간다).
+품질 차이가 1%p 이내면 더 싼 쪽, 넘으면 품질이 좋은 쪽을 고르되 그 차이가 비용만큼 가치 있는지 표로 남긴다(제안).
+
+### 추출
+
+추출도 같은 prompt/completion 형식이라 `train_lora.py` 로 학습한다. 입력이 대화 전체라 길다(pilot200 최대 3,257 토큰).
+
+```bash
+uv run python training/extraction/from_teacher.py data/teacher/pilot200/extraction.jsonl --out training/extraction/out
+python training/tagging/train_lora.py --base-model kakaocorp/kanana-2-3b-instruct --data-dir training/extraction/out \
+    --output-dir training/extraction/adapters/v1 --max-length 4096 --batch-size 1 --grad-accum 16 --gradient-checkpointing
+```
+
+- 정답에서 허용 차원(answered) 밖 점수·텍스트 키를 지운다. "모르는 차원은 키를 생략"을 처음부터 가르친다.
+- train/val 은 familyId(시드 프로필) 단위로 나눈다. 평가 데이터셋 답변이 들어간 세션은 뺀다.
+- 라벨을 만든 뒤 `RUBRIC` 이 바뀌었으면 멈춘다. pilot200 은 서술 규칙 변경(7e10dc0, 답변 인용 → 성향 요약) 전 RUBRIC 으로
+  라벨링돼 `--allow-prompt-drift` 가 필요하다. **점수 규칙은 같지만 서술·특징은 옛 규칙(답변 인용)을 배운다.**
+  서술까지 쓰려면 태깅은 그대로 두고 추출만 다시 라벨링한다:
+
+  ```bash
+  mkdir -p data/teacher/pilot200-rubric2 && cp data/teacher/pilot200/tagging.jsonl data/teacher/pilot200-rubric2/
+  uv run python scripts/label_with_teacher.py --synthetic data/synthetic/pilot200.jsonl \
+      --out-dir data/teacher/pilot200-rubric2 --resume   # 태깅은 건너뛰고 추출만 새로 한다
+  ```
 
 ## 3. 서빙과 평가
 

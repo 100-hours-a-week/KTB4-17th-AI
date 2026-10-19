@@ -35,6 +35,8 @@ def test_convert_skips_gold_failed_and_low_agreement_rows():
     assert convert(teacher_row(aggregate={"validSamples": 0}), min_agreement=0.6)[1] == "다수결 없음"
     low = teacher_row(aggregate={**teacher_row()["aggregate"], "agreement": 0.4})
     assert convert(low, min_agreement=0.6)[1] == "판정 일치율 낮음"
+    leaked = frozenset({"집에서빵굽는게제일좋아요"})
+    assert convert(teacher_row(), min_agreement=0.6, leaked=leaked)[1] == "평가 데이터셋과 같은 답변"
 
 
 def test_off_topic_majority_clears_tags():

@@ -9,6 +9,7 @@ teacher 의 5회 샘플 다수결을 정답 후보로 옮긴다. reviewed_by 는
 옮기지 않는 것:
   - 골드셋(source=gold) 행 — 평가 데이터셋이라 학습에 넣으면 누수다
   - 다수결이 없는 행(샘플 전부 실패)과 판정 일치율이 --min-agreement 미만인 행
+  - 평가 데이터셋과 같은 답변 — build_sft.py 가 누수로 막는 행을 여기서 미리 빼서, 한 건 때문에 학습 파일이 안 만들어지지 않게 한다
 """
 
 from __future__ import annotations
@@ -22,13 +23,15 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(PROJECT_ROOT))
 
-from training.tagging.data import TagExample  # noqa: E402
+from training.tagging.data import TagExample, eval_answers, normalize  # noqa: E402
 
 
-def convert(row: dict, *, min_agreement: float) -> tuple[TagExample | None, str]:
+def convert(row: dict, *, min_agreement: float, leaked: frozenset[str] = frozenset()) -> tuple[TagExample | None, str]:
     """teacher 태깅 한 행 → (TagExample, 건너뛴 이유). 옮기면 이유는 빈 문자열."""
     if row.get("source") != "synthetic":
         return None, "합성 데이터가 아님"
+    if normalize(row["input"]["answer"]) in leaked:
+        return None, "평가 데이터셋과 같은 답변"
     agg = row.get("aggregate") or {}
     if not agg.get("validSamples"):
         return None, "다수결 없음"
@@ -60,10 +63,11 @@ def main(argv: list[str] | None = None) -> int:
 
     kept: list[TagExample] = []
     skipped: Counter[str] = Counter()
+    leaked = frozenset(eval_answers())
     for line in args.input.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
-        example, reason = convert(json.loads(line), min_agreement=args.min_agreement)
+        example, reason = convert(json.loads(line), min_agreement=args.min_agreement, leaked=leaked)
         if example is None:
             skipped[reason] += 1
         else:
