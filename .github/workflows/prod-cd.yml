@@ -7,6 +7,16 @@ on:
                 description: Semantic-release version tag
                 required: true
                 type: string
+    workflow_dispatch:
+        inputs:
+            release_tag:
+                description: Existing release tag to deploy
+                required: true
+                type: string
+
+concurrency:
+    group: ai-ecs-production
+    cancel-in-progress: false
 
 permissions:
     contents: read
@@ -20,17 +30,19 @@ env:
 
 jobs:
     promote_image:
-        name: Promote DEV Image
+        name: Promote AI DEV Image
         runs-on: ubuntu-latest
 
         outputs:
             dev_sha: ${{ steps.dev_sha.outputs.dev_sha }}
+            image_digest: ${{ steps.promote.outputs.digest }}
 
         steps:
-            - name: Checkout source
+            - name: Checkout release source
               uses: actions/checkout@v7
               with:
                   fetch-depth: 0
+                  ref: ${{ inputs.release_tag }}
 
             - name: Configure AWS credentials
               uses: aws-actions/configure-aws-credentials@v6
@@ -40,99 +52,133 @@ jobs:
 
             # Release Tag가 붙은 main Merge Commit의
             # 두 번째 parent = merge 당시 dev HEAD
+            # main과 dev의 tree가 같아야 DEV 이미지를 그대로 승격할 수 있다.
             - name: Resolve DEV SHA
               id: dev_sha
+              shell: bash
               run: |
                   set -euo pipefail
 
-                  DEV_SHA=$(git rev-parse "${RELEASE_TAG}^2")
+                  RELEASE_SHA=$(git rev-parse "${RELEASE_TAG}^{commit}")
+                  read -ra COMMITS <<< "$(git rev-list --parents -n 1 "$RELEASE_SHA")"
+                  test "${#COMMITS[@]}" -eq 3
+                  DEV_SHA="${COMMITS[2]}"
+
+                  test "$(git rev-parse "$RELEASE_SHA^{tree}")" = \
+                       "$(git rev-parse "$DEV_SHA^{tree}")"
 
                   echo "DEV SHA: $DEV_SHA"
                   echo "dev_sha=$DEV_SHA" >> "$GITHUB_OUTPUT"
 
-            # 해당 SHA 이미지가 실제 ECR에 존재하는지 확인
-            - name: Verify DEV image
+            # 해당 SHA 이미지가 실제 ECR에 존재하는지 확인하고 digest 고정
+            - name: Resolve DEV image
+              id: image
               env:
                   DEV_SHA: ${{ steps.dev_sha.outputs.dev_sha }}
               run: |
                   set -euo pipefail
 
-                  aws ecr describe-images \
+                  DIGEST=$(aws ecr describe-images \
                     --repository-name "$ECR_REPOSITORY" \
-                    --image-ids imageTag="$DEV_SHA" \
-                    --region "$AWS_REGION"
+                    --image-ids "imageTag=$DEV_SHA" \
+                    --query 'imageDetails[0].imageDigest' \
+                    --output text)
+                  [[ "$DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
 
-            # DEV에서 검증한 SHA 이미지의 Manifest를 가져와
-            # Release Version Tag를 추가
-            - name: Promote image
+                  echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
+
+            # DEV에서 검증한 이미지의 Manifest에 Release Version Tag를 추가
+            # 같은 Tag가 이미 있으면 동일 digest인지만 확인한다 (재실행 대비).
+            - name: Promote image without rebuilding
               id: promote
               env:
-                  DEV_SHA: ${{ steps.dev_sha.outputs.dev_sha }}
+                  DIGEST: ${{ steps.image.outputs.digest }}
               run: |
                   set -euo pipefail
 
-                  MANIFEST=$(aws ecr batch-get-image \
+                  aws ecr batch-get-image \
                     --repository-name "$ECR_REPOSITORY" \
-                    --image-ids imageTag="$DEV_SHA" \
-                    --query 'images[0].imageManifest' \
-                    --output text \
-                    --region "$AWS_REGION")
+                    --image-ids "imageDigest=$DIGEST" > image.json
+                  jq -e '.images | length > 0' image.json
+                  jq -ej '.images[0].imageManifest' image.json > manifest.json
 
-                  if [ -z "$MANIFEST" ] || [ "$MANIFEST" = "None" ]; then
-                    echo "ECR image manifest not found: $DEV_SHA"
-                    exit 1
+                  # ECS task digest 검증을 위해 현재 single-platform 빌드만 허용한다.
+                  jq -e 'has("manifests") | not' manifest.json
+
+                  aws ecr describe-images \
+                    --repository-name "$ECR_REPOSITORY" > tags.json
+                  EXISTING=$(jq -r --arg tag "$RELEASE_TAG" \
+                    '[.imageDetails[] | select((.imageTags // []) | index($tag))
+                      | .imageDigest][0] // empty' tags.json)
+
+                  if [ -n "$EXISTING" ]; then
+                    test "$EXISTING" = "$DIGEST"
+                  else
+                    aws ecr put-image \
+                      --repository-name "$ECR_REPOSITORY" \
+                      --image-tag "$RELEASE_TAG" \
+                      --image-manifest file://manifest.json \
+                      --image-digest "$DIGEST" > /dev/null
                   fi
 
-                  aws ecr put-image \
+                  ACTUAL=$(aws ecr describe-images \
                     --repository-name "$ECR_REPOSITORY" \
-                    --image-tag "$RELEASE_TAG" \
-                    --image-manifest "$MANIFEST" \
-                    --region "$AWS_REGION"
+                    --image-ids "imageTag=$RELEASE_TAG" \
+                    --query 'imageDetails[0].imageDigest' \
+                    --output text)
+                  test "$ACTUAL" = "$DIGEST"
 
-                  IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$RELEASE_TAG"
-
-                  echo "Promoted:"
-                  echo "$DEV_SHA -> $RELEASE_TAG"
-                  echo "IMAGE: $IMAGE_URL"
+                  echo "Promoted: $DIGEST -> $RELEASE_TAG"
+                  echo "digest=$DIGEST" >> "$GITHUB_OUTPUT"
 
     deploy:
-        name: AI Blue-Green Deploy
+        name: Deploy AI to ECS
         needs: promote_image
         runs-on: ubuntu-latest
+        timeout-minutes: 50
         environment: production
 
+        env:
+            ECS_CLUSTER: star23-ecs-cluster
+            ECS_SERVICE: star23-ai-service
+            CONTAINER_NAME: ai
+
         steps:
-            - name: Configure SSH
-              env:
-                  EC2_SSH_PRIVATE_KEY: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
-                  EC2_KNOWN_HOSTS: ${{ secrets.EC2_KNOWN_HOSTS }}
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v6
+              with:
+                  role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+                  aws-region: ${{ env.AWS_REGION }}
+
+            # 서비스에 현재 연결된 Task Definition을 기준으로 이미지만 교체한다.
+            - name: Read current ECS task definition
+              id: current
               run: |
                   set -euo pipefail
 
-                  mkdir -p "$RUNNER_TEMP/ssh"
+                  aws ecs describe-services \
+                    --cluster "$ECS_CLUSTER" \
+                    --services "$ECS_SERVICE" > service.json
+                  jq -e '(.failures | length) == 0 and (.services | length) == 1
+                    and .services[0].desiredCount > 0' service.json
 
-                  printf '%s\n' "$EC2_SSH_PRIVATE_KEY" \
-                    > "$RUNNER_TEMP/ssh/ec2_key"
+                  ARN=$(jq -er '.services[0].taskDefinition' service.json)
+                  echo "arn=$ARN" >> "$GITHUB_OUTPUT"
 
-                  printf '%s\n' "$EC2_KNOWN_HOSTS" \
-                    > "$RUNNER_TEMP/ssh/known_hosts"
+            - name: Render AI image
+              id: render
+              uses: aws-actions/amazon-ecs-render-task-definition@v1
+              with:
+                  task-definition-arn: ${{ steps.current.outputs.arn }}
+                  container-name: ${{ env.CONTAINER_NAME }}
+                  image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ needs.promote_image.outputs.image_digest }}
 
-                  chmod 600 "$RUNNER_TEMP/ssh/ec2_key"
-                  chmod 600 "$RUNNER_TEMP/ssh/known_hosts"
-
-            - name: Deploy to EC2
-              env:
-                  EC2_HOST: ${{ secrets.EC2_HOST }}
-                  EC2_USER: ${{ secrets.EC2_USER }}
-                  EC2_PORT: ${{ secrets.EC2_PORT }}
-              run: |
-                  set -euo pipefail
-                  IMAGE_URL="$ECR_REGISTRY/$ECR_REPOSITORY:$RELEASE_TAG"
-
-                  ssh \
-                    -i "$RUNNER_TEMP/ssh/ec2_key" \
-                    -o UserKnownHostsFile="$RUNNER_TEMP/ssh/known_hosts" \
-                    -o StrictHostKeyChecking=yes \
-                    -p "${EC2_PORT:-22}" \
-                    "$EC2_USER@$EC2_HOST" \
-                    "cd /home/ubuntu/app && ./deploy-ai.sh '$IMAGE_URL'"
+            - name: Deploy AI
+              uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+              with:
+                  task-definition: ${{ steps.render.outputs.task-definition }}
+                  cluster: ${{ env.ECS_CLUSTER }}
+                  service: ${{ env.ECS_SERVICE }}
+                  wait-for-service-stability: true
+                  wait-for-minutes: 20
+                  wait-max-delay-seconds: 15
