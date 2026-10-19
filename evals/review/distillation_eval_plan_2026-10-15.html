@@ -51,7 +51,7 @@ tr.key td{background:var(--soft)}
 <main>
 <header class="top">
 <h1>태깅·추출 증류 계획과 평가 척도</h1>
-<p>온보딩 태깅·추출을 Gemini(teacher)에서 자체 모델(student)로 증류하기 위한 순서, 평가 척도, 통과 기준 · 2026-10-15 초안</p>
+<p>온보딩 태깅·추출을 Gemini(teacher)에서 자체 모델(student)로 증류하기 위한 순서, 평가 척도, 통과 기준 · 2026-10-15 초안 (10-19 학습 방식 갱신)</p>
 </header>
 
 <div class="note">기준값의 "우수/합격" 경계는 초안입니다. 골드셋 사람 검수를 끝내고 Gemini 기준선을 다시 측정한 뒤 확정합니다. 현재 Gemini 수치는 <code>evals/runs/langfuse_quantitative_summary.json</code>(2026-10-07, gemini-3.1-flash-lite)과 <code>docs/성능평가/09_기능별_성능평가_결과_보고서.md</code>에서 가져왔습니다.</div>
@@ -83,8 +83,8 @@ tr.key td{background:var(--soft)}
 <tr><td>0</td><td>약관·동의 확인, 골드셋 검수, Gemini 기준선과 노이즈 바닥 측정</td><td>목표 수치</td></tr>
 <tr><td>1</td><td>에이전트별 모델 라우팅 분리</td><td>섀도우·카나리 배포가 가능한 코드</td></tr>
 <tr><td>2</td><td>teacher 데이터 수집과 정제 (추출 원본 출력 저장 추가, 실패·필터 사례 제외)</td><td>버전이 붙은 학습 데이터셋</td></tr>
-<tr><td>3</td><td><b>태깅 먼저</b>: 한국어 인코더 다중 라벨 분류기 (CPU 서빙)</td><td>태깅 student 모델</td></tr>
-<tr><td>4</td><td>추출: 1~8B 소형 LLM에 LoRA 지도학습, guided JSON</td><td>추출 student 모델</td></tr>
+<tr><td>3</td><td><b>태깅 먼저</b>: <code>kakaocorp/kanana-2-3b-instruct</code>에 LoRA 지도학습 (메모리가 모자라면 QLoRA), vLLM 런타임 LoRA로 서빙</td><td>태깅 LoRA 어댑터</td></tr>
+<tr><td>4</td><td>추출: 같은 기본 모델에 LoRA/QLoRA 지도학습, guided JSON</td><td>추출 LoRA 어댑터</td></tr>
 <tr><td>5</td><td>오프라인 게이트 → 섀도우 → 카나리 → 전체 배포 (Gemini 폴백 유지)</td><td>운영 배포</td></tr>
 <tr><td>6</td><td>모니터링, 재학습 트리거, 모델 레지스트리, CI 평가 게이트</td><td>MLOps 루프</td></tr>
 </table></div>
