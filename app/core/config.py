@@ -206,6 +206,98 @@ class Settings(BaseSettings):
     )
     liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
 
+    # ── v2 사용자 페르소나 메모리 RAG 설정 ──────────────────────────
+    embedding_model_name: str = Field(
+        default="nlpai-lab/KURE-v1-onnx-int8",
+        validation_alias="EMBEDDING_MODEL_NAME",
+        description="DB embedding_model 컬럼에 기록할 임베딩 모델 버전 식별자",
+    )
+    embedding_onnx_path: Path = Field(
+        default=Path("models/kure_v1_int8/model_quantized.onnx"),
+        validation_alias="EMBEDDING_ONNX_PATH",
+    )
+    embedding_tokenizer_path: Path = Field(
+        default=Path("models/kure_v1_int8/tokenizer.json"),
+        validation_alias="EMBEDDING_TOKENIZER_PATH",
+    )
+    embedding_pooling_mode: str = Field(
+        default="cls",
+        validation_alias="EMBEDDING_POOLING_MODE",
+        description="KURE-v1(bge-m3 계열) 및 arctic-embed-l-v2.0-ko의 기본 풀링 방식 ('cls' 또는 'mean')",
+    )
+    embedding_query_prefix: str = Field(
+        default="",
+        validation_alias="EMBEDDING_QUERY_PREFIX",
+        description="쿼리 임베딩 시 앞에 붙일 접두사 (KURE-v1은 빈 문자열, arctic-embed는 'query: ')",
+    )
+    embedding_dim: int = Field(default=1024, validation_alias="EMBEDDING_DIM")
+    embedding_max_length: int = Field(default=512, validation_alias="EMBEDDING_MAX_LENGTH")
+
+    # 실시간 검색 (retrieve) 파라미터 — pgvector <=> 는 코사인 거리(1 - similarity)
+    memory_top_k: int = Field(default=5, ge=1, le=20, validation_alias="MEMORY_TOP_K")
+    memory_max_cosine_distance: float = Field(
+        default=0.65,
+        gt=0.0,
+        lt=2.0,
+        validation_alias="MEMORY_MAX_COSINE_DISTANCE",
+        description="pgvector 코사인 거리(<=>) 상한 (0.65 = 코사인 유사도 0.35 이상만 허용)",
+    )
+    practice_v2_history_window: int = Field(
+        default=20,
+        ge=2,
+        le=40,
+        validation_alias="PRACTICE_V2_HISTORY_WINDOW",
+        description="v2 연습대화에서 LLM에 전달할 최근 메시지 수 (User 10턴 + AI 10턴 = 20)",
+    )
+
+    # 백그라운드 메모리 추출 & Reconcile 파라미터 (유사도 = 1 - 코사인 거리)
+    memory_trigger_turn_count: int = Field(default=8, ge=1, validation_alias="MEMORY_TRIGGER_TURN_COUNT")
+    memory_trigger_idle_minutes: int = Field(default=20, ge=1, validation_alias="MEMORY_TRIGGER_IDLE_MINUTES")
+    memory_context_overlap_pairs: int = Field(default=2, ge=0, le=5, validation_alias="MEMORY_CONTEXT_OVERLAP_PAIRS")
+    memory_reconcile_noop_sim: float = Field(default=0.99, validation_alias="MEMORY_RECONCILE_NOOP_SIM")
+    memory_reconcile_judge_sim: float = Field(default=0.70, validation_alias="MEMORY_RECONCILE_JUDGE_SIM")
+    memory_confidence_confirmed: float = Field(default=0.8, validation_alias="MEMORY_CONFIDENCE_CONFIRMED")
+    memory_confidence_tentative: float = Field(default=0.5, validation_alias="MEMORY_CONFIDENCE_TENTATIVE")
+    memory_tentative_ttl_days: int = Field(default=30, ge=1, validation_alias="MEMORY_TENTATIVE_TTL_DAYS")
+    memory_job_stale_minutes: int = Field(default=10, ge=1, validation_alias="MEMORY_JOB_STALE_MINUTES")
+    memory_extract_timeout_s: float = Field(default=25.0, validation_alias="MEMORY_EXTRACT_TIMEOUT_S")
+    memory_reconcile_timeout_s: float = Field(default=20.0, validation_alias="MEMORY_RECONCILE_TIMEOUT_S")
+
+    # ── v2 시뮬레이션 하네스 (docs/기획_및_설계/시뮬레이션_v2_하네스_기획안_최종.md) ──
+    # 심사 모델. 비우면 생성 모델(llm_model)과 같다
+    simulation_v2_judge_model: str | None = Field(default=None, validation_alias="SIMULATION_V2_JUDGE_MODEL")
+    # tools(function calling) 를 쓸지. 기본은 json_object 경로 — 2026-10-19 로컬 실측(gemini-2.5-flash-lite)에서
+    # tools 는 긴 대본 인자가 깨지는 형식 오류가 잦아 성공 6/14, json_object 는 11/14 였다
+    simulation_v2_use_tools: bool = Field(default=False, validation_alias="SIMULATION_V2_USE_TOOLS")
+    simulation_v2_job_timeout_s: float = Field(default=90.0, validation_alias="SIMULATION_V2_JOB_TIMEOUT_S")
+    simulation_v2_job_stale_minutes: int = Field(default=10, ge=1, validation_alias="SIMULATION_V2_JOB_STALE_MINUTES")
+    # 호출별 타임아웃 상한. 실제로는 min(이 값, job 남은 시간)
+    simulation_v2_generate_timeout_s: float = Field(default=45.0, validation_alias="SIMULATION_V2_GENERATE_TIMEOUT_S")
+    simulation_v2_judge_timeout_s: float = Field(default=20.0, validation_alias="SIMULATION_V2_JUDGE_TIMEOUT_S")
+    simulation_v2_repair_timeout_s: float = Field(default=20.0, validation_alias="SIMULATION_V2_REPAIR_TIMEOUT_S")
+    simulation_v2_report_timeout_s: float = Field(default=30.0, validation_alias="SIMULATION_V2_REPORT_TIMEOUT_S")
+    # 소재 매칭
+    # 2026-10-19 합성 라벨셋(관련 46·무관 156쌍, scripts/calibrate_topic_tau.py) 보정: 0.60 은 정밀도 0.81,
+    # 0.62 는 정밀도 0.91(재현율 0.46). 거짓 공통점이 혼동을 부추기므로 정밀도를 우선했다
+    simulation_v2_tau_shared: float = Field(default=0.62, validation_alias="SIMULATION_V2_TAU_SHARED")
+    simulation_v2_topic_dedup_sim: float = Field(default=0.80, validation_alias="SIMULATION_V2_TOPIC_DEDUP_SIM")
+    simulation_v2_max_shared_topics: int = Field(default=3, ge=1, validation_alias="SIMULATION_V2_MAX_SHARED_TOPICS")
+    # 프롬프트에 노출할 사용자당 fact 수 (소재 fact 포함)
+    simulation_v2_max_facts_per_user: int = Field(default=8, ge=1, validation_alias="SIMULATION_V2_MAX_FACTS_PER_USER")
+    # 규칙 검사 임계값
+    simulation_v2_echo_jaccard: float = Field(default=0.5, validation_alias="SIMULATION_V2_ECHO_JACCARD")
+    simulation_v2_low_effort_ratio: float = Field(default=0.6, validation_alias="SIMULATION_V2_LOW_EFFORT_RATIO")
+    simulation_v2_regenerate_local_ratio: float = Field(
+        default=0.3, validation_alias="SIMULATION_V2_REGENERATE_LOCAL_RATIO"
+    )
+    # 호출 예산 (하드 상한)
+    simulation_v2_script_budget: int = Field(default=5, ge=2, validation_alias="SIMULATION_V2_SCRIPT_BUDGET")
+    simulation_v2_regenerate_budget: int = Field(default=1, ge=0, validation_alias="SIMULATION_V2_REGENERATE_BUDGET")
+    simulation_v2_repair_budget: int = Field(default=2, ge=0, validation_alias="SIMULATION_V2_REPAIR_BUDGET")
+    simulation_v2_report_budget: int = Field(default=2, ge=1, validation_alias="SIMULATION_V2_REPORT_BUDGET")
+    # repair·regenerate 진입에 필요한 최소 남은 시간
+    simulation_v2_min_remaining_s: float = Field(default=25.0, validation_alias="SIMULATION_V2_MIN_REMAINING_S")
+
     @field_validator("c2pa_trust_anchors_path", mode="before")
     @classmethod
     def empty_path_is_none(cls, value: object) -> object:

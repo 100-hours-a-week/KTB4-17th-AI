@@ -47,6 +47,22 @@ MODELS = (
         ),
         sha256="968f113f1107d58bfc73444b6e87020e2d541780ad43b7a1ac3e3b18b86c2bbd",
     ),
+    Model(
+        filename="kure_v1_int8/model_quantized.onnx",
+        url=(
+            "https://huggingface.co/hrunj1230/kure-v1-onnx-int8/resolve/"
+            "a380db33787422c47175b5cc0ba4325811695141/model_quantized.onnx"
+        ),
+        sha256="aaf2788bdea5e9cc6bb03d3e7bb546ae73dccee2a5489825000e316876853a61",
+    ),
+    Model(
+        filename="kure_v1_int8/tokenizer.json",
+        url=(
+            "https://huggingface.co/hrunj1230/kure-v1-onnx-int8/resolve/"
+            "a380db33787422c47175b5cc0ba4325811695141/tokenizer.json"
+        ),
+        sha256="fb3c3b93c46fd5a8634e262e1b7de7da11a18b527aa2282b312952b692781dfd",
+    ),
 )
 
 
@@ -60,6 +76,7 @@ def digest(path: Path) -> str:
 
 def download(model: Model, directory: Path) -> None:
     destination = directory / model.filename
+    destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and digest(destination) == model.sha256:
         print(f"verified: {destination}")
         return

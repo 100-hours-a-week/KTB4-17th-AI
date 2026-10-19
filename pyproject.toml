@@ -26,6 +26,8 @@ dependencies = [
     "opencv-contrib-python==4.11.0.86",
     "pillow==12.3.0",
     "python-multipart==0.0.32",
+    "pgvector>=0.3.6",
+    "tokenizers>=0.21.0",
 ]
 
 [dependency-groups]
