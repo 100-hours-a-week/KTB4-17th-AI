@@ -153,7 +153,8 @@ type VerificationChallengeResponse = {
 - v2 챌린지는 `[LOOK_STRAIGHT, HAND_<모양>, HAND_UP|HAND_DOWN|HAND_SIDEWAYS, <고개 방향>]`의 네 코드다.
 - 손 모양은 FIST, ONE, TWO, THREE, FOUR, OPEN_PALM, THUMBS_UP, L_SHAPE, LOVE_YOU, CALL_ME이며 고개 방향은 TURN_LEFT, TURN_RIGHT, LOOK_UP, LOOK_DOWN이다.
 - `challenge_plan` 서로 동일한 세 항목을 토큰과 함께 변경 없이 저장하고 현재 시도의 항목만 프론트에 반환한다. 완료 요청에 1부터 시작하는 `attempt_no`를 전달한다.
-- `ACTIVE_LIVENESS_ENABLED=false`는 배포 호환용 v1 `[LOOK_STRAIGHT]` 토큰을 발급한다. v1 응답의 계획은 null이다.
+- 기본값 `ACTIVE_LIVENESS_ENABLED=true`는 v2 고개·손 챌린지를 발급한다. 배포 환경에 명시된 값이 우선하며, BE/FE v2 배포 후 신규 세션부터 적용한다.
+- `ACTIVE_LIVENESS_ENABLED=false`는 롤백·배포 호환용 v1 `[LOOK_STRAIGHT]` 토큰을 발급한다. v1 응답의 계획은 null이며 스위치 전환 전 발급한 토큰도 만료까지 검증한다.
 - 이 토큰에는 사용자 ID, 계정 권한, 대표사진 ID가 없으며 로그인 세션이나 API 접근 토큰으로 사용할 수 없다.
 - 메인 백엔드는 자체 인증 시도에 챌린지와 현재 대표사진 ID를 결합하고, 같은 사용자와 대표사진으로 완료 요청이 이어지는지 확인한다.
 
