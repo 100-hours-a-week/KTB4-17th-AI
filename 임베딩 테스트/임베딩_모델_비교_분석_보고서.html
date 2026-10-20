@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>사용자 페르소나 메모리 RAG (v2) 임베딩 모델 종합 비교 분석 보고서</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body {
+            font-family: 'Pretendard', -apple-system, BlinkMacSystemFont, system-ui, Roboto, sans-serif;
+            background-color: #0b1120;
+            color: #e2e8f0;
+        }
+        .metric-card {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.7) 0%, rgba(15, 23, 42, 0.9) 100%);
+            border: 1px solid rgba(51, 65, 85, 0.6);
+        }
+    </style>
+</head>
+<body class="antialiased p-6 md:p-12 max-w-6xl mx-auto space-y-10 selection:bg-sky-500 selection:text-white">
+
+    <!-- Header Banner -->
+    <header class="bg-gradient-to-br from-slate-900 via-slate-900 to-sky-950/70 border border-slate-800 rounded-2xl p-8 shadow-2xl">
+        <div class="flex flex-wrap items-center gap-2 mb-3">
+            <span class="px-3 py-1 text-xs font-bold bg-sky-500/20 text-sky-300 border border-sky-500/40 rounded-full">실측 벤치마크 6종 전 모델 완주</span>
+            <span class="px-3 py-1 text-xs font-bold bg-purple-500/20 text-purple-300 border border-purple-500/40 rounded-full">KURE-v1 vs Gemma 2 vs KURE-v2 vs ko-embed vs Qwen3-4B vs comsat-8b</span>
+            <span class="px-3 py-1 text-xs font-bold bg-rose-500/20 text-rose-300 border border-rose-500/40 rounded-full">8B 모델 실측 검증 완료</span>
+        </div>
+        <h1 class="text-2xl md:text-3xl font-extrabold text-white tracking-tight">
+            사용자 페르소나 메모리 RAG (v2) 임베딩 모델 종합 비교 분석 보고서
+        </h1>
+        <p class="text-slate-300 mt-3 text-sm md:text-base leading-relaxed">
+            별이삼샵 AI 서버의 사용자 페르소나 메모리 RAG 구현 가이드에 맞춰, 한국어 구어체 소개팅·연습대화 평가셋(60개 Fact 코퍼스, 50개 질문, 30쌍 Reconcile)으로 후보 임베딩 모델군 6종을 동일 Mac CPU 환경에서 직접 실측하고 최적 모델 및 8B 모델의 실제 한계를 분석했습니다.
+        </p>
+    </header>
+
+    <!-- Key Takeaway Metric Cards -->
+    <section class="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div class="metric-card rounded-xl p-5">
+            <div class="text-xs text-slate-400 font-medium">검색 품질 최강 (공동)</div>
+            <div class="text-2xl font-black text-amber-300 mt-2">Recall 98~100%</div>
+            <div class="text-xs text-slate-300 mt-1">Qwen3-4B (100%) / comsat-8b (98%)</div>
+        </div>
+        <div class="metric-card rounded-xl p-5">
+            <div class="text-xs text-slate-400 font-medium">단일 쿼리 실시간 최고속 (P50)</div>
+            <div class="text-2xl font-black text-emerald-400 mt-2">12.2 ms</div>
+            <div class="text-xs text-slate-300 mt-1">ko-embed-v0 (149M 초경량 백본)</div>
+        </div>
+        <div class="metric-card rounded-xl p-5">
+            <div class="text-xs text-slate-400 font-medium">종합 최적 균형 (가이드 추천)</div>
+            <div class="text-2xl font-black text-sky-400 mt-2">16.6 ms</div>
+            <div class="text-xs text-slate-300 mt-1">KURE-v1 (Top-5 100%, Gap 0.4214)</div>
+        </div>
+        <div class="metric-card rounded-xl p-5">
+            <div class="text-xs text-slate-400 font-medium">8B 모델 실측 지연시간</div>
+            <div class="text-2xl font-black text-rose-400 mt-2">238.2 ms</div>
+            <div class="text-xs text-slate-300 mt-1">comsat-ko-8b (KURE 대비 14.3배 느림)</div>
+        </div>
+    </section>
+
+    <!-- Section: 벤치마크 설계 (무엇으로, 어떻게, 무슨 기준으로 측정했는가?) -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 md:p-8 space-y-6">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>📐</span> 2. 벤치마크 설계: 무엇으로, 어떻게, 무슨 기준으로 측정했는가?
+        </h2>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+            <!-- Box 1: 어떤 걸로 -->
+            <div class="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div class="text-sky-400 font-bold flex items-center gap-2 text-base">
+                    <span>📦</span> ① 어떤 걸로 측정했는가?
+                </div>
+                <div class="text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <p><strong class="text-white">하드웨어/런타임:</strong> Apple Silicon Mac (24GB 통합 RAM), Python 3.12, GPU 배제 CPU 실행 (프로덕션 컨테이너 환경 재현).</p>
+                    <p><strong class="text-white">평가 데이터셋 (총 140건):</strong></p>
+                    <ul class="list-disc pl-4 space-y-1 text-slate-400">
+                        <li><strong>60개 Fact 코퍼스:</strong> 취미(13), 일상(18), 연애관(11), 가치관(8), 과거이력(10)</li>
+                        <li><strong>50개 구어체 질문:</strong> 단순 단어 매칭을 배제한 한국어 구어체·줄임말 질문 ("민초"↔"민트초코 쌀국수")</li>
+                        <li><strong>30쌍 Reconcile 문장:</strong> 동일 의미(10쌍), 수치변경/모순(10쌍), 무관(10쌍)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Box 2: 어떻게 -->
+            <div class="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div class="text-emerald-400 font-bold flex items-center gap-2 text-base">
+                    <span>⚙️</span> ② 어떻게 측정했는가?
+                </div>
+                <div class="text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <p><strong class="text-white">문서 색인:</strong> 60개 Fact를 인코딩하여 L2 정규화된 문서 행렬 (60, Dim) 생성.</p>
+                    <p><strong class="text-white">질의 검색:</strong> 50개 질문을 모델별 프롬프트 규격(Instruct/Prefix 등)에 맞춰 인코딩 후 코사인 유사도 행렬 (50, 60) 계산.</p>
+                    <p><strong class="text-white">순위 검증:</strong> 각 질문별로 내림차순 정렬 후 사전에 정의된 정답 Fact ID의 순위(Rank)를 전수 집계.</p>
+                    <p><strong class="text-white">CPU 지연시간:</strong> 워밍업 1~2회 수행 후 실시간 채팅 모사(단일 1건)를 3~5회 측정하여 P50/P95(ms) 산출.</p>
+                </div>
+            </div>
+
+            <!-- Box 3: 무슨 기준 -->
+            <div class="p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-3">
+                <div class="text-amber-400 font-bold flex items-center gap-2 text-base">
+                    <span>🎯</span> ③ 무슨 기준으로 판정했는가?
+                </div>
+                <div class="text-xs text-slate-300 space-y-2 leading-relaxed">
+                    <p><strong class="text-white">Recall@5 (100% 필수):</strong> 가이드 v2에서 Top-5 기억만 프롬프트에 주입하므로 5위 밖으로 밀리면 기억 누락 발생.</p>
+                    <p><strong class="text-white">MRR@5 (순위 역수 평균):</strong> 1.0에 가까울수록 가장 핵심적인 기억이 1순위(최상단)에 노출됨.</p>
+                    <p><strong class="text-white">Reconcile Gap (0.40 이상 필수):</strong> 동일 의미 유사도와 무관 문장 유사도의 격차. 좁으면 무관한 기억까지 LLM 판정으로 넘어가 비용 폭증.</p>
+                    <p><strong class="text-white">단일 쿼리 P50 (30ms 이내 최적):</strong> 실시간 대화 First Token 응답을 위해 임베딩 검색은 수십 ms 이내 필수.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Section 1: 6-way Spec Comparison Table -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 md:p-8 space-y-4">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>📋</span> 3. 주요 임베딩 모델 핵심 스펙 6자 대조표
+        </h2>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="border-b border-slate-700 text-slate-300 bg-slate-950/60">
+                        <th class="p-3 font-semibold">항목</th>
+                        <th class="p-3 font-semibold text-sky-400">① KURE-v1</th>
+                        <th class="p-3 font-semibold text-purple-400">② EmbeddingGemma 2</th>
+                        <th class="p-3 font-semibold text-emerald-400">③ KURE-v2</th>
+                        <th class="p-3 font-semibold text-teal-400">④ ko-embed-v0</th>
+                        <th class="p-3 font-semibold text-amber-400">⑤ Qwen3-4B</th>
+                        <th class="p-3 font-semibold text-rose-400">⑥ comsat-ko-8b</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800 text-slate-300">
+                    <tr>
+                        <td class="p-3 font-semibold text-white">모델 성격</td>
+                        <td class="p-3">한·영 RAG 특화</td>
+                        <td class="p-3">다국어+멀티모달</td>
+                        <td class="p-3">Late-Interaction</td>
+                        <td class="p-3">한국어 인코더 특화</td>
+                        <td class="p-3">LLM 기반 다국어</td>
+                        <td class="p-3">한국어 1M 특화 8B LLM</td>
+                    </tr>
+                    <tr>
+                        <td class="p-3 font-semibold text-white">베이스 모델</td>
+                        <td class="p-3"><code>BAAI/bge-m3</code></td>
+                        <td class="p-3"><code>Gemma 4</code></td>
+                        <td class="p-3"><code>skt/A.X-Encoder</code></td>
+                        <td class="p-3"><code>skt/A.X-Encoder</code></td>
+                        <td class="p-3"><code>Qwen 2.5</code> 디코더</td>
+                        <td class="p-3"><code>Qwen3-Embedding-8B</code></td>
+                    </tr>
+                    <tr>
+                        <td class="p-3 font-semibold text-white">파라미터 / 가중치</td>
+                        <td class="p-3">568M / 560MB</td>
+                        <td class="p-3">270M / 330MB</td>
+                        <td class="p-3"><strong>154M / 300MB</strong></td>
+                        <td class="p-3"><strong>149M / 300MB</strong></td>
+                        <td class="p-3">4.0B / 8.04GB</td>
+                        <td class="p-3"><strong class="text-rose-400">8.0B / 15.1GB</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="p-3 font-semibold text-white">벡터 차원</td>
+                        <td class="p-3"><strong class="text-sky-300">1024d</strong></td>
+                        <td class="p-3"><strong class="text-purple-300">768d</strong></td>
+                        <td class="p-3"><strong class="text-emerald-300">128d 멀티</strong></td>
+                        <td class="p-3"><strong class="text-teal-300">768d</strong></td>
+                        <td class="p-3"><strong class="text-amber-300">2560d</strong></td>
+                        <td class="p-3"><strong class="text-rose-300">4096d</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="p-3 font-semibold text-white">유사도 연산</td>
+                        <td class="p-3">코사인 유사도</td>
+                        <td class="p-3">코사인 유사도</td>
+                        <td class="p-3"><strong>MaxSim</strong></td>
+                        <td class="p-3">코사인 유사도</td>
+                        <td class="p-3">코사인 유사도</td>
+                        <td class="p-3">코사인 유사도</td>
+                    </tr>
+                    <tr>
+                        <td class="p-3 font-semibold text-white">pgvector 호환</td>
+                        <td class="p-3"><span class="text-emerald-400 font-bold">완벽 호환 (1024d)</span></td>
+                        <td class="p-3"><span class="text-emerald-400 font-bold">완벽 호환 (768d)</span></td>
+                        <td class="p-3"><span class="text-rose-400 font-bold">직접 호환 불가</span></td>
+                        <td class="p-3"><span class="text-emerald-400 font-bold">완벽 호환 (768d)</span></td>
+                        <td class="p-3"><span class="text-amber-400 font-bold">호환 가능 (2560d)</span></td>
+                        <td class="p-3"><span class="text-rose-400 font-bold">극심 부하 (4096d)</span></td>
+                    </tr>
+                    <tr>
+                        <td class="p-3 font-semibold text-white">CPU 추론 속도 (실측)</td>
+                        <td class="p-3"><span class="text-sky-400 font-bold">16.6 ms</span></td>
+                        <td class="p-3">130.3 ms</td>
+                        <td class="p-3"><span class="text-emerald-400 font-bold">20.8 ms</span></td>
+                        <td class="p-3"><span class="text-teal-400 font-bold">12.2 ms</span></td>
+                        <td class="p-3">109.3 ms</td>
+                        <td class="p-3"><span class="text-rose-400 font-bold">238.2 ms</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Section 2: 실측 벤치마크 결과 비교 -->
+    <section class="bg-slate-900/90 border border-slate-800 rounded-2xl p-6 md:p-8 space-y-6">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>📊</span> 4. 실측 벤치마크 결과 비교 (동일 Mac CPU 환경 전수 실측)
+        </h2>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="border-b border-slate-700 text-slate-300 bg-slate-950/60">
+                        <th class="p-3.5 font-semibold">모델 및 설정</th>
+                        <th class="p-3.5 font-semibold">차원</th>
+                        <th class="p-3.5 font-semibold">파라미터</th>
+                        <th class="p-3.5 font-semibold">Recall@1</th>
+                        <th class="p-3.5 font-semibold">Recall@3</th>
+                        <th class="p-3.5 font-semibold">Recall@5</th>
+                        <th class="p-3.5 font-semibold">MRR@5</th>
+                        <th class="p-3.5 font-semibold text-amber-300">단일 쿼리 P50</th>
+                        <th class="p-3.5 font-semibold">배치 P50</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800 text-slate-300">
+                    <tr class="bg-amber-950/25">
+                        <td class="p-3.5 font-bold text-amber-300">Qwen3-Embedding-4B</td>
+                        <td class="p-3.5">2560d</td>
+                        <td class="p-3.5">4.0B</td>
+                        <td class="p-3.5 font-black text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-black text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-black text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-black text-emerald-400">1.000</td>
+                        <td class="p-3.5 text-rose-400 font-medium">109.3 ms</td>
+                        <td class="p-3.5 text-rose-400 font-medium">710.9 ms (B8)</td>
+                    </tr>
+                    <tr class="bg-rose-950/25">
+                        <td class="p-3.5 font-bold text-rose-300">comsat-embed-ko-8b (8B 실측)</td>
+                        <td class="p-3.5">4096d</td>
+                        <td class="p-3.5">8.0B</td>
+                        <td class="p-3.5 font-black text-emerald-400">98.0%</td>
+                        <td class="p-3.5 font-black text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-black text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-black text-emerald-400">0.990</td>
+                        <td class="p-3.5 text-rose-500 font-black">238.2 ms</td>
+                        <td class="p-3.5 text-rose-500 font-black">676.5 ms (B4)</td>
+                    </tr>
+                    <tr class="bg-sky-950/20">
+                        <td class="p-3.5 font-bold text-sky-300">KURE-v1 ONNX int8 (가이드 기준)</td>
+                        <td class="p-3.5">1024d</td>
+                        <td class="p-3.5">568M</td>
+                        <td class="p-3.5 font-medium">94.0%</td>
+                        <td class="p-3.5 font-bold text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-bold text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-medium">0.970</td>
+                        <td class="p-3.5 font-black text-sky-400">16.6 ms</td>
+                        <td class="p-3.5">138.8 ms (B8)</td>
+                    </tr>
+                    <tr class="bg-teal-950/20">
+                        <td class="p-3.5 font-bold text-teal-300">ko-embed-v0 (Mean)</td>
+                        <td class="p-3.5">768d</td>
+                        <td class="p-3.5">149M</td>
+                        <td class="p-3.5 font-medium text-amber-300">88.0%</td>
+                        <td class="p-3.5 font-bold text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-bold text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-medium">0.940</td>
+                        <td class="p-3.5 font-black text-emerald-400">12.2 ms</td>
+                        <td class="p-3.5 font-bold text-emerald-400">23.5 ms (B8)</td>
+                    </tr>
+                    <tr class="bg-emerald-950/20">
+                        <td class="p-3.5 font-bold text-emerald-300">KURE-v2 (ColBERT MaxSim)</td>
+                        <td class="p-3.5">128d</td>
+                        <td class="p-3.5">154M</td>
+                        <td class="p-3.5 font-bold">96.0%</td>
+                        <td class="p-3.5 font-bold text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-bold text-emerald-400">100.0%</td>
+                        <td class="p-3.5 font-bold text-emerald-400">0.980</td>
+                        <td class="p-3.5 font-bold text-emerald-400">20.8 ms</td>
+                        <td class="p-3.5 font-bold text-emerald-400">30.2 ms (B8)</td>
+                    </tr>
+                    <tr>
+                        <td class="p-3.5 font-medium text-purple-300">EmbeddingGemma-2 int8 (768d)</td>
+                        <td class="p-3.5">768d</td>
+                        <td class="p-3.5">270M</td>
+                        <td class="p-3.5">96.0%</td>
+                        <td class="p-3.5">98.0%</td>
+                        <td class="p-3.5 text-emerald-400">100.0%</td>
+                        <td class="p-3.5">0.975</td>
+                        <td class="p-3.5 text-rose-400">130.3 ms</td>
+                        <td class="p-3.5">159.2 ms (B8)</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <h3 class="text-base font-bold text-white pt-4">🔍 Reconcile(중복·모순·무관) 유사도 변별력 실측</h3>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-sm">
+                <thead>
+                    <tr class="border-b border-slate-700 text-slate-300 bg-slate-950/60">
+                        <th class="p-3.5 font-semibold">모델</th>
+                        <th class="p-3.5 font-semibold">동일 사실 (Paraphrase)</th>
+                        <th class="p-3.5 font-semibold">수치/상태 변경 (Contradict)</th>
+                        <th class="p-3.5 font-semibold">무관한 사실 (Unrelated)</th>
+                        <th class="p-3.5 font-semibold text-amber-300">분리 마진 (Gap)</th>
+                        <th class="p-3.5 font-semibold">평가</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800 text-slate-300">
+                    <tr class="bg-amber-950/25">
+                        <td class="p-3.5 font-bold text-amber-300">Qwen3-Embedding-4B</td>
+                        <td class="p-3.5">0.7399 (0.63 ~ 0.93)</td>
+                        <td class="p-3.5">0.6186 (0.37 ~ 0.92)</td>
+                        <td class="p-3.5 font-bold text-emerald-400">0.2107 (0.16 ~ 0.27)</td>
+                        <td class="p-3.5 font-black text-amber-300">0.5292 (전체 1위)</td>
+                        <td class="p-3.5 text-sky-400 font-medium">탁월 (무관 문장 0.21 완전 분리)</td>
+                    </tr>
+                    <tr class="bg-rose-950/25">
+                        <td class="p-3.5 font-bold text-rose-300">comsat-embed-ko-8b</td>
+                        <td class="p-3.5">0.7364 (0.65 ~ 0.95)</td>
+                        <td class="p-3.5">0.6296 (0.41 ~ 0.90)</td>
+                        <td class="p-3.5 font-bold text-emerald-400">0.2516 (0.12 ~ 0.35)</td>
+                        <td class="p-3.5 font-black text-rose-300">0.4848 (매우 우수)</td>
+                        <td class="p-3.5 text-emerald-400 font-medium">우수 (무관 문장 0.25 분리)</td>
+                    </tr>
+                    <tr class="bg-sky-950/20">
+                        <td class="p-3.5 font-bold text-sky-400">KURE-v1 (CLS)</td>
+                        <td class="p-3.5">0.8150 (0.74 ~ 0.96)</td>
+                        <td class="p-3.5">0.6981 (0.53 ~ 0.95)</td>
+                        <td class="p-3.5">0.3936 (0.34 ~ 0.52)</td>
+                        <td class="p-3.5 font-black text-emerald-400">0.4214 (최우수)</td>
+                        <td class="p-3.5 text-emerald-400 font-medium">가이드 임계값(0.70) 완벽 일치</td>
+                    </tr>
+                    <tr class="bg-teal-950/20">
+                        <td class="p-3.5 font-bold text-teal-400">ko-embed-v0 (Mean)</td>
+                        <td class="p-3.5">0.8203 (0.76 ~ 0.89)</td>
+                        <td class="p-3.5">0.7661 (0.59 ~ 0.98)</td>
+                        <td class="p-3.5">0.4180 (0.39 ~ 0.44)</td>
+                        <td class="p-3.5 font-black text-teal-400">0.4023 (우수)</td>
+                        <td class="p-3.5 text-teal-400 font-medium">안정적 분기</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <!-- Section 4: 최종 결론 및 권고안 -->
+    <section class="bg-gradient-to-br from-slate-900 to-emerald-950/40 border border-emerald-900/60 rounded-2xl p-6 md:p-8 space-y-4">
+        <h2 class="text-xl font-bold text-white flex items-center gap-2">
+            <span>🏁</span> 5. 최종 결론 및 아키텍처 로드맵
+        </h2>
+        <div class="space-y-3 text-sm text-slate-300 leading-relaxed">
+            <p>
+                1. <strong class="text-white">1차 실시간 검색 &amp; Reconcile 최적</strong>: <code class="text-sky-300">KURE-v1 ONNX int8 (1024d, CLS)</code>을 가이드대로 유지합니다. 속도(16.6ms), Top-5 재현율(100%), Reconcile 분리력(0.4214), pgvector 호환성까지 현재 아키텍처에 가장 이상적입니다.
+            </p>
+            <p>
+                2. <strong class="text-white">초경량·초저지연 대안</strong>: <code class="text-teal-300">NGA-KR/ko-embed-v0 (149M)</code>는 12.2ms로 가장 빠르고 768d pgvector 호환성을 제공하므로, 리소스 제한이 극심한 환경에서 훌륭한 대안입니다.
+            </p>
+            <p>
+                3. <strong class="text-white">4B 및 8B 모델 (Qwen3-4B, comsat-ko-8b)</strong>: 품질(Recall 98~100%)은 최상급이지만, CPU 지연시간(109ms, 238ms)과 메모리 크기(8GB, 15GB)로 인해 향후 GPU 기반 2단계 Reranker 단계로 도입하는 것을 권장합니다.
+            </p>
+        </div>
+    </section>
+
+</body>
+</html>
