@@ -10,6 +10,7 @@ from app.core.security import require_internal_key
 
 from .dependencies import get_face_verification_service
 from .liveness import InvalidChallenge
+from .protocol import MAX_ATTEMPTS
 from .schemas import VerificationChallengeResponse, VerificationResponse
 from .service import FaceVerificationService
 
@@ -47,6 +48,7 @@ async def complete_verification(
     challenge_token: str = Form(...),
     primary_photo: UploadFile = File(...),
     live_video: UploadFile = File(...),
+    attempt_no: int = Form(1, ge=1, le=MAX_ATTEMPTS),
     service: FaceVerificationService = Depends(get_face_verification_service),
 ) -> VerificationResponse:
     settings = get_settings()
@@ -59,6 +61,7 @@ async def complete_verification(
             reference,
             video,
             live_video.content_type,
+            attempt_no,
         )
     except Exception as exc:
         _raise_verification_error(exc)

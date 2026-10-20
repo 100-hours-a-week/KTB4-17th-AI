@@ -35,8 +35,9 @@ class FaceVerificationService:
         primary_photo: bytes,
         live_video: bytes,
         live_video_content_type: str | None,
+        attempt_no: int = 1,
     ) -> VerificationResponse:
-        challenges = self.signer.verify(challenge_token)
+        challenges = self.signer.verify(challenge_token, attempt_no)
         reference = decode_image(primary_photo)
         liveness = self.liveness.evaluate(
             live_video,
@@ -46,32 +47,36 @@ class FaceVerificationService:
         if not liveness.result.passed or liveness.best_frame is None:
             return VerificationResponse(
                 decision=VerificationDecision.RETRY,
-                reason_codes=[ReasonCode.LIVENESS_FAILED],
+                reason_codes=liveness.result.reason_codes or [ReasonCode.LIVENESS_FAILED],
                 liveness=liveness.result,
                 model_version=MODEL_VERSION,
             )
         similarities: list[float] = []
+        active = liveness.result.sampling_strategy == "uniform_max_48_active_v2"
+        failed_frame = False
         frames = liveness.candidate_frames or (liveness.best_frame,)
         for frame in frames:
             try:
                 _, similarity = self.matcher.compare(reference, frame)
                 similarities.append(similarity)
             except FaceNotFound:
+                failed_frame = True
                 continue
-        if not similarities:
+        if not similarities or (active and (failed_frame or len(similarities) < 2)):
             return VerificationResponse(
                 decision=VerificationDecision.RETRY,
                 reason_codes=[ReasonCode.FACE_COMPARISON_FAILED],
                 liveness=liveness.result,
                 model_version=MODEL_VERSION,
             )
-        similarity = float(statistics.median(similarities))
+        similarity = float(min(similarities) if active else statistics.median(similarities))
         threshold = self.matcher.threshold
         matched = similarity >= threshold
         match_diagnostics = MatchDiagnostics(
             threshold=threshold,
             compared_frame_count=len(similarities),
             frame_similarities=[round(item, 6) for item in similarities],
+            aggregation="minimum_start_end" if active else "median",
         )
         return VerificationResponse(
             decision=VerificationDecision.VERIFIED if matched else VerificationDecision.NOT_VERIFIED,

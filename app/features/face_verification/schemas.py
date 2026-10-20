@@ -14,6 +14,23 @@ class VerificationDecision(StrEnum):
 
 class Challenge(StrEnum):
     LOOK_STRAIGHT = "LOOK_STRAIGHT"
+    TURN_LEFT = "TURN_LEFT"
+    TURN_RIGHT = "TURN_RIGHT"
+    LOOK_UP = "LOOK_UP"
+    LOOK_DOWN = "LOOK_DOWN"
+    HAND_FIST = "HAND_FIST"
+    HAND_ONE = "HAND_ONE"
+    HAND_TWO = "HAND_TWO"
+    HAND_THREE = "HAND_THREE"
+    HAND_FOUR = "HAND_FOUR"
+    HAND_OPEN_PALM = "HAND_OPEN_PALM"
+    HAND_THUMBS_UP = "HAND_THUMBS_UP"
+    HAND_L_SHAPE = "HAND_L_SHAPE"
+    HAND_LOVE_YOU = "HAND_LOVE_YOU"
+    HAND_CALL_ME = "HAND_CALL_ME"
+    HAND_UP = "HAND_UP"
+    HAND_DOWN = "HAND_DOWN"
+    HAND_SIDEWAYS = "HAND_SIDEWAYS"
 
 
 class ReasonCode(StrEnum):
@@ -21,12 +38,18 @@ class ReasonCode(StrEnum):
     LIVENESS_FAILED = "LIVENESS_FAILED"
     FACE_MISMATCH = "FACE_MISMATCH"
     FACE_COMPARISON_FAILED = "FACE_COMPARISON_FAILED"
+    FACE_NOT_CENTERED = "FACE_NOT_CENTERED"
+    HAND_NOT_DETECTED = "HAND_NOT_DETECTED"
+    HAND_GESTURE_MISMATCH = "HAND_GESTURE_MISMATCH"
+    HEAD_MOVEMENT_NOT_COMPLETED = "HEAD_MOVEMENT_NOT_COMPLETED"
 
 
 class VerificationChallengeResponse(BaseModel):
     challenge_token: str
     challenges: list[Challenge]
     expires_at: datetime
+    challenge_plan: list[list[Challenge]] | None = None
+    protocol_version: int = 1
 
 
 class FrameStatus(StrEnum):
@@ -72,6 +95,12 @@ class LivenessResult(BaseModel):
     max_abs_pitch_deg: float = 25.0
     max_abs_roll_deg: float = 40.0
     frame_diagnostics: list[FrameDiagnostic] = Field(default_factory=list)
+    reason_codes: list[ReasonCode] = Field(default_factory=list)
+    hand_frames: int = 0
+    matched_hand_frames: int = 0
+    expected_hand_direction: str | None = None
+    head_peak_delta_deg: float | None = None
+    head_returned: bool | None = None
 
 
 class MatchDiagnostics(BaseModel):
