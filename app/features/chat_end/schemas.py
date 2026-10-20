@@ -10,10 +10,11 @@ recent_messages 는 프롬프트에만 쓰고 저장하지 않는다.
 
 from __future__ import annotations
 
+import re
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, StringConstraints
 
 MAX_MESSAGE_LEN = 1000  # practice MAX_MESSAGE_LEN 과 같다
 MAX_RECENT_MESSAGES = 20
@@ -24,6 +25,21 @@ MAX_REASON_LEN = 255
 MAX_AI_TURNS = 3  # 종료 위임에서 AI 가 답장하는 최대 횟수. 마지막 턴은 채팅을 닫는다
 
 UserId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=64)]
+
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+# 백엔드가 호출마다 새로 만드는 멱등 키. 표준 UUID(8-4-4-4-12)만 받고 소문자로 맞춘다
+def _normalize_uuid(v: object) -> str:
+    if not isinstance(v, str):
+        raise ValueError("request_id must be a string UUID")
+    s = v.strip()
+    if not _UUID_RE.match(s):
+        raise ValueError("request_id must be standard 8-4-4-4-12 UUID format")
+    return s.lower()
+
+
+RequestId = Annotated[str, BeforeValidator(_normalize_uuid)]
 
 
 class EndType(StrEnum):
@@ -67,6 +83,7 @@ class ChatEndDraftsRequest(_Request):
         json_schema_extra={
             "examples": [
                 {
+                    "request_id": "550e8400-e29b-41d4-a716-446655440000",
                     "room_id": 5001,
                     "delegation_id": 7001,
                     "requester_user_id": "user-1001",
@@ -80,6 +97,7 @@ class ChatEndDraftsRequest(_Request):
         },
     )
 
+    request_id: RequestId  # 같은 값으로 다시 오면 저장된 초안을 그대로 돌려준다
     room_id: int = Field(ge=1)
     delegation_id: int = Field(ge=1)
     requester_user_id: UserId
@@ -116,6 +134,7 @@ class ChatEndMessageRequest(_Request):
         json_schema_extra={
             "examples": [
                 {
+                    "request_id": "550e8400-e29b-41d4-a716-446655440001",
                     "room_id": 5001,
                     "delegation_id": 7001,
                     "user_id": "user-1001",
@@ -130,6 +149,7 @@ class ChatEndMessageRequest(_Request):
         },
     )
 
+    request_id: RequestId  # 같은 값으로 다시 오면 저장된 SUCCESS 응답을 그대로 돌려준다 (FAILED 는 다시 생성)
     room_id: int = Field(ge=1)
     delegation_id: int = Field(ge=1)
     user_id: UserId
@@ -138,13 +158,13 @@ class ChatEndMessageRequest(_Request):
     recent_messages: list[RecentMessage] = Field(min_length=1, max_length=MAX_RECENT_MESSAGES)
 
 
-# POST /messages 응답. 실패해도 200 — status=FAILED, ai_response 는 확정 스크립트의 N번째 문장
+# POST /messages 응답. 실패해도 200 — status=FAILED, ai_response 는 빈 문자열 (폴백 문장을 내리지 않는다)
 # ai_turn_count: 이번 답장이 몇 번째인지(1~MAX_AI_TURNS). FAILED 는 턴을 쓰지 않아 재시도하면 같은 번호
 # is_final: 성공한 마지막 턴이라 채팅을 종료해야 한다. end_turns: 성공이면 ai_turn_count, 실패면 0
 class ChatEndMessageResponse(BaseModel):
     room_id: int
     message_id: int
-    ai_response: str = Field(min_length=1)
+    ai_response: str  # SUCCESS 면 보낼 문장, FAILED 면 ''
     status: ChatEndStatus
     ai_turn_count: int = Field(ge=1, le=MAX_AI_TURNS)
     is_final: bool

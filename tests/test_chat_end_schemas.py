@@ -6,6 +6,8 @@ from app.features.chat_end.schemas import (
     ChatEndDraftsRequest,
     ChatEndDraftsResponse,
     ChatEndMessageRequest,
+    ChatEndMessageResponse,
+    ChatEndStatus,
     DraftStatus,
     EndType,
     ScriptTurn,
@@ -21,8 +23,12 @@ def _recent(n: int = 2) -> list[dict]:
     return [pair[i % 2] for i in range(n)]
 
 
+REQUEST_ID = "550e8400-e29b-41d4-a716-446655440000"
+
+
 def _drafts_body(**over) -> dict:
     body = {
+        "request_id": REQUEST_ID,
         "room_id": 5001,
         "delegation_id": 7001,
         "requester_user_id": "user-1",
@@ -35,6 +41,7 @@ def _drafts_body(**over) -> dict:
 
 def _message_body(**over) -> dict:
     body = {
+        "request_id": REQUEST_ID,
         "room_id": 5001,
         "delegation_id": 7001,
         "user_id": "user-1",
@@ -50,6 +57,40 @@ def test_drafts_request_parses_valid_body():
     req = ChatEndDraftsRequest.model_validate(_drafts_body())
     assert req.end_type is EndType.GENTLE
     assert req.recent_messages[0].speaker is Speaker.REQUESTER
+
+
+@pytest.mark.parametrize("model,body", [(ChatEndDraftsRequest, _drafts_body), (ChatEndMessageRequest, _message_body)])
+def test_request_id_is_normalized_to_lowercase(model, body):
+    req = model.model_validate(body(request_id=" 550E8400-E29B-41D4-A716-446655440000 "))
+    assert req.request_id == REQUEST_ID
+
+
+@pytest.mark.parametrize("bad", [None, "", "not-a-uuid", "550e8400e29b41d4a716446655440000", 123])
+@pytest.mark.parametrize("model,body", [(ChatEndDraftsRequest, _drafts_body), (ChatEndMessageRequest, _message_body)])
+def test_request_id_must_be_a_standard_uuid(model, body, bad):
+    with pytest.raises(ValidationError):
+        model.model_validate(body(request_id=bad))
+
+
+@pytest.mark.parametrize("model,body", [(ChatEndDraftsRequest, _drafts_body), (ChatEndMessageRequest, _message_body)])
+def test_request_id_is_required(model, body):
+    data = body()
+    del data["request_id"]
+    with pytest.raises(ValidationError):
+        model.model_validate(data)
+
+
+def test_failed_message_response_allows_empty_ai_response():
+    res = ChatEndMessageResponse(
+        room_id=5001,
+        message_id=1,
+        ai_response="",
+        status=ChatEndStatus.FAILED,
+        ai_turn_count=1,
+        is_final=False,
+        end_turns=0,
+    )
+    assert res.ai_response == ""
 
 
 def test_message_request_strips_whitespace():
