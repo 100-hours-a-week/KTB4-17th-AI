@@ -17,7 +17,7 @@ RUN uv sync --locked --no-dev --no-install-project
 
 # 얼굴 검출·비교·합성 판별 모델. 코드보다 덜 바뀌므로 앞 레이어에 두고 SHA-256 으로 검증한다
 COPY ./scripts/download_models.py ./scripts/download_models.py
-RUN python scripts/download_models.py /code/models
+RUN python scripts/download_models.py /code/models --demo
 
 COPY ./app ./app
 COPY ./alembic ./alembic

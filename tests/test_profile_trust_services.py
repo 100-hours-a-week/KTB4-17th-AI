@@ -51,7 +51,7 @@ class FakeSigner:
             expires_at=datetime(2026, 10, 1, tzinfo=UTC),
         )
 
-    def verify(self, token):
+    def verify(self, token, attempt_no=1):
         assert token == "token"
         return [Challenge.LOOK_STRAIGHT]
 

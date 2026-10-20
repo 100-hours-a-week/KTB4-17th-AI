@@ -28,12 +28,16 @@ dependencies = [
     "python-multipart==0.0.32",
     "pgvector>=0.3.6",
     "tokenizers>=0.21.0",
+    "mediapipe==0.10.32",
 ]
 
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
     "ruff>=0.16.7",
+]
+vision-demo = [
+    "mediapipe==0.10.32",
 ]
 [tool.pytest.ini_options]
 pythonpath = ["."]

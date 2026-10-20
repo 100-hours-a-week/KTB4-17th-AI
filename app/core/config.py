@@ -149,6 +149,18 @@ class Settings(BaseSettings):
         default=Path("models/face_recognition_sface_2021dec.onnx"),
         validation_alias="SFACE_MODEL_PATH",
     )
+    face_landmarker_model_path: Path = Field(
+        default=Path("models/face_landmarker.task"),
+        validation_alias="FACE_LANDMARKER_MODEL_PATH",
+    )
+    palm_model_path: Path = Field(
+        default=Path("models/palm_detection_mediapipe_2023feb.onnx"),
+        validation_alias="PALM_MODEL_PATH",
+    )
+    handpose_model_path: Path = Field(
+        default=Path("models/handpose_estimation_mediapipe_2023feb.onnx"),
+        validation_alias="HANDPOSE_MODEL_PATH",
+    )
     synthetic_model_path: Path = Field(
         default=Path("models/community_forensics_vit_int8.onnx"),
         validation_alias="SYNTHETIC_MODEL_PATH",
@@ -205,6 +217,7 @@ class Settings(BaseSettings):
         validation_alias="LIVENESS_TOKEN_SECRET",
     )
     liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
+    active_liveness_enabled: bool = Field(default=True, validation_alias="ACTIVE_LIVENESS_ENABLED")
 
     # ── v2 사용자 페르소나 메모리 RAG 설정 ──────────────────────────
     embedding_model_name: str = Field(
