@@ -17,8 +17,9 @@ from tests.test_hand_gesture import make_hand
 from tests.test_live_face import centered_face
 
 
-def test_signed_plan_is_unique_per_session_and_selects_each_attempt():
-    signer = ChallengeSigner(Settings(liveness_token_secret="test-secret-" * 4, active_liveness_enabled=True))
+def test_signed_plan_is_unique_per_session_and_selects_each_attempt(monkeypatch):
+    monkeypatch.delenv("ACTIVE_LIVENESS_ENABLED", raising=False)
+    signer = ChallengeSigner(Settings(_env_file=None, liveness_token_secret="test-secret-" * 4))
     first, second = signer.create(), signer.create()
     assert first.protocol_version == 2 and len(first.challenge_plan) == 3
     assert first.challenge_token != second.challenge_token
@@ -41,6 +42,17 @@ def test_legacy_switch_issues_only_expiring_fixed_pose_challenges():
     issued = signer.create()
     assert issued.protocol_version == 1 and issued.challenge_plan is None
     assert signer.verify(issued.challenge_token, 3) == [Challenge.LOOK_STRAIGHT]
+
+
+def test_switching_issuance_preserves_existing_tokens_in_both_directions(monkeypatch):
+    monkeypatch.delenv("ACTIVE_LIVENESS_ENABLED", raising=False)
+    active = ChallengeSigner(Settings(_env_file=None, liveness_token_secret="s" * 32))
+    legacy = ChallengeSigner(Settings(_env_file=None, liveness_token_secret="s" * 32, active_liveness_enabled=False))
+    old, new = legacy.create(), active.create()
+    assert old.protocol_version == 1 and new.protocol_version == 2
+    for attempt in range(1, 4):
+        assert active.verify(old.challenge_token, attempt) == [Challenge.LOOK_STRAIGHT]
+        assert legacy.verify(new.challenge_token, attempt) == new.challenges
 
 
 def evaluate(

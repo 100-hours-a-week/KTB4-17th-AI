@@ -1,6 +1,8 @@
 # 능동형 얼굴 인증 연동 및 배포
 
-AI `feat/lena-hand-gesture-liveness`와 FE `feat/lena-active-face-verification`의 변경을 연동한다. BE 변경은 이 PR 범위에 포함하지 않으며, 별도 BE 연동이 완료되어야 신규 인증을 활성화할 수 있다. 이 문서는 배포 절차이며 현재 환경을 배포했다는 의미가 아니다.
+신규 인증은 기본적으로 고개·손 챌린지(v2)를 발급한다. AI·FE의 촬영·검증 구현과 BE의 계획 저장·시도 번호 중계 계약을 함께 사용한다. BE 변경은 이 PR 범위에 포함하지 않는다. 이 문서는 배포 절차이며 현재 환경을 배포했다는 의미가 아니다.
+
+`ACTIVE_LIVENESS_ENABLED`의 기본값은 `true`다. 배포 환경에 명시한 값이 우선하므로, 이전 `.env`에 `false`가 남아 있으면 새 이미지를 올려도 정면 챌린지만 발급한다. BE/FE v2가 아직 배포되지 않은 환경은 명시적으로 `false`를 유지한다.
 
 ## 사용자 흐름
 
@@ -11,10 +13,11 @@ AI `feat/lena-hand-gesture-liveness`와 FE `feat/lena-active-face-verification`�
 ## 배포 순서
 
 1. AI를 `ACTIVE_LIVENESS_ENABLED=false`로 배포해 기존 정면 챌린지를 유지한다. 새 AI 이미지는 MediaPipe 패키지와 Face Landmarker·손 ONNX 모델을 포함한다.
-2. BE 담당자가 챌린지 계획을 저장할 nullable JSON 필드의 마이그레이션과 아래 연동 계약을 반영한 뒤 BE를 배포한다. 이전 세션의 null 계획은 만료까지 기존 정면 안내로 처리한다.
+2. BE 담당자가 챌린지 계획 저장 마이그레이션 `V20__store_face_verification_challenge_plan.sql`과 아래 연동 계약이 포함된 BE를 배포한다. 최신 BE `dev`에는 해당 계약이 반영돼 있다. 이전 세션의 null 계획은 만료까지 기존 정면 안내로 처리한다.
 3. FE를 배포한다. `npm ci && npm run build`는 고정 SDK의 WASM과 SHA-256 검증한 모델을 `dist/vision`에 포함한다. 해당 경로를 정적 서버에서 제공해야 한다. 런타임에 외부 CDN을 호출하지 않는다.
-4. 세 서비스 연동을 확인한 뒤 AI의 `ACTIVE_LIVENESS_ENABLED=true`로 신규 계획 발급을 활성화한다. 기존 토큰도 만료까지 검증한다.
-5. 실기기에서 UP/DOWN 각 손 모양, 고개 네 방향, 준비 중 취소, 촬영 중 탭 이탈, 재시도·재조회, 얼굴 가림·잘못된 포즈 실패를 확인한다.
+4. 세 서비스 연동을 확인한 뒤 AI의 `ACTIVE_LIVENESS_ENABLED=true`로 신규 계획 발급을 활성화하고 AI 프로세스/컨테이너를 재생성한다. Docker Compose 환경은 배포 `.env`와 AI 서비스에 주입되는 변수를 갱신한 뒤 `docker compose up -d --no-deps --force-recreate ai`를 실행한다. 설정과 모델 서비스는 프로세스 안에 캐시되므로 파일만 바꿔서는 반영되지 않는다. 기존 토큰도 만료까지 검증한다.
+5. 내부 API 키를 사용해 `POST /ai/api/v1/profile-trust/verifications/challenges` 응답의 `protocol_version=2`, 동일한 네 코드의 `challenge_plan` 3개를 확인한다. 기존 세션은 계획이 바뀌지 않으므로 새 인증 세션으로 확인한다.
+6. 실기기에서 UP/DOWN/SIDEWAYS 각 손 모양, 고개 네 방향, 준비 중 취소, 촬영 중 탭 이탈, 재시도·재조회, 얼굴 가림·잘못된 포즈 실패를 확인한다.
 
 롤백 시 먼저 AI의 신규 발급을 false로 바꾸고 기존 v2 세션 만료(최대 5분)를 기다린다. BE/FE의 이전 버전으로 즉시 되돌리면 활성 v2 세션을 올바르게 안내할 수 없다.
 
