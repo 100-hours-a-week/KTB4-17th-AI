@@ -18,7 +18,7 @@ from tests.test_live_face import centered_face
 
 
 def test_signed_plan_is_unique_per_session_and_selects_each_attempt():
-    signer = ChallengeSigner(Settings(liveness_token_secret="test-secret-" * 4))
+    signer = ChallengeSigner(Settings(liveness_token_secret="test-secret-" * 4, active_liveness_enabled=True))
     first, second = signer.create(), signer.create()
     assert first.protocol_version == 2 and len(first.challenge_plan) == 3
     assert first.challenge_token != second.challenge_token
@@ -31,7 +31,7 @@ def test_signed_plan_is_unique_per_session_and_selects_each_attempt():
 
 @pytest.mark.parametrize("attempt", [0, -1, 4, 5, True, 1.2, "1"])
 def test_signed_plan_rejects_invalid_attempt_number(attempt):
-    signer = ChallengeSigner(Settings(liveness_token_secret="s" * 32))
+    signer = ChallengeSigner(Settings(liveness_token_secret="s" * 32, active_liveness_enabled=True))
     with pytest.raises(InvalidChallenge):
         signer.verify(signer.create().challenge_token, attempt)
 
