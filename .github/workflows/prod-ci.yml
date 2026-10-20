@@ -47,5 +47,6 @@ jobs:
         run: uv run pytest tests/test_*_api.py
 
 
+      #uv sync 가 레포 안에 만드는 .venv 는 제외 (서드파티 패키지 테스트 파일까지 컴파일하다 실패함)
       - name: Build
-        run: uv run python -m compileall -q .
+        run: uv run python -m compileall -q -x '/\.venv/' .
