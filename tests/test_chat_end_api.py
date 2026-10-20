@@ -1,4 +1,5 @@
 import json
+import uuid
 
 import pytest
 from fastapi import FastAPI
@@ -20,7 +21,6 @@ from app.features.chat_end.service import (
     DraftLocked,
     DraftNotFound,
     EndTypeMismatch,
-    MessageGenerationFailed,
     NoConfirmedDraft,
 )
 
@@ -28,7 +28,7 @@ RECENT = [{"speaker": "REQUESTER", "content": "요즘 바쁘신가 봐요."}]
 DRAFT_ID = "a" * 32
 
 
-def _client(*, raises: Exception | None = None):
+def _client(*, raises: Exception | None = None, failed: bool = False):
     calls = []
 
     class FakeService:
@@ -51,6 +51,16 @@ def _client(*, raises: Exception | None = None):
             calls.append(("message", req.user_id))
             if raises:
                 raise raises
+            if failed:
+                return ChatEndMessageResponse(
+                    room_id=req.room_id,
+                    message_id=1,
+                    ai_response="",
+                    status=ChatEndStatus.FAILED,
+                    ai_turn_count=1,
+                    is_final=False,
+                    end_turns=0,
+                )
             return ChatEndMessageResponse(
                 room_id=req.room_id,
                 message_id=1,
@@ -75,6 +85,7 @@ def _client(*, raises: Exception | None = None):
 
 def _drafts_body():
     return {
+        "request_id": str(uuid.uuid4()),
         "room_id": 5001,
         "delegation_id": 7001,
         "requester_user_id": "user-1",
@@ -85,6 +96,7 @@ def _drafts_body():
 
 def _message_body():
     return {
+        "request_id": str(uuid.uuid4()),
         "room_id": 5001,
         "delegation_id": 7001,
         "user_id": "user-1",
@@ -134,7 +146,7 @@ def test_openapi_documents_error_responses():
     confirm = paths["/v1/chat_end/drafts/{draft_id}/confirm"]["post"]["responses"]
     messages = paths["/v1/chat_end/messages"]["post"]["responses"]
     assert "404" in confirm and "409" in confirm
-    assert "409" in messages and "503" in messages
+    assert "409" in messages and "503" not in messages  # 생성 실패는 200 + status=FAILED
 
 
 def test_confirm_unknown_draft_is_404_without_commit():
@@ -168,12 +180,22 @@ def test_messages_returns_200_and_commits():
     assert calls == [("message", "user-1"), ("commit",)]
 
 
-def test_messages_generation_failure_is_503_without_fallback_text_but_commits_the_failed_row():
-    client, calls = _client(raises=MessageGenerationFailed(1))
+def test_messages_generation_failure_is_200_failed_with_empty_text_and_commits():
+    client, calls = _client(failed=True)
     res = client.post("/v1/chat_end/messages", json=_message_body())
-    assert res.status_code == 503
-    assert set(res.json()) == {"detail"}  # 폴백 문장·status 필드를 본문에 싣지 않는다
+    assert res.status_code == 200
+    assert (res.json()["status"], res.json()["ai_response"], res.json()["end_turns"]) == ("FAILED", "", 0)
     assert calls == [("message", "user-1"), ("commit",)]
+
+
+@pytest.mark.parametrize("path,body", [("/v1/chat_end/drafts", _drafts_body), ("/v1/chat_end/messages", _message_body)])
+def test_missing_or_malformed_request_id_is_422_without_calling_service(path, body):
+    client, calls = _client()
+    data = body()
+    del data["request_id"]
+    assert client.post(path, json=data).status_code == 422
+    assert client.post(path, json={**data, "request_id": "abc"}).status_code == 422
+    assert calls == []
 
 
 def test_messages_without_confirmed_draft_is_409_without_commit():
@@ -241,8 +263,13 @@ def test_golden_path_drafts_confirm_then_three_messages_through_http(monkeypatch
         assert client.post("/v1/chat_end/messages", json=msg).status_code == 409
         assert client.post(f"/v1/chat_end/drafts/{draft_id}/confirm").status_code == 200
         assert client.post("/v1/chat_end/messages", json={**msg, "end_type": "DIRECT"}).status_code == 409
-        turns = [client.post("/v1/chat_end/messages", json=msg).json() for _ in range(3)]
+        bodies = [_message_body() for _ in range(3)]  # 호출마다 새 request_id
+        turns = [client.post("/v1/chat_end/messages", json=body).json() for body in bodies]
+        # 1턴 응답을 잃은 백엔드가 같은 request_id 로 다시 보낸다 — LLM 을 다시 부르지 않고 같은 응답
+        replay = client.post("/v1/chat_end/messages", json=bodies[0])
     assert [(t["ai_turn_count"], t["is_final"]) for t in turns] == [(1, False), (2, False), (3, True)]
+    assert replay.status_code == 200 and replay.json() == turns[0]
+    assert replies == []
 
 
 def test_messages_rejects_the_removed_ending_messages_field():

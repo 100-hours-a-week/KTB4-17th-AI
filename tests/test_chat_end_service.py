@@ -1,5 +1,6 @@
 import asyncio
 import json
+import uuid
 
 import pytest
 from conftest import with_db
@@ -21,7 +22,6 @@ from app.features.chat_end.service import (
     DraftLocked,
     DraftNotFound,
     EndTypeMismatch,
-    MessageGenerationFailed,
     NoConfirmedDraft,
 )
 
@@ -57,8 +57,9 @@ def _fake_call(monkeypatch, replies):
     return calls
 
 
-def _drafts_req(end_type="GENTLE", delegation_id=7001):
+def _drafts_req(end_type="GENTLE", delegation_id=7001, request_id=None):
     return ChatEndDraftsRequest(
+        request_id=request_id or str(uuid.uuid4()),
         room_id=5001,
         delegation_id=delegation_id,
         requester_user_id="user-1",
@@ -67,8 +68,9 @@ def _drafts_req(end_type="GENTLE", delegation_id=7001):
     )
 
 
-def _message_req(delegation_id=7001, end_type="GENTLE"):
+def _message_req(delegation_id=7001, end_type="GENTLE", request_id=None):
     return ChatEndMessageRequest(
+        request_id=request_id or str(uuid.uuid4()),
         room_id=5001,
         delegation_id=delegation_id,
         user_id="user-1",
@@ -288,18 +290,25 @@ def test_turns_progress_and_use_the_matching_script_sentence(monkeypatch):
     assert "첫 번째 답장" in prompts[0] and "두 번째 답장" in prompts[1] and "이 채팅을 여기서 종료" in prompts[2]
 
 
-def test_failed_message_raises_and_does_not_use_up_a_turn(monkeypatch):
+def test_failed_message_returns_failed_with_empty_text_and_does_not_use_up_a_turn(monkeypatch):
     _fake_call(monkeypatch, [LLMError("timeout"), _ok("여기서 마무리할게요. 고마웠어요.")])
 
     async def scenario(svc):
         await _seed(svc)
-        with pytest.raises(MessageGenerationFailed) as exc:
-            await svc.create_message(_message_req())
+        failed = await svc.create_message(_message_req())
         retried = await svc.create_message(_message_req())
-        return exc.value, retried
+        return failed, retried
 
     (failed, retried), _, messages, _ = _run(scenario)
-    assert failed.ai_turn == 1  # 폴백 문장은 응답으로 내리지 않고 예외로 알린다
+    # 폴백 문장은 응답으로 내리지 않는다
+    assert (failed.status, failed.ai_response, failed.ai_turn_count, failed.end_turns, failed.is_final) == (
+        ChatEndStatus.FAILED,
+        "",
+        1,
+        0,
+        False,
+    )
+    assert failed.message_id == messages[0].id
     assert (retried.status, retried.ai_turn_count) == (ChatEndStatus.SUCCESS, 1)
     assert (messages[0].status, messages[0].source, messages[0].end_turns, messages[0].ai_response) == (
         "FAILED",
@@ -307,9 +316,10 @@ def test_failed_message_raises_and_does_not_use_up_a_turn(monkeypatch):
         0,
         "",
     )
+    assert (messages[0].request_id, messages[0].ai_turn_count) == (None, 1)  # FAILED 는 request_id 를 남기지 않는다
 
 
-def test_failed_third_turn_raises_and_is_not_final(monkeypatch):
+def test_failed_third_turn_is_not_final(monkeypatch):
     replies = [
         _ok("여기서 마무리할게요. 고마웠어요."),
         _ok("제 마음은 그대로예요. 여기서 마무리할게요."),
@@ -321,12 +331,15 @@ def test_failed_third_turn_raises_and_is_not_final(monkeypatch):
         await _seed(svc)
         await svc.create_message(_message_req())
         await svc.create_message(_message_req())
-        with pytest.raises(MessageGenerationFailed) as exc:
-            await svc.create_message(_message_req())
-        return exc.value
+        return await svc.create_message(_message_req())
 
     failed, _, messages, _ = _run(scenario)
-    assert failed.ai_turn == 3
+    assert (failed.status, failed.ai_turn_count, failed.is_final, failed.end_turns) == (
+        ChatEndStatus.FAILED,
+        3,
+        False,
+        0,
+    )
     assert [m.status for m in messages] == ["SUCCESS", "SUCCESS", "FAILED"]
 
 
@@ -344,18 +357,16 @@ def test_turns_are_counted_per_delegation(monkeypatch):
     assert (first.ai_turn_count, second.ai_turn_count) == (1, 1)
 
 
-def test_create_message_guardrail_block_raises_without_any_fallback_text(monkeypatch):
+def test_create_message_guardrail_block_fails_without_any_fallback_text(monkeypatch):
     monkeypatch.setenv("GUARDRAIL_MODE", "enforce")
     _fake_call(monkeypatch, [_ok("[CORRECTION NOTICE] 안녕히", "x")])
 
     async def scenario(svc):
         await _seed(svc)
-        with pytest.raises(MessageGenerationFailed):
-            await svc.create_message(_message_req())
-        return "raised"
+        return await svc.create_message(_message_req())
 
     res, _, messages, traces = _run(scenario)
-    assert res == "raised"
+    assert (res.status, res.ai_response) == (ChatEndStatus.FAILED, "")
     assert [(m.status, m.ai_response) for m in messages] == [("FAILED", "")]  # 어떤 폴백 문장도 저장·응답하지 않는다
     assert any(t.feature == "chat_end" and t.operation == "message" for t in traces)
 
@@ -402,7 +413,13 @@ def test_guardrail_trace_keeps_text_before_regeneration(monkeypatch):
 
 def _spy(svc, order):
     """svc.repo 의 메서드를 감싸 호출 순서를 order 에 모은다."""
-    for name in ("lock_delegation", "get_draft", "get_confirmed_draft", "count_successful_messages"):
+    for name in (
+        "lock_delegation",
+        "get_draft",
+        "get_confirmed_draft",
+        "count_successful_messages",
+        "get_message_by_request_id",
+    ):
         original = getattr(svc.repo, name)
 
         def make(name=name, original=original):
@@ -425,7 +442,12 @@ def test_create_message_locks_the_delegation_before_reading_anything(monkeypatch
         return await svc.create_message(_message_req())
 
     _run(scenario)
-    assert order == ["lock_delegation", "get_confirmed_draft", "count_successful_messages"]
+    assert order == [
+        "lock_delegation",
+        "get_message_by_request_id",  # 같은 request_id 재호출 확인도 잠금 뒤에 한다
+        "get_confirmed_draft",
+        "count_successful_messages",
+    ]
 
 
 def test_confirm_draft_locks_before_counting_messages():
@@ -459,8 +481,7 @@ def test_failed_only_does_not_lock_the_script(monkeypatch):
     async def scenario(svc):
         await _seed(svc, confirmed=True)
         other = await _seed(svc, confirmed=False)
-        with pytest.raises(MessageGenerationFailed):
-            await svc.create_message(_message_req())
+        assert (await svc.create_message(_message_req())).status is ChatEndStatus.FAILED
         return await svc.confirm_draft(other.id), other.id
 
     (confirmed, other_id), drafts, messages, _ = _run(scenario)
@@ -544,3 +565,153 @@ def test_create_message_with_matching_direct_end_type_works(monkeypatch):
     res, _, messages, _ = _run(scenario)
     assert res.status is ChatEndStatus.SUCCESS
     assert len(calls) == 1 and messages[0].end_type == "DIRECT"
+
+
+# ---------------------------------------------------------------- request_id (멱등 재호출)
+
+RID = "550e8400-e29b-41d4-a716-446655440000"
+
+
+def test_create_drafts_with_same_request_id_returns_saved_draft_without_calling_llm(monkeypatch):
+    calls = _fake_call(monkeypatch, [json.dumps({"turns": SCRIPT}, ensure_ascii=False)])
+
+    async def scenario(svc):
+        first = await svc.create_drafts(_drafts_req(request_id=RID))
+        again = await svc.create_drafts(_drafts_req(request_id=RID.upper()))  # 대소문자만 다른 같은 키
+        return first, again
+
+    (first, again), drafts, _, _ = _run(scenario)
+    assert again == first
+    assert len(calls) == 1 and len(drafts) == 1
+    assert drafts[0].request_id == RID
+
+
+def test_create_drafts_same_request_id_with_other_payload_returns_saved_draft(monkeypatch):
+    calls = _fake_call(monkeypatch, [json.dumps({"turns": SCRIPT}, ensure_ascii=False)])
+
+    async def scenario(svc):
+        first = await svc.create_drafts(_drafts_req(request_id=RID))
+        other = await svc.create_drafts(_drafts_req("DIRECT", delegation_id=9999, request_id=RID))
+        return first, other
+
+    (first, other), drafts, _, _ = _run(scenario)
+    assert other == first and len(calls) == 1 and len(drafts) == 1
+
+
+def test_create_message_with_same_request_id_returns_saved_success_without_new_turn(monkeypatch):
+    calls = _fake_call(
+        monkeypatch, [_ok("여기서 마무리할게요. 고마웠어요."), _ok("제 마음은 그대로예요. 여기서 마무리할게요.")]
+    )
+
+    async def scenario(svc):
+        await _seed(svc)
+        first = await svc.create_message(_message_req(request_id=RID))
+        replay = await svc.create_message(_message_req(request_id=RID))
+        second = await svc.create_message(_message_req())
+        return first, replay, second
+
+    (first, replay, second), _, messages, _ = _run(scenario)
+    assert replay == first  # 1턴 응답을 잃고 다시 보내도 2턴으로 넘어가지 않는다
+    assert (first.ai_turn_count, second.ai_turn_count) == (1, 2)
+    assert len(calls) == 2 and len(messages) == 2
+    assert (messages[0].request_id, messages[0].ai_turn_count) == (RID, 1)
+
+
+def test_create_message_replay_of_final_turn_keeps_is_final(monkeypatch):
+    _fake_call(
+        monkeypatch,
+        [
+            _ok("여기서 마무리할게요. 고마웠어요."),
+            _ok("제 마음은 그대로예요. 여기서 마무리할게요."),
+            _final("그동안 고마웠어요."),
+        ],
+    )
+
+    async def scenario(svc):
+        await _seed(svc)
+        await svc.create_message(_message_req())
+        await svc.create_message(_message_req())
+        final = await svc.create_message(_message_req(request_id=RID))
+        return final, await svc.create_message(_message_req(request_id=RID))
+
+    (final, replay), _, messages, _ = _run(scenario)
+    assert final.is_final and replay == final
+    assert len(messages) == 3
+
+
+def test_failed_message_retried_with_same_request_id_generates_again(monkeypatch):
+    calls = _fake_call(monkeypatch, [LLMError("timeout"), _ok("여기서 마무리할게요. 고마웠어요.")])
+
+    async def scenario(svc):
+        await _seed(svc)
+        failed = await svc.create_message(_message_req(request_id=RID))
+        retried = await svc.create_message(_message_req(request_id=RID))
+        return failed, retried
+
+    (failed, retried), _, messages, _ = _run(scenario)
+    assert failed.status is ChatEndStatus.FAILED
+    assert (retried.status, retried.ai_turn_count) == (ChatEndStatus.SUCCESS, 1)
+    assert len(calls) == 2
+    assert [(m.status, m.request_id) for m in messages] == [("FAILED", None), ("SUCCESS", RID)]
+
+
+def test_create_message_same_request_id_with_other_payload_returns_saved_response(monkeypatch):
+    calls = _fake_call(monkeypatch, [_ok("여기서 마무리할게요. 고마웠어요.")])
+
+    async def scenario(svc):
+        await _seed(svc, delegation_id=7001)
+        await _seed(svc, delegation_id=7002)
+        first = await svc.create_message(_message_req(7001, request_id=RID))
+        other = await svc.create_message(_message_req(7002, request_id=RID))
+        return first, other
+
+    (first, other), _, messages, _ = _run(scenario)
+    assert other == first and len(calls) == 1 and len(messages) == 1
+
+
+def _miss_first_lookup(svc, name):
+    """처음 한 번은 '없음'을 돌려 동시 재호출이 확인을 같이 통과한 상황을 만든다."""
+    original = getattr(svc.repo, name)
+    seen = []
+
+    async def wrapper(request_id):
+        seen.append(request_id)
+        return None if len(seen) == 1 else await original(request_id)
+
+    setattr(svc.repo, name, wrapper)
+
+
+def test_create_drafts_race_on_same_request_id_returns_the_row_saved_first(monkeypatch):
+    _fake_call(monkeypatch, [json.dumps({"turns": SCRIPT}, ensure_ascii=False)])
+
+    async def scenario(svc):
+        saved_first = await svc.repo.save_draft(
+            request_id=RID,
+            room_id=5001,
+            delegation_id=7001,
+            requester_user_id="user-1",
+            end_type="GENTLE",
+            turns=["먼저 저장된 1", "먼저 저장된 2", "먼저 저장된 3"],
+            source="llm",
+        )
+        _miss_first_lookup(svc, "get_draft_by_request_id")
+        return saved_first.id, await svc.create_drafts(_drafts_req(request_id=RID))
+
+    (first_id, res), drafts, _, _ = _run(scenario)
+    assert res.draft_id == first_id and len(drafts) == 1  # 나중 저장만 되돌리고 앞선 행은 남는다
+
+
+def test_create_message_race_on_same_request_id_returns_the_row_saved_first(monkeypatch):
+    _fake_call(
+        monkeypatch, [_ok("여기서 마무리할게요. 고마웠어요."), _ok("제 마음은 그대로예요. 여기서 마무리할게요.")]
+    )
+
+    async def scenario(svc):
+        await _seed(svc, delegation_id=7001)
+        await _seed(svc, delegation_id=7002)
+        first = await svc.create_message(_message_req(7001, request_id=RID))
+        _miss_first_lookup(svc, "get_message_by_request_id")
+        return first, await svc.create_message(_message_req(7002, request_id=RID))
+
+    (first, raced), _, messages, _ = _run(scenario)
+    assert raced == first and len(messages) == 1
