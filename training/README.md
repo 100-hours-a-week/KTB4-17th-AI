@@ -57,6 +57,12 @@ uv run python training/tagging/from_teacher.py data/teacher/run1/tagging.jsonl -
 uv run python training/tagging/build_sft.py data/tagging.jsonl --allow-unreviewed   # 검수 전에는 시험용으로만
 ```
 
+#### 교사 라벨링을 API 대신 Colab GPU 로
+
+`training/notebooks/teacher_labeling_colab.ipynb` — `Qwen/Qwen3.8-27B-FP8` 를 vLLM(0.30.0)으로 올리고 `label_with_teacher.py` 를
+그 서버로 돌린다(A100 40GB 이상). FP8 이라 API(BF16) 라벨과 조금 다를 수 있어 **골드셋 63건 점수를 먼저 비교**하고(API: primary F1 83.1),
+통과하면 전체를 라벨링해 `sft/` 까지 만든다. 추론 모드는 API 때처럼 끈다(`enable_thinking: false`).
+
 #### 시뮬레이터를 API 대신 프론티어 모델 채팅(구독)으로
 
 `scripts/manual_simulator.py` 가 같은 시드 프로필·주제 순서·답변 방식으로 **붙여넣기용 프롬프트**(세션 5개씩)를 만들고,

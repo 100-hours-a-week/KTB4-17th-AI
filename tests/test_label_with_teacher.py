@@ -149,3 +149,15 @@ def test_resume_skips_done_items_and_retries_failures(tmp_path):
     assert len([c for c in again.calls if c[0] == TAG_PROMPT]) == 2 * (len(tags) - 3)
     ids = [json.loads(x)["id"] for x in (out / "tagging.jsonl").read_text().splitlines()]
     assert sorted(ids) == sorted(t.id for t in tags)
+
+
+def test_self_hosted_teacher_turns_off_thinking_like_openrouter():
+    from scripts.label_with_teacher import TeacherClient
+
+    hosted = TeacherClient(
+        base_url="https://openrouter.ai/api/v1", api_key="k", model="m", reasoning=False, providers=None
+    )
+    vllm = TeacherClient(base_url="http://localhost:8000/v1", api_key="k", model="m", reasoning=False, providers=None)
+
+    assert hosted.extra_body["reasoning"]["enabled"] is False
+    assert vllm.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
