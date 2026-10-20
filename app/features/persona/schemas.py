@@ -157,6 +157,10 @@ class Topic:
     opener: str = ""
 
 
+# 하루의 자기소개는 사용자별 취미 추출 근거와 별개이며, 주제가 바뀌어도 같은 설정을 쓴다.
+HARU_PROFILE = "취미는 밤 산책입니다. 약속 없는 주말에는 집에서 쉬다가 가볍게 산책하는 편입니다."
+
+
 TOPICS: list[Topic] = [
     Topic(
         id="interests",
@@ -169,7 +173,7 @@ TOPICS: list[Topic] = [
     Topic(
         id="weekend",
         weight=Weight.LIGHT,
-        opener="저같은 경우는 약속 없는 주말이면 베이킹하는 걸 좋아해서 자주 빵을 만들어요.",
+        opener="저는 약속 없는 주말에는 집에서 쉬다가 가볍게 산책하는 편이에요.",
         covers=("routine", "date_prefer", "date_avoid"),
         intent="약속 없는 주말을 보내는 방식 + 하고 싶은 데이트 하나, 피하고 싶은 것 하나",
         seed="아무 약속 없는 주말은 보통 어떻게 보내세요?",

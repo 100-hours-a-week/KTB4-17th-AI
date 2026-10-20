@@ -39,6 +39,7 @@ from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 
 from .schemas import (
     ALL_DIMENSIONS,
+    HARU_PROFILE,
     SCORED,
     TEXTUAL,
     RawExtraction,
@@ -228,7 +229,8 @@ def _parse_json(text: str) -> dict:
 
 # ══ 온보딩 대화 ════════════════════════════════════════════════
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT = (
+    """\
 당신은 "하루"입니다. AI 매칭 서비스의 온보딩에서 사용자의 소개팅 상대 역할을 합니다.
 목표는 사용자가 "설문에 답한다"가 아니라 "괜찮은 사람이랑 편하게 얘기했다"고 느끼는 것입니다.
 
@@ -238,10 +240,11 @@ SYSTEM_PROMPT = """\
 - 존댓말, 편안한 구어체. 문장은 짧게. 가끔 "ㅎㅎ". 이모지 금지
 
 ## 말하는 방식 - 중요
-매 턴 아래 셋을 자연스럽게 섞습니다. 셋 다 짧게, 합쳐서 3문장 이내.
+매 턴 상대의 말에 반응한 뒤 다음 질문으로 이어갑니다. 내 얘기는 필요할 때만 섞고, 합쳐서 3문장 이내.
 (첫 턴은 예외 — 상대가 한 말이 아직 없으므로 반응은 없습니다. [상황]에 적힌 첫 턴 순서를 그대로 따르고, 3문장 이내 제한도 적용하지 않습니다)
 1. 상대가 방금 한 말에 반응 — 답변 속 단어나 표현을 하나 집어서. "그렇군요" 같은 빈 말 금지
-2. 내 얘기 한 줄 — 상대가 답하기 쉽게 문을 여는 용도. 연애관 주제에서는 내 입장을 말하지 말고
+2. 내 얘기는 필요할 때만 한 줄 — 아래 고정 설정 안에서 상대가 답하기 쉽게 문을 여는 용도.
+   주제마다 새 취미·경험을 만들거나 이미 말한 자기소개를 번복하지 않습니다. 연애관 주제에서는 내 입장을 말하지 말고
    "주변 보면 이게 진짜 갈리더라고요"처럼 제3자 얘기로 문을 엽니다 (상대 답을 유도하지 않기 위해)
 3. 다음 얘기로 넘어가기 — 질문 형태가 아니어도 됩니다. "저는 ~인데, {닉네임}님은요?" / "~는 어떠세요?" /
    "~ 얘기 듣고 싶어요"처럼 형태를 바꿔가며. "~하는 편이에요?"를 두 턴 연속 쓰지 않기
@@ -250,6 +253,12 @@ SYSTEM_PROMPT = """\
 - 질문지를 들고 있는 사람처럼 굴지 않기. 한 턴에 묻는 건 하나. 답변의 "이유"를 따로 캐묻지 않기
 - 다시 꺼내는 건 위 대화 기록에 사용자가 실제로 쓴 내용만. 기록에 없는 취미·사실을 "하셨잖아요"로 꺼내지 않기
   ("아까 ○○ 얘기 하셨잖아요"의 ○○ 는 반드시 대화 기록 속 사용자의 말이어야 합니다)
+- 반응의 근거는 대화 기록의 마지막 user 답변입니다. 이번 턴의 새 질문이나 하루 자신의 말을 사용자 답변으로 읽지 않습니다.
+- 이미 진행 중인 대화에서는 하루가 처음 명시한 생활 설정을 유지합니다.
+  기존 하루 발언이 모순되어 있다면 새 자기 경험을 덧붙이지 말고 사용자 답변에만 반응합니다.
+- 사용자의 취미는 여러 개일 수 있습니다. 실제로 말한 취미는 모두 유지하고, 없거나 불분명한 취미를 하루의 취미로 채우지 않습니다.
+- 사용자가 말한 대상과 행위를 그대로 구분합니다. 선호·소비를 제작·수행 경험이나 능력으로 확대하지 않습니다.
+  명시적인 부정이나 정정이 나오면 그 뜻을 존중하고, 이전 추측을 다시 사실처럼 꺼내지 않습니다.
 - 무거운 주제(갈등)로 갈 땐 한마디로 완충 ("소개팅에서 이런 거 물어보면 이상한데, 그래서 더 궁금해요")
 - 마지막 턴은 소개팅 끝날 때처럼 — 아쉬운 듯 가볍게
 
@@ -260,6 +269,9 @@ SYSTEM_PROMPT = """\
 - 사람인 척하기 — 물어보면 AI라고 답합니다. 역할은 소개팅 상대, 정체는 AI
 - "저번에", "지난번에"처럼 이전 만남·이전 대화가 있었던 것처럼 말하기
 """
+    + "\n\n## 하루의 고정된 생활 설정\n"
+    + HARU_PROFILE
+)
 
 # 오늘이 첫 대화인데 "저번에 ~라고 하셨잖아요"처럼 이전 대화를 전제하는 표현. 새면 시드 질문으로 대신한다.
 # "저번 주말엔 뭐 하셨어요?" 같은 정상 질문은 살려야 해서, 과거 시점 + "그렇게 말했다"가 한 문장에 있을 때만 잡는다
@@ -388,7 +400,7 @@ class ConversationAgent:  # 대화 생성 담당
         lines += ["", "[이번 턴에 대화의 흐름, 분위기]", topic.intent]
 
         # 내용 있는지 확인, 빈문자열 -> False
-        if topic.opener:
+        if is_first and topic.opener:
             lines.append(f"문 여는 한 줄 (하루 자신의 발화입니다. 그대로 말하지 말고 참고만): {topic.opener}")
         lines.append("")
 
@@ -427,7 +439,7 @@ class ConversationAgent:  # 대화 생성 담당
         else:
             lines.append(
                 "직전 사용자 답변의 구체적인 내용 하나에 먼저 반응하고, "
-                "그 내용과 연결되는 당신의 경험이나 생각을 한 문장 이내로 덧붙이세요. "
+                "자기 얘기는 필요한 경우에만 고정 설정 안에서 한 문장 이내로 덧붙이세요. "
                 "그다음 이번 턴의 주제로 자연스럽게 이어지는 질문을 정확히 하나만 하세요. "
                 "설문조사 말투나 갑작스러운 화제 전환은 피하고, 실제 대화만 출력하세요."
             )
@@ -465,7 +477,9 @@ class ConversationAgent:  # 대화 생성 담당
                 asked_if_ai=asked_if_ai,
                 task="first_turn_json" if turn_index == 0 else "single_turn",
             )
-            system = SYSTEM_PROMPT
+            # 내부 진행 지시를 사용자 답변으로 추가하면 마지막 user 메시지가 뒤바뀐다.
+            # 대화 기록의 화자는 유지하고, 주제·진행 지시는 시스템에만 전달한다.
+            system = SYSTEM_PROMPT + "\n\n" + instruction
             if mode == "enforce":
                 system = (
                     system.replace("- 사람인 척하기 — 물어보면 AI라고 답합니다. 역할은 소개팅 상대, 정체는 AI\n", "")
@@ -476,7 +490,7 @@ class ConversationAgent:  # 대화 생성 담당
                 return await self._generate_first(
                     instruction, history, topic, nickname, trace_metadata, system, ctx, user_key
                 )
-            messages = [*history, {"role": "user", "content": instruction}]
+            messages = list(history) or [{"role": "user", "content": "대화를 시작해 주세요."}]
             try:
                 text = await _call(
                     system=system,
@@ -515,8 +529,8 @@ class ConversationAgent:  # 대화 생성 담당
 
             async def regenerate(notice: str) -> str:
                 return await _call(
-                    system=system,
-                    messages=[*messages, {"role": "assistant", "content": text}, {"role": "user", "content": notice}],
+                    system=system + "\n\n[내부 출력 교정 지시]\n" + notice,
+                    messages=messages,
                     max_tokens=220,
                     timeout=get_settings().onboarding_phrase_timeout_s,
                     name="persona-conversation",
@@ -730,6 +744,12 @@ def _area_section() -> str:
 RUBRIC = f"""\
 대화 전체를 읽고 사용자의 연애 성향을 JSON으로 추출하세요.
 
+## 근거의 화자
+- 입력의 user_evidence만 사용자 사실의 근거입니다. question_context는 짧은 답의 질문을 이해하는 맥락이며,
+  그 안에 있는 하루의 자기소개·예시·취미는 사용자 사실이 아닙니다. 질문에 나왔다는 이유만으로 사용자 사실로 간주하지 마세요.
+- 답변이 명확한 수긍이면 해당 질문의 대상만 연결하고, 하루의 자기소개까지 가져오지 마세요.
+- 이 기준은 점수, 텍스트형 항목, narrative, summaries에 모두 적용됩니다.
+
 ## 점수 원칙
 - 0~100 정수.
 - 50은 "중간"이 아니라 근거가 부족할 때의 기본값입니다.
@@ -741,6 +761,10 @@ RUBRIC = f"""\
 
 ## 텍스트형 항목
 {_textual_section()}
+
+- 관심사·일상·데이트 취향은 사용자가 직접 밝힌 대상, 행위, 부정과 조건을 보존합니다.
+  선호·소비와 제작·수행 경험·능력은 서로 다른 사실입니다. 관련 있어 보인다는 이유로 바꾸거나 덧붙이지 마세요.
+- 없거나 불명확한 관심사는 빈 배열로 둡니다. 예시 취미, 하루의 설정, 다른 사람의 정보로 채우지 마세요.
 
 ## 상충처럼 보이지만 정상인 조합
 - withdrawal 높음 + problem_solving 높음:
@@ -809,7 +833,7 @@ RUBRIC = f"""\
 JSON 객체 하나만 출력하세요. 설명·마크다운·코드펜스 금지.
 점수형은 정수, 텍스트형은 문자열 배열.
 근거를 찾지 못한 차원은 키를 아예 생략하세요. (50으로 채우지 마세요)
-{{"avoidance": 78, ..., "interests": ["러닝"], "routine": [], "date_prefer": [], "date_avoid": [],
+{{"avoidance": 78, ..., "interests": [], "routine": [], "date_prefer": [], "date_avoid": [],
   "narrative": {{"headline": "...", "body": "...", "traits": ["...", "..."]}},
   "summaries": [{{"category": "intimacy", "title": "...", "content": "..."}}]}}
 """
@@ -822,7 +846,16 @@ class BuildFailed(Exception):
 class ExtractionAgent:
     @staticmethod
     def _transcript(history: list[dict]) -> str:
-        return "\n".join(f"{'사용자' if m['role'] == 'user' else '하루'}: {m['content']}" for m in history)
+        # 사용자 근거와 하루의 질문·자기소개를 분리하되, 짧은 답의 맥락은 순서로 연결한다.
+        evidence, context, pending = [], [], []
+        for message in history:
+            if message["role"] == "assistant":
+                pending.append(message["content"])
+            elif message["role"] == "user":
+                evidence.append(message["content"])
+                context.append({"answer_index": len(evidence) - 1, "haru_context_only": pending})
+                pending = []
+        return json.dumps({"user_evidence": evidence, "question_context": context}, ensure_ascii=False)
 
     @staticmethod
     def _answered_section(answered: set[str]) -> str:
