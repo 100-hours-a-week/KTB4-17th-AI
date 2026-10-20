@@ -217,7 +217,8 @@ class Settings(BaseSettings):
         validation_alias="LIVENESS_TOKEN_SECRET",
     )
     liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
-    active_liveness_enabled: bool = Field(default=True, validation_alias="ACTIVE_LIVENESS_ENABLED")
+    # BE가 v2 챌린지 계획 계약을 반영하기 전까지 꺼둔다 (FACE_VERIFICATION_ROLLOUT.md 배포 순서 1)
+    active_liveness_enabled: bool = Field(default=False, validation_alias="ACTIVE_LIVENESS_ENABLED")
 
     # ── v2 사용자 페르소나 메모리 RAG 설정 ──────────────────────────
     embedding_model_name: str = Field(
