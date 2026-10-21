@@ -85,9 +85,16 @@ def test_extraction_evidence_contains_only_the_users_own_activity(monkeypatch, a
     assert "빵을 만들어요" not in json.dumps(payload["user_evidence"], ensure_ascii=False)
 
 
-def test_other_topic_openers_do_not_seed_new_haru_hobbies():
+def test_later_turn_keeps_the_three_part_frame_without_a_new_hobby():
     instruction = ConversationAgent._instruction(topic("weekend"), 2, 10, "테스트")
-    assert "문 여는 한 줄" not in instruction
+    assert "매 턴 아래 셋을 자연스럽게 섞습니다" in agents.SYSTEM_PROMPT
+    assert "내 얘기 한 줄" in agents.SYSTEM_PROMPT
+    assert "필요할 때만" not in agents.SYSTEM_PROMPT
+    assert "문 여는 한 줄" in instruction
+    assert "한 문장 이내로 덧붙이세요" in instruction
+    assert "질문을 정확히 하나만" in instruction
+    assert "필요한 경우에만" not in instruction
+    assert "베이킹" not in instruction and "빵을 만들" not in instruction
 
 
 def test_guardrail_regeneration_keeps_the_actual_answer_as_the_last_user_message(monkeypatch):
