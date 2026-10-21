@@ -305,17 +305,17 @@ def test_self_addressed() -> None:
 
 
 def test_parse_speaker_json() -> None:
-    """parse_speaker_json 파싱 및 300자 초과/빈값/다른 키에 대한 ValueError 검증."""
+    """명확한 대사를 복구하고 300자 초과·빈값·대사 누락은 거절한다."""
     assert parse_speaker_json('{"text":"안녕"}') == "안녕"
     assert parse_speaker_json('{"text": "안녕하세요 ㅎㅎ"}') == "안녕하세요 ㅎㅎ"
 
-    # 다른 키 포함
-    with pytest.raises(ValueError, match="'text' 키 하나만 존재해야 합니다"):
-        parse_speaker_json('{"text":"안녕", "other":"키"}')
+    # 부가 필드와 명확한 대사 필드 별칭은 정규화한다.
+    assert parse_speaker_json('{"text":"안녕", "other":"키"}') == "안녕"
+    assert parse_speaker_json('{"message":"안녕"}') == "안녕"
 
     # 'text' 키 누락
-    with pytest.raises(ValueError, match="'text' 키 하나만 존재해야 합니다"):
-        parse_speaker_json('{"message":"안녕"}')
+    with pytest.raises(ValueError, match="'text' 대사 필드가 필요합니다"):
+        parse_speaker_json('{"payload":"안녕"}')
 
     # 빈 값 및 공백만
     with pytest.raises(ValueError, match="대사가 비어 있거나 공백만 포함되어 있습니다"):

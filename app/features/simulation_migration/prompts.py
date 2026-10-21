@@ -40,7 +40,10 @@ COMMON_STYLE = (
     "존댓말, 편안한 구어체로 1~3문장, 이모지 없음, 가벼운 ㅎㅎ 만 허용, AI·챗봇·페르소나 연기 금지, "
     "자기 닉네임에 님을 붙이지 않음. 위 프로필에 '대화 스타일'이 있으면 그 말투(자주 쓰는 말·어미 포함)를 따른다."
 )
-OUTPUT_FORMAT = '응답은 JSON 하나만 보낸다. 형식은 {"text": "대사"} 다. 키는 text 하나다.'
+OUTPUT_FORMAT = (
+    '응답은 JSON 하나만 보낸다. 형식은 {"text": "대사"} 다. 키는 text 하나다. '
+    "text는 공백을 포함해 1~300자이며 공백만 쓰지 않는다. 코드펜스, 설명, 화자 이름표를 붙이지 않는다."
+)
 
 
 def speaker_messages(
@@ -54,6 +57,7 @@ def speaker_messages(
     regen_rule_id: str | None = None,
     index: int | None = None,
     turns: int | None = None,
+    format_error: str | None = None,
 ) -> list[dict[str, str]]:
     """화자 도구의 LLM 프롬프트 메시지 목록을 생성한다.
 
@@ -68,6 +72,7 @@ def speaker_messages(
         transcript: 이전까지 누적된 대사 목록 [(speaker, text), ...].
         closing_hint: 대화 종료 힌트 ("none", "no_new_question", "close").
         regen_rule_id: 가드레일 등 재시도 시 위반된 규칙 ID.
+        format_error: 형식 재시도 때 고쳐야 할 검증 사유. 대사 원문은 넣지 않는다.
 
     Returns:
         LLM 호출용 메시지 딕셔너리 리스트 (role은 'system', 'user', 'assistant'만 사용).
@@ -130,6 +135,14 @@ def speaker_messages(
             }
         )
 
+    if format_error is not None:
+        messages.append(
+            {
+                "role": "user",
+                "content": f"이전 응답을 사용할 수 없었다: {format_error}\n{OUTPUT_FORMAT} 대사를 다시 생성하라.",
+            }
+        )
+
     return messages
 
 
@@ -153,6 +166,15 @@ def reply_anchor(text: str) -> str:
     )
 
 
+def _unique_object(pairs: list[tuple[str, object]]) -> dict:
+    data = {}
+    for key, value in pairs:
+        if key in data:
+            raise ValueError("JSON 객체의 키가 중복되어 대사를 확정할 수 없습니다.")
+        data[key] = value
+    return data
+
+
 def parse_speaker_json(raw: str) -> str:
     """화자 도구의 JSON 출력을 파싱하여 text를 반환한다.
 
@@ -163,23 +185,39 @@ def parse_speaker_json(raw: str) -> str:
         파싱 및 검증된 대사 문자열.
 
     Raises:
-        ValueError: JSON 형식이 아니거나, 키가 'text' 하나가 아니거나,
+        ValueError: 완전한 단일 JSON 객체가 아니거나, 대사 필드가 없거나 서로 다르거나,
                     문자열이 아니거나, 빈 문자열/공백만이거나, 300자를 초과하는 경우.
+
+    코드펜스·설명은 벗기고 text/message/content/utterance의 명확한 대사 하나만 사용한다.
+    부가 필드는 버린다. 여러 객체·중복 키·서로 다른 대사는 임의로 선택하지 않는다.
     """
+    if not isinstance(raw, str):
+        raise ValueError("응답은 JSON 문자열이어야 합니다.")
+    cleaned = raw.strip()
     try:
-        data = json.loads(raw)
-    except Exception as e:
-        raise ValueError(f"유효한 JSON이 아닙니다: {e}") from e
+        data = json.loads(cleaned, object_pairs_hook=_unique_object)
+    except json.JSONDecodeError:
+        start, end = cleaned.find("{"), cleaned.rfind("}")
+        # 첫 {부터 마지막 } 전체가 하나의 객체여야 한다. 배열 속 대사를 골라내지 않는다.
+        if start >= 0 and end > start and not any(c in cleaned[:start] + cleaned[end + 1 :] for c in "[]{}"):
+            cleaned = cleaned[start : end + 1]
+        try:
+            data = json.loads(cleaned, object_pairs_hook=_unique_object)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"유효한 JSON이 아닙니다: {e}") from e
 
     if not isinstance(data, dict):
         raise ValueError("JSON 객체여야 합니다.")
 
-    if list(data.keys()) != ["text"]:
-        raise ValueError("JSON 객체에는 'text' 키 하나만 존재해야 합니다.")
-
-    val = data["text"]
-    if not isinstance(val, str):
+    values = [data[key] for key in ("text", "message", "content", "utterance") if key in data]
+    if not values:
+        raise ValueError("JSON 객체에 'text' 대사 필드가 필요합니다.")
+    if any(not isinstance(value, str) for value in values):
         raise ValueError("'text' 필드의 값은 문자열이어야 합니다.")
+    values = [value.strip() for value in values]
+    if len(set(values)) != 1:
+        raise ValueError("여러 대사 필드의 값이 서로 달라 대사를 확정할 수 없습니다.")
+    val = values[0]
 
     if not val.strip():
         raise ValueError("대사가 비어 있거나 공백만 포함되어 있습니다.")

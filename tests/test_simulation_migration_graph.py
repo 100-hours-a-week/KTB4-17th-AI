@@ -385,9 +385,9 @@ def test_empty_response_format_retry_once_no_third_call(
 @pytest.mark.parametrize(
     ("raw_text", "error_detail"),
     [
-        ('```json\n{"text":"PRIVATE_DIALOGUE"}\n```', "유효한 JSON이 아닙니다"),
-        ('{"text":"PRIVATE_DIALOGUE","speaker":"a"}', "'text' 키 하나만"),
-        ('{"message":"PRIVATE_DIALOGUE"}', "'text' 키 하나만"),
+        ('{"text":"PRIVATE_DIALOGUE', "유효한 JSON이 아닙니다"),
+        ('{"text":"PRIVATE_DIALOGUE","message":"OTHER_PRIVATE_DIALOGUE"}', "여러 대사 필드"),
+        ('{"payload":"PRIVATE_DIALOGUE"}', "'text' 대사 필드"),
         ('{"text":null}', "문자열이어야"),
         ('{"text":"   "}', "공백만"),
         ('{"text":"' + "PRIVATE_DIALOGUE" * 21 + '"}', "300자를 초과"),
