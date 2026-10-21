@@ -78,6 +78,8 @@ def evaluate(
     adaptive=False,
     interrupted_pose=False,
     short_video=False,
+    neutral_pitch=0,
+    neutral_roll=0,
 ):
     target = next(
         item
@@ -114,10 +116,11 @@ def evaluate(
         index = int(frame[0, 0, 0])
         if missing_middle and 25 <= index < 36:
             return centered_face(face_count=0)
-        pitch = -20 if not adaptive and 12 <= index < (48 if no_return else 30) else 0
+        pitch = -20 if not adaptive and 12 <= index < (48 if no_return else 30) else neutral_pitch
         x = center_x + (0.018 if index % 2 else -0.018) if slight_center_drift else center_x
         return centered_face(
             pitch=pitch,
+            roll=neutral_roll,
             center_x=0.2 if off_center and index < 3 else (0.55 if unstable_center and index == 1 else x),
             center_y=center_y,
             face_count=2 if multi_face and index == 25 else 1,
@@ -145,6 +148,20 @@ def test_basic_challenge_requires_frontal_then_continuous_pose_without_head_turn
     assert result.result.head_returned is None
     assert not evaluate(monkeypatch, adaptive=True, interrupted_pose=True).result.passed
     assert not evaluate(monkeypatch, adaptive=True, short_video=True).result.passed
+
+
+@pytest.mark.parametrize("options", [{"neutral_pitch": 18}, {"neutral_roll": 22}, {"neutral_pitch": 24}])
+def test_camera_frontal_pose_remains_valid_in_verification_session(monkeypatch, options):
+    result = evaluate(monkeypatch, adaptive=True, **options)
+    assert result.result.passed, result.result.reason_codes
+    assert result.result.frontal_hold_seconds >= 2
+    assert result.result.pose_hold_seconds >= 3
+
+
+@pytest.mark.parametrize("options", [{"center_x": 0.62}, {"center_y": 0.65}])
+def test_verification_allows_face_with_more_than_half_inside_guide(monkeypatch, options):
+    result = evaluate(monkeypatch, adaptive=True, **options)
+    assert result.result.passed, result.result.reason_codes
 
 
 def test_only_server_risk_escalates_and_step_up_does_not_extend_expiry(monkeypatch):

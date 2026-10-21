@@ -8,7 +8,7 @@ from hashlib import blake2b
 import cv2
 import numpy as np
 
-from .centering import CENTER_POSITION_MAX_DRIFT, centering_hint
+from .centering import CENTER_POSITION_MAX_DRIFT, MAX_FRONTAL_ANGLE, centering_hint, is_frontal
 from .continuous_hold import find_hold
 from .gesture import judge_hold, matches_gesture, read_gesture
 from .hand import HandLandmarker, HandLandmarks
@@ -95,9 +95,7 @@ class ActiveLivenessAnalyzer:
                     sample_index = len(faces) - 1
                     presentation_times.append(capture.get(cv2.CAP_PROP_POS_MSEC))
                     pose = pose_from(face)
-                    frontal = (
-                        pose is not None and abs(face.yaw) <= 20 and abs(face.pitch) <= 20 and abs(face.roll) <= 20
-                    )
+                    frontal = is_frontal(face)
                     records.append(
                         FrameDiagnostic(
                             sample_index=sample_index,
@@ -232,9 +230,9 @@ class ActiveLivenessAnalyzer:
                 source_frame_count=reported,
                 source_fps=source_fps or None,
                 sampling_strategy="uniform_max_48_adaptive_v3" if adaptive else "uniform_max_48_active_v2",
-                max_abs_yaw_deg=20,
-                max_abs_pitch_deg=20,
-                max_abs_roll_deg=20,
+                max_abs_yaw_deg=MAX_FRONTAL_ANGLE,
+                max_abs_pitch_deg=MAX_FRONTAL_ANGLE,
+                max_abs_roll_deg=MAX_FRONTAL_ANGLE,
                 frame_diagnostics=records,
                 reason_codes=reasons,
                 hand_frames=hold.hand_frames,
