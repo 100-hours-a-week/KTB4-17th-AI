@@ -38,7 +38,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from app.core.config import get_settings  # noqa: E402
-from app.features.face_verification.centering import centering_hint  # noqa: E402
+from app.features.face_verification.centering import CENTER_POSITION_STDDEV, centering_hint  # noqa: E402
 from app.features.face_verification.challenge import random_challenge  # noqa: E402
 from app.features.face_verification.gesture import (  # noqa: E402
     GESTURE_LABELS,
@@ -99,7 +99,10 @@ class HeadPreview:
             and all(
                 statistics.pstdev(getattr(sample, axis) for sample in self.samples) <= 2.0 for axis in ("yaw", "pitch")
             )
-            and all(statistics.pstdev(sample[axis] for sample in self.center_samples) <= 0.015 for axis in (0, 1))
+            and all(
+                statistics.pstdev(sample[axis] for sample in self.center_samples) <= CENTER_POSITION_STDDEV
+                for axis in (0, 1)
+            )
         )
 
     def confirm_center(self) -> bool:
