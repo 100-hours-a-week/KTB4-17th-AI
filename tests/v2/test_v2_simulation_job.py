@@ -275,3 +275,53 @@ def test_conflict_survives_partner_persona_new_version():
                 await SimulationV2Service(db).start(_req(partner_user_id=None, partner_persona_id="pb"))
 
     asyncio.run(with_db(scenario))
+
+
+def test_post_route_runs_in_other_session_and_returns_result():
+    """POST 는 요청 세션에서 작업을 만들고 다른 세션에서 실행한다.
+    expire_on_commit=False 라 요청 세션이 예전 job 을 들고 있어도 실행 결과를 다시 읽어 201 로 돌려줘야 한다."""
+    import httpx
+    from fastapi import FastAPI
+
+    from app.core.db import get_db
+    from app.v2.simulation import api
+
+    async def scenario(sessions):
+        async with sessions() as db:
+            await _seed(db)
+            await db.commit()
+
+        async def runner(job_id):
+            async with sessions() as db:
+                await SimulationV2Service(db, llm=_ok_llm()).run(job_id)
+
+        async def fake_db():
+            async with sessions() as db:
+                yield db
+
+        app = FastAPI()
+        app.include_router(api.router)
+        app.dependency_overrides[get_db] = fake_db
+        app.dependency_overrides[api.get_runner] = lambda: runner
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            r = await client.post("/v2/simulation", json={"me_user_id": "u-a", "partner_user_id": "u-b"})
+            assert r.status_code == 201, r.text
+            body = r.json()
+            assert body["simulation_id"] and len(body["transcript"]) == 20
+            assert body["report"]["simulation_id"] == body["simulation_id"]
+
+            # 같은 조합을 다시 돌려도 앞 작업이 끝났으니 409 가 아니다
+            failing = FakeLLM({"generate": [RuntimeError("llm down")]})
+
+            async def failing_runner(job_id):
+                async with sessions() as db:
+                    await SimulationV2Service(db, llm=failing).run(job_id)
+
+            app.dependency_overrides[api.get_runner] = lambda: failing_runner
+            r = await client.post("/v2/simulation", json={"me_user_id": "u-a", "partner_user_id": "u-b"})
+            assert r.status_code == 503, r.text
+            detail = r.json()["detail"]
+            assert detail["reason"] and detail["simulation_id"] is None and detail["job_id"]
+
+    asyncio.run(with_db(scenario))

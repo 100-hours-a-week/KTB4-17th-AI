@@ -1,4 +1,4 @@
-"""v2 시뮬레이션 API — service 는 가짜, 상태코드·응답·헤더·백그라운드 예약·인증만 본다."""
+"""v2 시뮬레이션 API — service 는 가짜, 상태코드·응답·헤더·동기 실행만 본다."""
 
 from __future__ import annotations
 
@@ -10,8 +10,17 @@ from fastapi.testclient import TestClient
 
 from app.core.config import get_settings
 from app.core.db import get_db
-from app.features.persona.schemas import PersonaRef
+from app.features.persona.schemas import PersonaBrief, PersonaRef
+from app.features.simulation.schemas import (
+    AreaReport,
+    DateSuggestion,
+    MatchingReport,
+    Overall,
+    ReportConfidence,
+    Turn,
+)
 from app.v2.simulation import api
+from app.v2.simulation.schemas import V2SimulationResponse
 from app.v2.simulation.service import JobInProgress, JobNotFound, PersonaNotFound, SimulationNotFound
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
@@ -22,8 +31,42 @@ def _job(**kw):
     return SimpleNamespace(**{**base, **kw})
 
 
-def _client(error=None, job=None):
+def _result(simulation_id: str = "s1") -> V2SimulationResponse:
+    report = MatchingReport(
+        simulation_id=simulation_id,
+        persona_a_id="pa",
+        persona_b_id="pb",
+        overall=Overall(score=80, grade="GOOD", grade_label="좋음", headline="헤드라인", summary="요약"),
+        areas=[
+            AreaReport(
+                area="intimacy",
+                label="거리감",
+                score=80,
+                grade="GOOD",
+                grade_label="좋음",
+                comment="설명",
+                dimensions=[],
+            )
+        ],
+        date_suggestion=DateSuggestion(suggested=["카페"], avoid=["등산"], comment="추천"),
+        confidence=ReportConfidence(accuracy=85, low_dimensions=[], note=""),
+    )
+    return V2SimulationResponse(
+        simulation_id=simulation_id,
+        me=PersonaBrief(persona_id="pa", nickname="민수"),
+        partner=PersonaBrief(persona_id="pb", nickname="지은"),
+        turns=1,
+        transcript=[Turn(index=0, speaker="a", text="안녕하세요"), Turn(index=1, speaker="b", text="반가워요")],
+        report=report,
+        created_at=NOW,
+        mode="persona_only",
+    )
+
+
+def _client(error=None, job=None, run_result=None):
+    """run_result: runner 가 끝난 뒤 get_job 이 돌려줄 작업. 기본은 성공(s1)."""
     calls = []
+    state = {"ran": False}
 
     class FakeService:
         async def start(self, req):
@@ -36,10 +79,15 @@ def _client(error=None, job=None):
             calls.append(("get_job", job_id))
             if error:
                 raise error
+            if state["ran"]:
+                return run_result or _job(status="succeeded", simulation_id="s1", finished_at=NOW)
             return job or _job()
 
         async def get(self, simulation_id):
-            raise error or SimulationNotFound(simulation_id)
+            calls.append(("get", simulation_id))
+            if error or simulation_id != "s1":
+                raise error or SimulationNotFound(simulation_id)
+            return _result(simulation_id)
 
         async def list_for(self, user_id):
             calls.append(("list", user_id))
@@ -52,11 +100,15 @@ def _client(error=None, job=None):
         async def rollback(self):
             calls.append(("rollback",))
 
+        def expire_all(self):
+            calls.append(("expire_all",))
+
     async def fake_db():
         yield FakeDB()
 
     async def runner(job_id):
         calls.append(("run", job_id))
+        state["ran"] = True
 
     app = FastAPI()
     app.include_router(api.router)
@@ -69,12 +121,30 @@ def _client(error=None, job=None):
 BODY = {"me_user_id": "u-a", "partner_user_id": "u-b"}
 
 
-def test_post_returns_202_and_schedules_job():
+def test_post_waits_and_returns_201_with_transcript_and_report():
     client, calls = _client()
     r = client.post("/v2/simulation", json=BODY)
-    assert r.status_code == 202
-    assert r.json() == {"job_id": "j1", "status": "pending"}
-    assert ("commit",) in calls and ("run", "j1") in calls
+    assert r.status_code == 201
+    body = r.json()
+    assert body["simulation_id"] == "s1"
+    assert [t["text"] for t in body["transcript"]] == ["안녕하세요", "반가워요"]
+    assert body["report"]["overall"]["headline"] == "헤드라인"
+    # 작업을 만들고 커밋 → 실행 → 캐시 비우고 다시 읽기 → 결과 조회 순서
+    names = [c[0] for c in calls]
+    assert names.index("run") < names.index("expire_all") < names.index("get_job") < names.index("get")
+    assert names.index("commit") < names.index("run")
+
+
+def test_post_503_when_run_fails():
+    failed = _job(status="failed", error="speaker_mixup_unresolved", finished_at=NOW)
+    client, calls = _client(run_result=failed)
+    r = client.post("/v2/simulation", json=BODY)
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert detail["reason"] == "speaker_mixup_unresolved"
+    assert detail["job_id"] == "j1" and detail["simulation_id"] is None
+    assert detail["message"] == "simulation failed: speaker_mixup_unresolved"
+    assert not [c for c in calls if c[0] == "get"]
 
 
 def test_post_404_when_persona_missing():
@@ -128,12 +198,11 @@ def test_get_simulation_404_and_list():
     assert client.get("/v2/simulation").status_code == 422
 
 
-def test_internal_key_required_when_configured(monkeypatch):
+def test_no_internal_key_required(monkeypatch):
     monkeypatch.setattr(get_settings(), "internal_api_key", "secret")
     client, _ = _client()
-    assert client.post("/v2/simulation", json=BODY).status_code == 401
-    r = client.post("/v2/simulation", json=BODY, headers={"X-Internal-Api-Key": "secret"})
-    assert r.status_code == 202
+    assert client.post("/v2/simulation", json=BODY).status_code == 201
+    assert client.get("/v2/simulation/jobs/j1").status_code == 200
 
 
 def test_router_registered_in_main_app():
