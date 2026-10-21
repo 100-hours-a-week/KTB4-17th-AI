@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from app.features.persona.profile import describe
+from app.v2.persona.profile import describe
 
 from .generator import _fact_block, _split_refs
 from .schemas import Issue, LLMCaller, LLMResult, ScriptLineV2, SimContext, TopicPlan

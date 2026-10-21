@@ -21,7 +21,6 @@ from app.core.config import get_settings
 from app.core.observability import build_langfuse_metadata
 from app.features.persona.lookup import LoadedPersona, load_persona
 from app.features.persona.schemas import PersonaBrief, PersonaRef, PersonaResponse
-from app.features.simulation.report import score_layer
 from app.features.simulation.schemas import (
     GRADE_LABEL,
     MatchingReport,
@@ -36,6 +35,7 @@ from .llm import call_tools
 from .models import V2Simulation, V2SimulationJob
 from .repository import SimulationV2Repository
 from .schemas import LLMCaller, SimContext, TopicFact, V2SimulationResponse
+from .scoring import score_layer
 
 logger = logging.getLogger(__name__)
 

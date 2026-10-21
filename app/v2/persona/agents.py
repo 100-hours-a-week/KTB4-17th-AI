@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
-from app.features.persona.agents import LLMError, _call_json
+from app.v2.llm import LLMError, _call_json
 
 from .embedder import normalize_chat_text
 from .schemas import ExtractionOutput, ReconcileBatchOutput

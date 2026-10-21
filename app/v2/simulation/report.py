@@ -1,6 +1,6 @@
 """리포트 (write_report) — 확정 대본 + v1 규칙 점수 → 서술 리포트.
 
-점수 층은 v1 report.score_layer / assemble_report 를 그대로 쓴다 (결정적).
+점수 층은 scoring.score_layer / assemble_report 를 쓴다 (v1 복제본, 결정적).
 서술 층은 별도 1회 호출(submit_report). 관점 뒤바뀜이면 1회 재요청, 그래도 안 되면 v1 템플릿 서술로 대체한다.
 리포트 실패로 job 을 실패시키지 않는다 — 대본은 이미 검증을 통과했다.
 """
@@ -11,18 +11,12 @@ import logging
 import time
 from typing import Any, Literal
 
-from app.features.persona.profile import describe
-from app.features.simulation.agents import (
-    _REPORT_RULES,
-    _report_perspective_swap,
-    _rules_section,
-    _scores_section,
-)
-from app.features.simulation.report import assemble_report
 from app.features.simulation.schemas import MatchingReport, ReportInput, ReportNarrative, Transcript, Turn
-from app.features.simulation_migration.narrative import template_narrative
+from app.v2.persona.profile import describe
 
+from .prompts import _REPORT_RULES, _report_perspective_swap, _rules_section, _scores_section
 from .schemas import LLMCaller, ScriptLineV2, SimContext, TopicPlan, TraceEvent
+from .scoring import assemble_report, template_narrative
 
 logger = logging.getLogger(__name__)
 

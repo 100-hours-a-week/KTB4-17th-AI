@@ -11,16 +11,31 @@ import asyncio
 import json
 import logging
 import time
+from functools import lru_cache
 from typing import Any
 
+from langfuse.openai import AsyncOpenAI
 from openai import APIStatusError
 
 from app.core.config import get_settings
-from app.features.simulation.agents import _get_client, _semaphore
 
 from .schemas import LLMResult, ToolCall
 
 logger = logging.getLogger(__name__)
+
+
+# v1 simulation.agents 와 같은 OpenAI 호환 클라이언트 (v2 복제본)
+@lru_cache
+def _get_client() -> AsyncOpenAI:
+    settings = get_settings()
+    return AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key or "EMPTY")
+
+
+# 동시에 진행 중인 v2 시뮬레이션 LLM 호출 수를 settings.simulation_max_inflight 로 제한한다.
+# 프로세스 하나에서만 유효하고, v1 시뮬레이션과는 따로 센다.
+@lru_cache
+def _semaphore() -> asyncio.Semaphore:
+    return asyncio.Semaphore(get_settings().simulation_max_inflight)
 
 
 class SimLLMError(Exception):
