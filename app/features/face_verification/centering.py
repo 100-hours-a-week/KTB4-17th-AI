@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from app.features.primary_photo.analyzer import FaceObservation
 
-CENTER_POSITION_STDDEV = 0.02
-CENTER_POSITION_MAX_DRIFT = 0.04
-GUIDE_BOUNDS = (0.31, 0.16, 0.69, 0.80)
+CENTER_POSITION_STDDEV = 0.05
+CENTER_POSITION_MAX_DRIFT = 0.10
+GUIDE_BOUNDS = (0.08, 0.06, 0.92, 0.94)
+MIN_FACE_WIDTH_RATIO = 0.05
+MIN_FACE_HEIGHT_RATIO = 0.05
+MAX_FACE_RATIO = 0.88
 MAX_FRONTAL_ANGLE = 25.0
 
 
@@ -30,8 +33,10 @@ def centering_hint(face: FaceObservation | None) -> str | None:
         return "FACE POSITION UNAVAILABLE"
     if not face.face_in_frame:
         return "KEEP FULL FACE IN VIEW"
-    if face.width_ratio < 0.18 or face.height_ratio < 0.30:
+    if face.width_ratio < MIN_FACE_WIDTH_RATIO or face.height_ratio < MIN_FACE_HEIGHT_RATIO:
         return "COME CLOSER"
+    if face.width_ratio >= MAX_FACE_RATIO and face.height_ratio >= MAX_FACE_RATIO:
+        return "MOVE BACK"
     left, top, right, bottom = GUIDE_BOUNDS
     overlap_width = max(
         0, min(face.center_x + face.width_ratio / 2, right) - max(face.center_x - face.width_ratio / 2, left)
