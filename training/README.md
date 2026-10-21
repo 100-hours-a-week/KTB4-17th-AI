@@ -51,6 +51,7 @@ flash-lite 3.1 기준 0.33 → 0.88 이 됐다. 그래서 teacher 라벨을 학�
 
 ```bash
 uv run python scripts/generate_synthetic_onboarding.py --n 200 --out data/synthetic/sessions.jsonl   # 시드 성향 → 합성 온보딩
+uv run python scripts/rewrite_synthetic_questions.py data/synthetic/sessions.jsonl   # 온보딩 프롬프트가 바뀌었으면 질문만 운영 모델로 다시 쓰기 → sessions.rewritten.jsonl
 uv run python scripts/label_with_teacher.py --synthetic data/synthetic/sessions.jsonl --out-dir data/teacher/run1
 uv run python scripts/check_synthetic_labels.py data/teacher/run1 --sessions data/synthetic/sessions.jsonl
 uv run python training/tagging/from_teacher.py data/teacher/run1/tagging.jsonl --out data/tagging.jsonl
