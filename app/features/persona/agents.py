@@ -16,6 +16,7 @@ import asyncio  # 비동기 작업 표준 라이브러리
 import json  # JSON 문자열 → dict, dict → JSON 문자열 변환
 import logging
 import re
+import time
 from dataclasses import dataclass  # 데이터 클래스를 간단하게 만들어 주는 데코레이터
 from functools import lru_cache
 
@@ -24,7 +25,7 @@ from langfuse.openai import AsyncOpenAI
 from pydantic import ValidationError  # Pydentic으로 데이터 검사 시 형식에 대한 예외처리 라이브러리
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core import llm_retry
+from app.core import llm_retry, slm
 from app.core.config import get_settings
 from app.core.guardrail import (
     GuardrailContext,
@@ -38,6 +39,7 @@ from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 
 from .schemas import (
     ALL_DIMENSIONS,
+    HARU_PROFILE,
     SCORED,
     TEXTUAL,
     RawExtraction,
@@ -77,6 +79,31 @@ class LLMError(Exception):
     """호출 실패. 호출부가 잡아서 템플릿 서술로 폴백한다."""
 
 
+def _record_llm_failure(name: str, model: str, timeout: float, started: float, error: BaseException) -> None:
+    """실패한 LLM 호출의 진단 정보를 로그와 현재 Langfuse span 에 남긴다.
+
+    타임아웃으로 취소된 호출은 Langfuse 에 generation 이 남지 않아서, 어느 모델이 얼마나 걸려
+    끊겼는지 알 수 없었다. 부가 정보라 기록 중 예외가 나도 호출 결과에는 영향을 주지 않는다."""
+    info = {
+        "llm_call": name,
+        "llm_model": model,
+        "llm_timeout_s": timeout,
+        "llm_elapsed_s": round(time.monotonic() - started, 3),
+        "llm_error_type": type(error).__name__,
+    }
+    status_code = getattr(error, "status_code", None)
+    if status_code is not None:
+        info["llm_status_code"] = status_code
+    request_id = getattr(error, "request_id", None)
+    if request_id:
+        info["llm_request_id"] = request_id
+    logger.warning("LLM call failed: %s", info)
+    try:
+        get_client().update_current_span(metadata=info)
+    except Exception:  # noqa: BLE001 - 관측 실패가 폴백 흐름을 깨면 안 된다
+        logger.debug("failed to attach llm failure info to span", exc_info=True)
+
+
 async def _call(
     *,
     system: str,
@@ -85,18 +112,50 @@ async def _call(
     timeout: float,
     name: str = "persona-llm-call",
     metadata: LangfuseMetadata | None = None,
+    use_slm: bool = True,
 ) -> str:
-    """타임아웃·요청 한도·서버 오류·빈 응답이면 llm_retry 규칙대로 다시 보낸다. timeout 은 시도마다."""
-    settings = get_settings()
-    client = _get_client()
+    """타임아웃·요청 한도·서버 오류·빈 응답이면 llm_retry 규칙대로 다시 보낸다. timeout 은 시도마다.
+
+    태깅·추출이고 SLM 이 설정돼 있으면 먼저 SLM 에 한 번만 보내고, 실패하면 재시도 대신
+    메인 LLM 으로 넘긴다 (app/core/slm.py). 메인 LLM 쪽은 원래 재시도 규칙을 그대로 쓴다.
+    """
     payload = [{"role": "system", "content": system}, *messages]
-    total = llm_retry.attempts()
+    route = slm.route_for(name) if use_slm else None
+    if route is not None:
+        try:
+            return await _complete(route.client, route.model, payload, max_tokens, timeout, name, metadata, total=1)
+        except LLMError as e:
+            slm.record_fallback(name, e)
+    return await _complete(
+        _get_client(),
+        get_settings().llm_model,
+        payload,
+        max_tokens,
+        timeout,
+        name,
+        metadata,
+        total=llm_retry.attempts(),
+    )
+
+
+async def _complete(
+    client: AsyncOpenAI,
+    model: str,
+    payload: list[dict],
+    max_tokens: int,
+    timeout: float,
+    name: str,
+    metadata: LangfuseMetadata | None,
+    *,
+    total: int,
+) -> str:
     for attempt in range(1, total + 1):
+        started = time.monotonic()
         try:
             async with asyncio.timeout(timeout):
                 resp = await client.chat.completions.create(
                     name=name,
-                    model=settings.llm_model,
+                    model=model,
                     messages=payload,  # type: ignore[arg-type]
                     max_tokens=max_tokens,
                     metadata=metadata,
@@ -106,6 +165,7 @@ async def _call(
             if attempt < total and llm_retry.is_retryable(e):
                 await _before_retry(name, attempt, error)
                 continue
+            _record_llm_failure(name, model, timeout, started, e)
             raise error from e
 
         text = ""
@@ -143,6 +203,18 @@ async def _before_retry(name: str, attempt: int, error: LLMError) -> None:
 # 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
 async def _call_json(**kwargs) -> dict:
     text = await _call(**kwargs)  # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
+    try:
+        return _parse_json(text)
+    except LLMError as e:
+        # SLM 이 JSON 을 깨뜨렸다면 메인 LLM 으로 한 번 더. SLM 을 안 쓰는 호출이면 그대로 실패
+        name = kwargs.get("name", "")
+        if slm.route_for(name) is None:
+            raise
+        slm.record_fallback(name, e)
+        return _parse_json(await _call(**kwargs, use_slm=False))
+
+
+def _parse_json(text: str) -> dict:
     # 코드펜스(```json, ```JSON)나 앞뒤 설명 문장이 붙어 와도 첫 { ~ 마지막 } 만 잘라 파싱한다
     start, end = text.find("{"), text.rfind("}")
     cleaned = text[start : end + 1] if start != -1 and end > start else text.strip()
@@ -157,7 +229,8 @@ async def _call_json(**kwargs) -> dict:
 
 # ══ 온보딩 대화 ════════════════════════════════════════════════
 
-SYSTEM_PROMPT = """\
+SYSTEM_PROMPT = (
+    """\
 당신은 "하루"입니다. AI 매칭 서비스의 온보딩에서 사용자의 소개팅 상대 역할을 합니다.
 목표는 사용자가 "설문에 답한다"가 아니라 "괜찮은 사람이랑 편하게 얘기했다"고 느끼는 것입니다.
 
@@ -170,7 +243,8 @@ SYSTEM_PROMPT = """\
 매 턴 아래 셋을 자연스럽게 섞습니다. 셋 다 짧게, 합쳐서 3문장 이내.
 (첫 턴은 예외 — 상대가 한 말이 아직 없으므로 반응은 없습니다. [상황]에 적힌 첫 턴 순서를 그대로 따르고, 3문장 이내 제한도 적용하지 않습니다)
 1. 상대가 방금 한 말에 반응 — 답변 속 단어나 표현을 하나 집어서. "그렇군요" 같은 빈 말 금지
-2. 내 얘기 한 줄 — 상대가 답하기 쉽게 문을 여는 용도. 연애관 주제에서는 내 입장을 말하지 말고
+2. 내 얘기 한 줄 — 상대가 답하기 쉽게 문을 여는 용도. 아래 고정된 생활 설정 안에서만 말하고,
+   주제마다 새 취미·경험을 만들거나 이미 말한 자기소개를 번복하지 않습니다. 연애관 주제에서는 내 입장을 말하지 말고
    "주변 보면 이게 진짜 갈리더라고요"처럼 제3자 얘기로 문을 엽니다 (상대 답을 유도하지 않기 위해)
 3. 다음 얘기로 넘어가기 — 질문 형태가 아니어도 됩니다. "저는 ~인데, {닉네임}님은요?" / "~는 어떠세요?" /
    "~ 얘기 듣고 싶어요"처럼 형태를 바꿔가며. "~하는 편이에요?"를 두 턴 연속 쓰지 않기
@@ -179,6 +253,12 @@ SYSTEM_PROMPT = """\
 - 질문지를 들고 있는 사람처럼 굴지 않기. 한 턴에 묻는 건 하나. 답변의 "이유"를 따로 캐묻지 않기
 - 다시 꺼내는 건 위 대화 기록에 사용자가 실제로 쓴 내용만. 기록에 없는 취미·사실을 "하셨잖아요"로 꺼내지 않기
   ("아까 ○○ 얘기 하셨잖아요"의 ○○ 는 반드시 대화 기록 속 사용자의 말이어야 합니다)
+- 반응의 근거는 대화 기록의 마지막 user 답변입니다. 이번 턴의 새 질문이나 하루 자신의 말을 사용자 답변으로 읽지 않습니다.
+- 이미 진행 중인 대화에서는 하루가 처음 명시한 생활 설정을 유지합니다.
+  기존 하루 발언이 모순되어 있다면 새 자기 경험을 덧붙이지 말고 사용자 답변에만 반응합니다.
+- 사용자의 취미는 여러 개일 수 있습니다. 실제로 말한 취미는 모두 유지하고, 없거나 불분명한 취미를 하루의 취미로 채우지 않습니다.
+- 사용자가 말한 대상과 행위를 그대로 구분합니다. 선호·소비를 제작·수행 경험이나 능력으로 확대하지 않습니다.
+  명시적인 부정이나 정정이 나오면 그 뜻을 존중하고, 이전 추측을 다시 사실처럼 꺼내지 않습니다.
 - 무거운 주제(갈등)로 갈 땐 한마디로 완충 ("소개팅에서 이런 거 물어보면 이상한데, 그래서 더 궁금해요")
 - 마지막 턴은 소개팅 끝날 때처럼 — 아쉬운 듯 가볍게
 
@@ -189,6 +269,9 @@ SYSTEM_PROMPT = """\
 - 사람인 척하기 — 물어보면 AI라고 답합니다. 역할은 소개팅 상대, 정체는 AI
 - "저번에", "지난번에"처럼 이전 만남·이전 대화가 있었던 것처럼 말하기
 """
+    + "\n\n## 하루의 고정된 생활 설정\n"
+    + HARU_PROFILE
+)
 
 # 오늘이 첫 대화인데 "저번에 ~라고 하셨잖아요"처럼 이전 대화를 전제하는 표현. 새면 시드 질문으로 대신한다.
 # "저번 주말엔 뭐 하셨어요?" 같은 정상 질문은 살려야 해서, 과거 시점 + "그렇게 말했다"가 한 문장에 있을 때만 잡는다
@@ -316,7 +399,7 @@ class ConversationAgent:  # 대화 생성 담당
         # "요즘 시간을 많이 쓰는 취미·관심사와 그게 좋은 이유" - 확인 시 태깅
         lines += ["", "[이번 턴에 대화의 흐름, 분위기]", topic.intent]
 
-        # 내용 있는지 확인, 빈문자열 -> False
+        # 내용 있는지 확인, 빈문자열 -> False. 매 턴의 '내 얘기 한 줄' 참고이며, 사용자 말이 아니다.
         if topic.opener:
             lines.append(f"문 여는 한 줄 (하루 자신의 발화입니다. 그대로 말하지 말고 참고만): {topic.opener}")
         lines.append("")
@@ -356,7 +439,8 @@ class ConversationAgent:  # 대화 생성 담당
         else:
             lines.append(
                 "직전 사용자 답변의 구체적인 내용 하나에 먼저 반응하고, "
-                "그 내용과 연결되는 당신의 경험이나 생각을 한 문장 이내로 덧붙이세요. "
+                "그 내용과 연결되는 당신의 경험이나 생각을 고정된 생활 설정 안에서 한 문장 이내로 덧붙이세요. "
+                "새 취미·경험을 만들거나 이미 말한 자기소개를 번복하지 마세요. "
                 "그다음 이번 턴의 주제로 자연스럽게 이어지는 질문을 정확히 하나만 하세요. "
                 "설문조사 말투나 갑작스러운 화제 전환은 피하고, 실제 대화만 출력하세요."
             )
@@ -394,7 +478,9 @@ class ConversationAgent:  # 대화 생성 담당
                 asked_if_ai=asked_if_ai,
                 task="first_turn_json" if turn_index == 0 else "single_turn",
             )
-            system = SYSTEM_PROMPT
+            # 내부 진행 지시를 사용자 답변으로 추가하면 마지막 user 메시지가 뒤바뀐다.
+            # 대화 기록의 화자는 유지하고, 주제·진행 지시는 시스템에만 전달한다.
+            system = SYSTEM_PROMPT + "\n\n" + instruction
             if mode == "enforce":
                 system = (
                     system.replace("- 사람인 척하기 — 물어보면 AI라고 답합니다. 역할은 소개팅 상대, 정체는 AI\n", "")
@@ -405,7 +491,7 @@ class ConversationAgent:  # 대화 생성 담당
                 return await self._generate_first(
                     instruction, history, topic, nickname, trace_metadata, system, ctx, user_key
                 )
-            messages = [*history, {"role": "user", "content": instruction}]
+            messages = list(history) or [{"role": "user", "content": "대화를 시작해 주세요."}]
             try:
                 text = await _call(
                     system=system,
@@ -444,8 +530,8 @@ class ConversationAgent:  # 대화 생성 담당
 
             async def regenerate(notice: str) -> str:
                 return await _call(
-                    system=system,
-                    messages=[*messages, {"role": "assistant", "content": text}, {"role": "user", "content": notice}],
+                    system=system + "\n\n[내부 출력 교정 지시]\n" + notice,
+                    messages=messages,
                     max_tokens=220,
                     timeout=get_settings().onboarding_phrase_timeout_s,
                     name="persona-conversation",
@@ -542,6 +628,14 @@ class ConversationAgent:  # 대화 생성 담당
 
 # ══ 태깅 ════════════════════════════════════════════════
 
+
+def _tag_definitions() -> str:
+    # 이름만 주면 모델이 영어 키로 뜻을 짐작한다(avoidance 를 갈등 회피로 읽는 식). 양 끝 설명을 같이 준다
+    lines = [f"- {key} ({d.label}): 낮음 = {d.low} / 높음 = {d.high}" for key, d in SCORED.items()]
+    lines += [f"- {key} ({label}): 사용자가 직접 말한 {label}" for key, label in TEXTUAL.items()]
+    return "\n".join(lines)
+
+
 TAG_PROMPT = f"""\
 사용자 답변이 아래 차원 중 무엇에 대한 근거를 제공하는지 판정하세요.
 
@@ -551,11 +645,39 @@ secondary: 간접적으로 추론 가능한 차원
 질문과 무관한 답변이면 둘 다 빈 배열로 두고 off_topic을 true로 하세요.
 점수는 매기지 마세요. 어떤 차원인지만 고릅니다.
 
-차원 목록: {", ".join(ALL_DIMENSIONS)}
+## 차원 정의 — 이름이 아니라 이 정의로만 판단하세요
+{_tag_definitions()}
+
+## 판정 규칙
+- primary 는 답변 속 사용자 자신의 행동·선호가 그 차원의 어느 쪽인지 직접 말해 줄 때만 넣습니다.
+- 질문이 겨눈 차원이라도 답에 근거가 없으면 넣지 않습니다. 모르겠다·기억이 안 난다·농담으로 넘김·한두 마디 대답은
+  primary 를 빈 배열로 둡니다 (질문과 관련은 있으므로 off_topic 은 false).
+- "아직 정하지 않았어요"·"생각해 본 적 없어요"처럼 질문 주제에 대한 자기 상태를 말한 답도 질문에 대한 대답입니다.
+  primary 는 비우되 off_topic 은 false 입니다. off_topic 은 질문과 상관없는 요청·잡담일 때만 true 입니다.
+- 다른 사람(친구·전 연인·상대)의 행동이나 말은 사용자의 근거가 아닙니다.
+- ideal_* 는 상대에게 바라는 점을 말할 때만, 사용자 자신의 성향이 아닙니다.
 
 JSON만 출력하세요. 설명·마크다운 금지.
 {{"primary": [], "secondary": [], "off_topic": false}}
 """
+
+
+def tagging_messages(question: str, answer: str) -> list[dict]:
+    """태깅 호출의 system 을 뺀 메시지. 파인튜닝 학습 데이터(training/tagging)도 이 함수로 만든다.
+
+    학습 때와 서빙 때 입력 형식이 조금이라도 다르면 튜닝한 모델이 제 성능을 못 낸다.
+    """
+    return [{"role": "user", "content": f"질문: {question}\n답변: {answer}"}]
+
+
+def parse_tags(raw: dict) -> Tags:
+    """모델 JSON → Tags. 모델이 없는 차원명을 지어냈을 수 있으므로 걸러낸다."""
+    valid = set(ALL_DIMENSIONS)
+    return Tags(
+        primary=[d for d in raw.get("primary", []) if d in valid],
+        secondary=[d for d in raw.get("secondary", []) if d in valid],
+        off_topic=bool(raw.get("off_topic", False)),
+    )
 
 
 class TaggingAgent:
@@ -579,7 +701,7 @@ class TaggingAgent:
             try:
                 raw = await _call_json(
                     system=TAG_PROMPT,
-                    messages=[{"role": "user", "content": f"질문: {question}\n답변: {answer}"}],
+                    messages=tagging_messages(question, answer),
                     max_tokens=120,
                     timeout=timeout if timeout is not None else get_settings().onboarding_tag_timeout_s,
                     name="persona-tagging",
@@ -593,13 +715,7 @@ class TaggingAgent:
                 )
                 return None
 
-            valid = set(ALL_DIMENSIONS)
-            return Tags(
-                # 모델이 없는 차원명을 지어냈을 수 있으므로 걸러낸다
-                primary=[d for d in raw.get("primary", []) if d in valid],
-                secondary=[d for d in raw.get("secondary", []) if d in valid],
-                off_topic=bool(raw.get("off_topic", False)),
-            )
+            return parse_tags(raw)
 
 
 # ══ 추출 ════════════════════════════════════════════════
@@ -629,6 +745,12 @@ def _area_section() -> str:
 RUBRIC = f"""\
 대화 전체를 읽고 사용자의 연애 성향을 JSON으로 추출하세요.
 
+## 근거의 화자
+- 입력의 user_evidence만 사용자 사실의 근거입니다. question_context는 짧은 답의 질문을 이해하는 맥락이며,
+  그 안에 있는 하루의 자기소개·예시·취미는 사용자 사실이 아닙니다. 질문에 나왔다는 이유만으로 사용자 사실로 간주하지 마세요.
+- 답변이 명확한 수긍이면 해당 질문의 대상만 연결하고, 하루의 자기소개까지 가져오지 마세요.
+- 이 기준은 점수, 텍스트형 항목, narrative, summaries에 모두 적용됩니다.
+
 ## 점수 원칙
 - 0~100 정수.
 - 50은 "중간"이 아니라 근거가 부족할 때의 기본값입니다.
@@ -640,6 +762,10 @@ RUBRIC = f"""\
 
 ## 텍스트형 항목
 {_textual_section()}
+
+- 관심사·일상·데이트 취향은 사용자가 직접 밝힌 대상, 행위, 부정과 조건을 보존합니다.
+  선호·소비와 제작·수행 경험·능력은 서로 다른 사실입니다. 관련 있어 보인다는 이유로 바꾸거나 덧붙이지 마세요.
+- 없거나 불명확한 관심사는 빈 배열로 둡니다. 예시 취미, 하루의 설정, 다른 사람의 정보로 채우지 마세요.
 
 ## 상충처럼 보이지만 정상인 조합
 - withdrawal 높음 + problem_solving 높음:
@@ -679,15 +805,18 @@ RUBRIC = f"""\
 ## 서술 (narrative) — 사용자가 직접 읽는 글
 점수와 함께, 이 사람이 결과 화면에서 읽을 서술을 씁니다. 차트가 아니라 이 글이 결과입니다.
 - headline: 한 줄. "○○하지만 ○○한 관계를 원하는 타입" 꼴. 40자 이내
-- body: 3~5문장. **문장마다 사용자가 대화에서 실제로 한 말 하나를 옮겨 씁니다.** "~하는 편이에요" 톤의 존댓말.
+- body: 3~5문장. **답변을 따옴표나 말투 그대로 옮기지 말고, 답변들에서 드러난 성향을 요약해 씁니다.**
+  한 문장은 하나의 성향을 말하되, 그 성향이 어떤 답에서 나왔는지 근거가 있어야 합니다. "~하는 편이에요" 톤의 존댓말.
+  사용자가 쓴 욕설·비속어·은어·장난스러운 표현은 그 단어를 쓰지 않고 성향만 중립적인 말로 풀어 씁니다.
   사용자를 "당신"이 아니라 닉네임 없이 주어 생략으로 부릅니다. 점수를 숫자로 언급하지 않습니다.
   답이 적으면 문장 수를 줄이세요. 억지로 3문장을 채우지 않습니다.
-- traits: 한 줄짜리 특징 3~5개. 각 30자 이내. 예: "중요한 일은 혼자 정리한 뒤에 꺼내는 편". 역시 사용자가 한 말에서만.
+- traits: 한 줄짜리 특징 3~5개. 각 30자 이내. 예: "중요한 일은 혼자 정리한 뒤에 꺼내는 편". 역시 답변에서 확인된 성향만, 사용자의 표현이 아니라 요약한 말로.
 - 근거가 없는 차원은 서술하지 않습니다. 점수와 모순되게 쓰지 않습니다.
 - **짐작 금지**: 사용자가 말하지 않은 마음·반응을 추측하지 않습니다.
   "~할 것 같아요", "~하실 수 있겠네요", "~일 수도 있어요", "~듯해요" 같은 어미를 쓰지 않습니다.
-  ✕ "너무 캐묻는 것은 부담스러우실 수 있겠네요" (사용자가 한 말이 아님)
-  ○ "관계는 천천히 알아가고 싶다고 했어요" (사용자가 한 말)
+  ✕ "너무 캐묻는 것은 부담스러우실 수 있겠네요" (답변에서 확인되지 않은 짐작)
+  ✕ "'일단 말 걸어보고 아니면 말지'라고 했어요" (답변을 그대로 인용)
+  ○ "관계는 천천히 알아가는 쪽을 편하게 느껴요" (답변에서 확인된 성향의 요약)
 - 서술은 사용자에게 말을 거는 글이 아닙니다. "~시군요", "~하셨네요" 같은 대화체 반응도 쓰지 않습니다.
 - "회피형", "불안형" 같은 유형명 금지. 평가·조언 금지 ("좋은 분", "고치면 좋겠다" ✕).
 
@@ -705,7 +834,7 @@ RUBRIC = f"""\
 JSON 객체 하나만 출력하세요. 설명·마크다운·코드펜스 금지.
 점수형은 정수, 텍스트형은 문자열 배열.
 근거를 찾지 못한 차원은 키를 아예 생략하세요. (50으로 채우지 마세요)
-{{"avoidance": 78, ..., "interests": ["러닝"], "routine": [], "date_prefer": [], "date_avoid": [],
+{{"avoidance": 78, ..., "interests": [], "routine": [], "date_prefer": [], "date_avoid": [],
   "narrative": {{"headline": "...", "body": "...", "traits": ["...", "..."]}},
   "summaries": [{{"category": "intimacy", "title": "...", "content": "..."}}]}}
 """
@@ -718,7 +847,16 @@ class BuildFailed(Exception):
 class ExtractionAgent:
     @staticmethod
     def _transcript(history: list[dict]) -> str:
-        return "\n".join(f"{'사용자' if m['role'] == 'user' else '하루'}: {m['content']}" for m in history)
+        # 사용자 근거와 하루의 질문·자기소개를 분리하되, 짧은 답의 맥락은 순서로 연결한다.
+        evidence, context, pending = [], [], []
+        for message in history:
+            if message["role"] == "assistant":
+                pending.append(message["content"])
+            elif message["role"] == "user":
+                evidence.append(message["content"])
+                context.append({"answer_index": len(evidence) - 1, "haru_context_only": pending})
+                pending = []
+        return json.dumps({"user_evidence": evidence, "question_context": context}, ensure_ascii=False)
 
     @staticmethod
     def _answered_section(answered: set[str]) -> str:

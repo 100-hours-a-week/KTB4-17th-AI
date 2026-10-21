@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
-import sys
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,12 +40,52 @@ MODELS = (
         sha256="70dd8b1657c42d1595d6bd13d97d932877b3bed54a95d3c4733a0f740d1fd66b",
     ),
     Model(
+        filename="palm_detection_mediapipe_2023feb.onnx",
+        url=(
+            "https://media.githubusercontent.com/media/opencv/opencv_zoo/8de3653/models/"
+            "palm_detection_mediapipe/palm_detection_mediapipe_2023feb.onnx"
+        ),
+        sha256="78ff51c38496b7fc8b8ebdb6cc8c1abb02fa6c38427c6848254cdaba57fcce7c",
+    ),
+    Model(
+        filename="handpose_estimation_mediapipe_2023feb.onnx",
+        url=(
+            "https://media.githubusercontent.com/media/opencv/opencv_zoo/56cef36/models/"
+            "handpose_estimation_mediapipe/handpose_estimation_mediapipe_2023feb.onnx"
+        ),
+        sha256="db0898ae717b76b075d9bf563af315b29562e11f8df5027a1ef07b02bef6d81c",
+    ),
+    Model(
         filename="community_forensics_vit_int8.onnx",
         url=(
             "https://huggingface.co/buildborderless/CommunityForensics-DeepfakeDet-ViT/"
             "resolve/0b8f9cb/onnx/model_int8.onnx?download=true"
         ),
         sha256="968f113f1107d58bfc73444b6e87020e2d541780ad43b7a1ac3e3b18b86c2bbd",
+    ),
+    Model(
+        filename="kure_v1_int8/model_quantized.onnx",
+        url=(
+            "https://huggingface.co/hrunj1230/kure-v1-onnx-int8/resolve/"
+            "a380db33787422c47175b5cc0ba4325811695141/model_quantized.onnx"
+        ),
+        sha256="aaf2788bdea5e9cc6bb03d3e7bb546ae73dccee2a5489825000e316876853a61",
+    ),
+    Model(
+        filename="kure_v1_int8/tokenizer.json",
+        url=(
+            "https://huggingface.co/hrunj1230/kure-v1-onnx-int8/resolve/"
+            "a380db33787422c47175b5cc0ba4325811695141/tokenizer.json"
+        ),
+        sha256="fb3c3b93c46fd5a8634e262e1b7de7da11a18b527aa2282b312952b692781dfd",
+    ),
+)
+
+DEMO_MODELS = (
+    Model(
+        filename="face_landmarker.task",
+        url="https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+        sha256="64184e229b263107bc2b804c6625db1341ff2bb731874b0bcc2fe6544e0bc9ff",
     ),
 )
 
@@ -60,6 +100,7 @@ def digest(path: Path) -> str:
 
 def download(model: Model, directory: Path) -> None:
     destination = directory / model.filename
+    destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists() and digest(destination) == model.sha256:
         print(f"verified: {destination}")
         return
@@ -77,9 +118,15 @@ def download(model: Model, directory: Path) -> None:
 
 
 def main() -> None:
-    directory = Path(sys.argv[1] if len(sys.argv) > 1 else "models")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("directory", type=Path, nargs="?", default=Path("models"))
+    parser.add_argument("--demo", action="store_true", help="라이브 얼굴 프로토타입 모델도 내려받기")
+    parser.add_argument("--demo-only", action="store_true", help="라이브 얼굴 프로토타입 모델만 내려받기")
+    args = parser.parse_args()
+    directory = args.directory
     directory.mkdir(parents=True, exist_ok=True)
-    for model in MODELS:
+    models = DEMO_MODELS if args.demo_only else MODELS + (DEMO_MODELS if args.demo else ())
+    for model in models:
         download(model, directory)
 
 

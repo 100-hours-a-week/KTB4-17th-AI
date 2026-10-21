@@ -37,8 +37,9 @@ release.config.cjs
 *.sqlite3
 
 # Development files
+serving/
+training/
 tests/
-dev/
 docs/
 README.md
 gitconvention.md

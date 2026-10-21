@@ -46,7 +46,8 @@ def test_persona_regenerates_one_confession(monkeypatch):
     )
     assert len(calls) == 2
     assert calls[1]["messages"][-1]["role"] == "user"
-    assert "CORRECTION NOTICE" in calls[1]["messages"][-1]["content"]
+    assert calls[1]["messages"][-1]["content"] == "산책해요"
+    assert "CORRECTION NOTICE" in calls[1]["system"]
     assert result.text == "산책 얘기 좋네요. 주말에는 뭐 하세요?"
     assert result.validation.status == "REGENERATED"
 

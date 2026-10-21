@@ -325,7 +325,6 @@ print(settings.database_url)
 """프로젝트 공통 DB 세션. 기능별 api.py 는 여기 get_db 를 import 해서 Depends 에 건다.
 
 커밋은 라우트가 직접 한다(`await db.commit()`). 여기서는 세션을 열고 닫기만 한다.
-플레이그라운드(dev/)는 `app.dependency_overrides[get_db] = ...` 로 SQLite 로 갈아끼운다.
 
 Base 도 여기 둔다. 기능마다 Base 를 따로 만들면 simulation → personas 처럼
 기능 간 FK 를 걸 때 MetaData 가 달라 테이블을 못 찾는다. 모든 features/*/models.py 가 이 Base 를 쓴다.
@@ -3163,9 +3162,6 @@ class Coverage:
     def empty_dimensions(self) -> set[str]:
         return {d for d, n in self.primary.items() if n == 0}
 
-    def has_primary(self, dimension: str) -> bool:
-        return self.primary.get(dimension, 0) > 0
-
     def to_dict(self) -> dict:
         return {"primary": dict(self.primary), "secondary": dict(self.secondary)}
 
@@ -3601,10 +3597,6 @@ def apply(
 주 근거가 한 번도 없는 성향 이름을 `set`으로 반환한다.
 
 다음 질문을 선택할 때 아직 비어 있는 성향을 많이 채우는 주제를 우선하기 위해 사용한다.
-
-### `has_primary()`
-
-특정 성향에 주 근거가 한 건 이상 있는지 `True` 또는 `False`로 반환한다.
 
 ### `to_dict()`
 

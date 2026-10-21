@@ -11,10 +11,10 @@ from .rules import (
     FORMAL_END_REGEX,
     IDENTITY_REGEX,
     PAST_MEETING_REGEX,
-    PROFANITY_WORDS,
     SCRIPT_LINE_REGEX,
     SPEECH_END_REGEX,
     UNSAID_TRIGGER_REGEX,
+    contains_profanity,
 )
 
 AI_DEFLECTION = "그건 지금 우리 얘기랑은 좀 다른 질문 같아요. 오늘은 서로 얘기 나누는 쪽이 더 궁금해요."
@@ -112,7 +112,7 @@ def validate(text: str, ctx: GuardrailContext) -> CheckResult:
         # We use STYLE for safety rules as SAFETY is not in Domain enum
         add_violation(Grade.BLOCK, Domain.STYLE, "RULE-SAFETY-LEAK", "System prompt leaked")
 
-    if any(w in text for w in PROFANITY_WORDS):
+    if contains_profanity(text):
         add_violation(Grade.BLOCK, Domain.STYLE, "RULE-SAFETY-PROFANITY", "Profanity detected")
 
     if IDENTITY_REGEX.search(text):

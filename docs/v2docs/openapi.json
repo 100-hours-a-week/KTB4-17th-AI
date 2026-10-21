@@ -31,6 +31,13 @@
       },
       "Body_completeFaceVerification": {
         "properties": {
+          "attempt_no": {
+            "default": 1,
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Attempt No",
+            "type": "integer"
+          },
           "challenge_token": {
             "title": "Challenge Token",
             "type": "string"
@@ -56,7 +63,24 @@
       },
       "Challenge": {
         "enum": [
-          "LOOK_STRAIGHT"
+          "LOOK_STRAIGHT",
+          "TURN_LEFT",
+          "TURN_RIGHT",
+          "LOOK_UP",
+          "LOOK_DOWN",
+          "HAND_FIST",
+          "HAND_ONE",
+          "HAND_TWO",
+          "HAND_THREE",
+          "HAND_FOUR",
+          "HAND_OPEN_PALM",
+          "HAND_THUMBS_UP",
+          "HAND_L_SHAPE",
+          "HAND_LOVE_YOU",
+          "HAND_CALL_ME",
+          "HAND_UP",
+          "HAND_DOWN",
+          "HAND_SIDEWAYS"
         ],
         "title": "Challenge",
         "type": "string"
@@ -212,6 +236,17 @@
             "title": "Completed Challenges",
             "type": "array"
           },
+          "expected_hand_direction": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Hand Direction"
+          },
           "frame_diagnostics": {
             "items": {
               "$ref": "#/components/schemas/FrameDiagnostic"
@@ -224,9 +259,52 @@
             "title": "Frontal Face Frames",
             "type": "integer"
           },
+          "frontal_hold_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frontal Hold Seconds"
+          },
+          "hand_frames": {
+            "default": 0,
+            "title": "Hand Frames",
+            "type": "integer"
+          },
+          "head_peak_delta_deg": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Peak Delta Deg"
+          },
+          "head_returned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Returned"
+          },
           "low_light_enhanced_frames": {
             "default": 0,
             "title": "Low Light Enhanced Frames",
+            "type": "integer"
+          },
+          "matched_hand_frames": {
+            "default": 0,
+            "title": "Matched Hand Frames",
             "type": "integer"
           },
           "max_abs_pitch_deg": {
@@ -247,6 +325,29 @@
           "passed": {
             "title": "Passed",
             "type": "boolean"
+          },
+          "pose_hold_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pose Hold Seconds"
+          },
+          "reason_codes": {
+            "items": {
+              "$ref": "#/components/schemas/app__features__face_verification__schemas__ReasonCode"
+            },
+            "title": "Reason Codes",
+            "type": "array"
+          },
+          "repeated_frame_ratio": {
+            "default": 0.0,
+            "title": "Repeated Frame Ratio",
+            "type": "number"
           },
           "required_frontal_face_frames": {
             "default": 6,
@@ -560,6 +661,23 @@
       },
       "VerificationChallengeResponse": {
         "properties": {
+          "challenge_plan": {
+            "anyOf": [
+              {
+                "items": {
+                  "items": {
+                    "$ref": "#/components/schemas/Challenge"
+                  },
+                  "type": "array"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Challenge Plan"
+          },
           "challenge_token": {
             "title": "Challenge Token",
             "type": "string"
@@ -575,6 +693,11 @@
             "format": "date-time",
             "title": "Expires At",
             "type": "string"
+          },
+          "protocol_version": {
+            "default": 1,
+            "title": "Protocol Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -616,6 +739,16 @@
             "title": "Model Version",
             "type": "string"
           },
+          "next_challenge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationChallengeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reason_codes": {
             "items": {
               "$ref": "#/components/schemas/app__features__face_verification__schemas__ReasonCode"
@@ -649,7 +782,12 @@
           "NO_FACE",
           "LIVENESS_FAILED",
           "FACE_MISMATCH",
-          "FACE_COMPARISON_FAILED"
+          "FACE_COMPARISON_FAILED",
+          "FACE_NOT_CENTERED",
+          "HAND_NOT_DETECTED",
+          "HAND_GESTURE_MISMATCH",
+          "HEAD_MOVEMENT_NOT_COMPLETED",
+          "ADDITIONAL_CHALLENGE_REQUIRED"
         ],
         "title": "ReasonCode",
         "type": "string"

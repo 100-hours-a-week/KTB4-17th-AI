@@ -2,9 +2,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 import sentry_sdk
 
@@ -23,8 +24,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 from fastapi import APIRouter, FastAPI
 from langfuse import get_client
 
-from app.core.config import get_settings
-from app.devtools.api import router as devtools_router
+from app.core import slm
 from app.features.chat_end.api import router as chat_end_router
 from app.features.face_verification.api import router as face_verification_router
 from app.features.persona.api import router as persona_router
@@ -35,6 +35,12 @@ from app.features.simulation.api import router as simulation_router
 from app.features.simulation_migration.api import get_run_manager
 from app.features.simulation_migration.api import router as simulation_migration_router
 from app.features.synthetic_detection.api import router as synthetic_detection_router
+from app.v2.persona.api import router as v2_persona_router
+from app.v2.persona.embedder import get_embedder
+from app.v2.persona.service import idle_sweeper_loop
+from app.v2.persona_extraction.api import router as v2_persona_extraction_router
+from app.v2.practice.api import router as v2_practice_router
+from app.v2.simulation.api import router as v2_simulation_router
 
 description = """
 별이삼샵 어플리케이션의 AI API입니다.
@@ -63,12 +69,29 @@ TAGS_METADATA = [
 ]
 
 
+async def _warmup_embedder() -> None:
+    """첫 요청이 모델 로딩(수 초)을 떠안지 않게 미리 한 번 돌린다. 모델 파일이 없어도 서버는 뜬다."""
+    try:
+        await get_embedder().encode("워밍업")
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).warning(
+            "KURE-v1 임베더 워밍업 실패 — 모델 파일 확인 필요 (메모리 검색은 건너뛰어진다)", exc_info=True
+        )
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """프로세스 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
+    """시작 시 태깅·추출 SLM 상태를 확인하고 v2 메모리 스위퍼/워밍업을 띄우며, 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
 
+    await slm.start()
+    background = [asyncio.create_task(idle_sweeper_loop()), asyncio.create_task(_warmup_embedder())]
     yield
+    for task in background:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
     try:
+        await slm.stop()
         await get_run_manager().shutdown()
     finally:
         get_client().shutdown()
@@ -98,6 +121,12 @@ api_router.include_router(primary_photo_router)
 api_router.include_router(synthetic_detection_router)
 api_router.include_router(face_verification_router)
 
+# v2
+api_router.include_router(v2_persona_router)
+api_router.include_router(v2_persona_extraction_router)
+api_router.include_router(v2_practice_router)
+api_router.include_router(v2_simulation_router)
+
 
 @app.get("/health", status_code=200, summary="헬스 체크", tags=["health"])
 @api_router.get("/health", status_code=200, summary="헬스 체크", include_in_schema=False)
@@ -106,12 +135,4 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
-# Sentry 연동 확인용. 이벤트 수신을 확인한 뒤 제거한다.
-@app.get("/sentry-debug", include_in_schema=False)
-async def trigger_error():
-    division_by_zero = 1 / 0  # noqa: F841
-
-
 app.include_router(api_router)
-if get_settings().enable_test_ui:
-    app.include_router(devtools_router)

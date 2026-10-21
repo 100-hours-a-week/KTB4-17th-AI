@@ -228,7 +228,9 @@ class FakeStyle:
         if self.error:
             raise self.error
         return StyleExtraction(
-            style=ConversationStyle(speech_level="반말", frequent_phrases=["오 대박", "민수 최고", "010-1"]),
+            style=ConversationStyle(
+                speech_level="반말", frequent_phrases=["내 말", "민수 최고", "010-1"], interjections=["헐"]
+            ),
             disclosure=40,
         )
 
@@ -260,7 +262,8 @@ def test_run_practice_creates_confirmed_version_and_marks_messages():
     assert done.status == "succeeded" and done.persona_id == latest.id and done.analyzed_count == 5
     assert latest.source == "practice" and latest.is_confirmed
     assert latest.scores["disclosure"] == 61  # 70*0.7 + 40*0.3
-    assert latest.conversation_style["frequent_phrases"] == ["오 대박"]  # 이름·숫자 문구는 걸러짐
+    assert latest.conversation_style["frequent_phrases"] == ["내 말"]  # 이름·숫자 문구는 걸러짐
+    assert latest.conversation_style["interjections"] == []  # 발화에 없는 감탄사(프롬프트 예시 누출)는 버림
     assert left == []
 
 

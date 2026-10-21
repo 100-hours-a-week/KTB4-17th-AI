@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import secrets
 import tempfile
 import time
 from dataclasses import dataclass
@@ -18,6 +19,9 @@ import numpy as np
 from app.core.config import Settings
 from app.features.primary_photo.analyzer import FaceAnalyzer, FaceObservation
 
+from .challenge import ChallengeTarget, random_challenge
+from .head import HeadMovement
+from .protocol import MAX_ATTEMPTS, decode_target, encode_target
 from .schemas import Challenge, FrameDiagnostic, FrameStatus, LivenessResult, VerificationChallengeResponse
 
 MIN_SAMPLED_FRAMES = 8
@@ -44,29 +48,78 @@ class ChallengeSigner:
     def __init__(self, settings: Settings) -> None:
         self.secret = settings.liveness_token_secret.encode()
         self.ttl_seconds = settings.liveness_token_ttl_seconds
+        self.active_enabled = settings.active_liveness_enabled
+        self.adaptive_enabled = settings.adaptive_liveness_enabled
+        self.step_up_match_margin = settings.liveness_step_up_match_margin
 
     def create(self) -> VerificationChallengeResponse:
-        challenges = [Challenge.LOOK_STRAIGHT]
+        plan = []
+        if self.active_enabled:
+            selected = random_challenge()
+            target = encode_target(
+                ChallengeTarget(selected.gesture, selected.direction, None) if self.adaptive_enabled else selected
+            )
+            plan = [list(target) for _ in range(MAX_ATTEMPTS)]
         expires = datetime.now(UTC) + timedelta(seconds=self.ttl_seconds)
+        return self._issue(plan, expires, version=3 if self.adaptive_enabled else 2)
+
+    def _issue(
+        self, plan: list[list[Challenge]], expires: datetime, *, version: int = 3
+    ) -> VerificationChallengeResponse:
+        challenges = plan[0] if plan else [Challenge.LOOK_STRAIGHT]
         payload = {"challenges": [item.value for item in challenges], "exp": int(expires.timestamp())}
+        if plan:
+            payload.update(
+                v=version, nonce=secrets.token_hex(16), plan=[[item.value for item in target] for target in plan]
+            )
         encoded = _b64(json.dumps(payload, separators=(",", ":")).encode())
         signature = _b64(hmac.new(self.secret, encoded.encode(), hashlib.sha256).digest())
         return VerificationChallengeResponse(
             challenge_token=f"{encoded}.{signature}",
             challenges=challenges,
             expires_at=expires,
+            challenge_plan=plan or None,
+            protocol_version=version if plan else 1,
         )
 
-    def verify(self, token: str) -> list[Challenge]:
+    def step_up(self, token: str) -> VerificationChallengeResponse:
+        codes = self.verify(token)
+        target = decode_target(codes)
+        if target.head is not None:
+            raise InvalidChallenge("이미 추가 챌린지를 진행 중입니다.")
+        payload = json.loads(_unb64(token.split(".", 1)[0]))
+        codes = encode_target(ChallengeTarget(target.gesture, target.direction, secrets.choice(tuple(HeadMovement))))
+        # 추가 확인이 세션의 원래 유효기간을 연장하지 않는다.
+        return self._issue([list(codes) for _ in range(MAX_ATTEMPTS)], datetime.fromtimestamp(payload["exp"], UTC))
+
+    def verify(self, token: str, attempt_no: int = 1) -> list[Challenge]:
         try:
+            if isinstance(attempt_no, bool) or not isinstance(attempt_no, int) or not 1 <= attempt_no <= MAX_ATTEMPTS:
+                raise InvalidChallenge("유효하지 않은 인증 시도 번호입니다.")
+            if not isinstance(token, str) or len(token) > 2048:
+                raise InvalidChallenge("유효하지 않은 챌린지 토큰입니다.")
             encoded, supplied = token.split(".", 1)
             expected = _b64(hmac.new(self.secret, encoded.encode(), hashlib.sha256).digest())
             if not hmac.compare_digest(supplied, expected):
                 raise InvalidChallenge("유효하지 않은 챌린지 토큰입니다.")
             payload = json.loads(_unb64(encoded))
-            if int(payload["exp"]) < int(time.time()):
+            if int(payload["exp"]) <= int(time.time()):
                 raise InvalidChallenge("만료된 챌린지 토큰입니다.")
-            return [Challenge(item) for item in payload["challenges"]]
+            if payload.get("v") in (2, 3):
+                plan = payload["plan"]
+                if len(plan) != MAX_ATTEMPTS or not payload.get("nonce") or any(target != plan[0] for target in plan):
+                    raise InvalidChallenge("유효하지 않은 챌린지 계획입니다.")
+                for target in plan:
+                    decode_target([Challenge(item) for item in target])
+                    if payload["v"] == 2 and len(target) != 4:
+                        raise InvalidChallenge("유효하지 않은 이전 챌린지입니다.")
+                if payload.get("challenges") != plan[0]:
+                    raise InvalidChallenge("유효하지 않은 챌린지 계획입니다.")
+                return [Challenge(item) for item in plan[attempt_no - 1]]
+            legacy = [Challenge(item) for item in payload["challenges"]]
+            if legacy != [Challenge.LOOK_STRAIGHT]:
+                raise InvalidChallenge("유효하지 않은 이전 챌린지입니다.")
+            return legacy
         except InvalidChallenge:
             raise
         except (ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
@@ -74,14 +127,21 @@ class ChallengeSigner:
 
 
 class LivenessAnalyzer:
-    def __init__(self, face_analyzer: FaceAnalyzer) -> None:
+    def __init__(self, face_analyzer: FaceAnalyzer, active_factory=None) -> None:
         self.face_analyzer = face_analyzer
+        self.active_factory = active_factory
         settings = getattr(face_analyzer, "settings", None)
         self.max_abs_yaw_deg = getattr(settings, "liveness_max_abs_yaw_deg", DEFAULT_MAX_ABS_YAW_DEG)
         self.max_abs_pitch_deg = getattr(settings, "liveness_max_abs_pitch_deg", DEFAULT_MAX_ABS_PITCH_DEG)
         self.max_abs_roll_deg = getattr(settings, "liveness_max_abs_roll_deg", DEFAULT_MAX_ABS_ROLL_DEG)
 
     def evaluate(self, video: bytes, suffix: str, challenges: list[Challenge]) -> LivenessEvaluation:
+        if challenges != [Challenge.LOOK_STRAIGHT]:
+            if self.active_factory is None:
+                from app.core.errors import ModelUnavailable
+
+                raise ModelUnavailable("능동형 라이브니스 모델을 사용할 수 없습니다.")
+            return self.active_factory().evaluate(video, suffix, challenges)
         observations: list[FaceObservation] = []
         sample_records: list[tuple[int, int | None, FaceObservation]] = []
         candidates: list[tuple[float, float, int, np.ndarray]] = []

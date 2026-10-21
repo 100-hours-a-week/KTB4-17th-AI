@@ -20,6 +20,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
+from app.core.guardrail import contains_profanity
 from app.core.observability import build_langfuse_metadata
 from app.features.persona.models import PersonaRecord
 from app.features.persona.repository import PersonaRepository
@@ -45,6 +46,13 @@ DECAY_FACTOR = 0.7  # 새 대화에서 관찰되지 않은 표현의 감쇠율
 WEIGHT_BOOST = 0.35  # 새 대화에서 관찰된 기존 표현의 부스트
 INITIAL_WEIGHT = 0.6  # 새로 등장한 표현의 초기 가중치
 MIN_WEIGHT_THRESHOLD = 0.2  # 이 미만으로 떨어지면 완전 퇴출(Eviction)
+# 이번 대화에 안 나온 이전 표현은 검증할 길이 없다 — 이전 가중치가 이 이상(여러 번·충분히 관찰됨)일 때만 감쇠하며 유지.
+# 가중치 기록이 없거나 낮은 표현(한두 번 우연히 들어간 것, 검증 도입 전 데이터)은 바로 퇴출한다
+MIN_KEEP_UNOBSERVED = 0.5
+# 횟수 반영: 이번 대화에서 쓰인 발화 수 n → 목표 가중치 min(1.0, 0.5 + 0.05*n). 5회 0.75, 10회 이상 1.0
+COUNT_WEIGHT_BASE = 0.5
+COUNT_WEIGHT_STEP = 0.05
+COUNT_BLEND = 0.3  # 기존 표현은 이전값*0.7 + 목표*0.3 으로 목표에 수렴한다
 
 
 # 자주 쓰는 말에서 개인정보·이름·긴 문장·중복을 거르고 앞에서부터 limit 개
@@ -52,7 +60,7 @@ def clean_phrases(phrases: list[str], *, banned: set[str], limit: int = MAX_PHRA
     out: list[str] = []
     for raw in phrases:
         p = raw.strip()
-        if not p or len(p) > _PHRASE_MAX_LEN or _PII.search(p):
+        if not p or len(p) > _PHRASE_MAX_LEN or _PII.search(p) or contains_profanity(p):
             continue
         if any(name and name in p for name in banned) or p in out:
             continue
@@ -62,12 +70,55 @@ def clean_phrases(phrases: list[str], *, banned: set[str], limit: int = MAX_PHRA
     return out
 
 
+# 문장부호·웃음 서술이 언급하는 표식 → 실제 발화에 있어야 하는 글자
+_STYLE_MARKERS = {"물음표": "?", "느낌표": "!", "물결": "~", "ㅋ": "ㅋ", "ㅎ": "ㅎ"}
+_HINT = re.compile(r"\(.*?\)")
+_ENDING_TAIL = ".,!?~…ㅋㅎ "  # 어미 뒤에 붙어도 어미로 보는 글자
+
+# 습관으로 인정하는 기준 — 그 표현이 들어간 발화가 이 횟수 이상이고, 전체 발화의 이 비율 이상일 때만
+MIN_HABIT_COUNT = 5
+MIN_HABIT_RATIO = 0.05
+
+
+# 표현이 쓰인 발화 수. 어미는 발화 끝에 올 때만 센다 ("~요" 가 문장 중간의 '요' 로 세어지지 않게)
+def _habit_count(core: str, utterances: list[str], *, ending: bool) -> int:
+    if ending:
+        return sum(u.rstrip(_ENDING_TAIL).endswith(core) for u in utterances)
+    return sum(core in u for u in utterances)
+
+
+# LLM 이 프롬프트 예시를 베껴 쓰거나 지어낸 말투, 우연히 한두 번 나온 표현을 걸러낸다.
+# 문구는 MIN_HABIT_COUNT 회 이상·MIN_HABIT_RATIO 이상 쓰인 것만 남기고, 문장부호·웃음 서술은 표식이 실제 발화에 있어야 한다
+def ground_style(style: dict, utterances: list[str]) -> tuple[dict, dict[str, int]]:
+    lines = [" ".join(u.split()) for u in utterances]
+    text = " ".join(lines)
+    out = dict(style)
+    counts: dict[str, int] = {}
+    for field in PHRASE_FIELDS:
+        kept = []
+        for phrase in out.get(field) or []:
+            core = _HINT.sub("", phrase).strip().lstrip("~").strip()
+            if not core:
+                continue
+            n = _habit_count(core, lines, ending=field == "endings")
+            if n >= MIN_HABIT_COUNT and n / max(len(lines), 1) >= MIN_HABIT_RATIO:
+                kept.append(phrase)
+                counts[phrase] = n
+        out[field] = kept
+    for field in ("punctuation", "laughter"):
+        desc = out.get(field)
+        if desc and any(word in desc and mark not in text for word, mark in _STYLE_MARKERS.items()):
+            out[field] = None
+    return out, counts
+
+
 def update_phrase_weights(
     current_phrases: dict[str, list[str]],
     previous_weights: dict[str, float] | None,
     previous_phrases: dict[str, list[str]] | None = None,
     *,
     limit: int = MAX_PHRASES,
+    counts: dict[str, int] | None = None,
 ) -> tuple[dict[str, list[str]], dict[str, float]]:
     """시간 감쇠(Decay), 가중치 부스트 및 퇴출(Eviction) 로직을 적용하여 상위 limit 개를 선별한다.
 
@@ -75,10 +126,17 @@ def update_phrase_weights(
        - 기존에 있던 표현: min(1.0, prev_weight * 0.7 + WEIGHT_BOOST + rank_bonus)
        - 새로 등장한 표현: INITIAL_WEIGHT + rank_bonus
     2. 새 대화에서 관찰되지 않은 이전 표현:
-       - prev_weight * DECAY_FACTOR
+       - 이전 가중치가 MIN_KEEP_UNOBSERVED(0.5) 미만이거나 기록이 없으면 즉시 퇴출 (검증 불가)
+       - 그 외 prev_weight * DECAY_FACTOR
        - MIN_WEIGHT_THRESHOLD (0.2) 미만으로 떨어지면 자동 퇴출 (탈락)
     3. 각 필드별로 가중치 내림차순 정렬 후 상위 limit 개만 유지
     4. limit 밖으로 밀려난 표현은 가중치 딕셔너리에서 제거 (퇴출)
+
+    counts(표현 → 이번 대화에서 쓰인 발화 수)가 있으면 관찰된 표현의 가중치에 횟수를 반영한다:
+       목표 = min(1.0, 0.5 + 0.05*n)
+       - 새 표현: 목표 + rank_bonus
+       - 기존 표현: min(1.0, 이전값 * 0.7 + 목표 * 0.3 + rank_bonus)
+    counts 에 없는 표현은 위의 기본 규칙(INITIAL_WEIGHT, WEIGHT_BOOST)을 따른다.
     """
     prev_w = dict(previous_weights or {})
     prev_p = dict(previous_phrases or {})
@@ -93,17 +151,24 @@ def update_phrase_weights(
         # 1. 새 대화에서 관찰된 항목 가중치 계산
         for idx, phrase in enumerate(new_list):
             rank_bonus = 0.05 if idx == 0 else 0.0
+            target = None
+            if counts and phrase in counts:
+                target = min(1.0, COUNT_WEIGHT_BASE + COUNT_WEIGHT_STEP * counts[phrase])
             if phrase in prev_w:
-                w = min(1.0, round(prev_w[phrase] * 0.7 + WEIGHT_BOOST + rank_bonus, 2))
+                boost = WEIGHT_BOOST if target is None else target * COUNT_BLEND
+                w = min(1.0, round(prev_w[phrase] * 0.7 + boost + rank_bonus, 2))
             else:
-                w = min(1.0, round(INITIAL_WEIGHT + rank_bonus, 2))
+                w = min(1.0, round((INITIAL_WEIGHT if target is None else target) + rank_bonus, 2))
             updated_weights[phrase] = w
 
         # 2. 새 대화에 안 나왔지만 이전에 있던 항목 감쇠(Decay) 및 퇴출(Eviction)
         for phrase in old_list:
             if phrase in observed_set:
                 continue
-            decayed = round(prev_w.get(phrase, 0.5) * DECAY_FACTOR, 2)
+            before = prev_w.get(phrase)
+            if before is None or before < MIN_KEEP_UNOBSERVED:
+                continue
+            decayed = round(before * DECAY_FACTOR, 2)
             if decayed >= MIN_WEIGHT_THRESHOLD:
                 updated_weights[phrase] = decayed
 
@@ -385,7 +450,7 @@ class ExtractionService:
         prev_weights = prev_style.phrase_weights if prev_style else {}
         prev_phrases = {k: getattr(prev_style, k, []) for k in PHRASE_FIELDS} if prev_style else {}
 
-        style = extraction.style.model_dump()
+        style, counts = ground_style(extraction.style.model_dump(), [i.content for i in recent])
         cleaned: dict[str, list[str]] = {}
         for key in PHRASE_FIELDS:
             cleaned[key] = clean_phrases(style.get(key) or [], banned=banned, limit=MAX_PHRASES * 2)
@@ -395,6 +460,7 @@ class ExtractionService:
             previous_weights=prev_weights,
             previous_phrases=prev_phrases,
             limit=MAX_PHRASES,
+            counts=counts,
         )
         for key in PHRASE_FIELDS:
             style[key] = final_phrases[key]

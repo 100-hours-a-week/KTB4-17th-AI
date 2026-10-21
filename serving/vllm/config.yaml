@@ -1,0 +1,34 @@
+# vLLM 0.30.0 서버 설정 — 태깅·추출 전용 Kanana (RunPod Pod 1장)
+# start.sh 가 `vllm serve --config` 로 읽는다. 키 이름은 CLI 플래그에서 -- 를 뺀 것이다.
+# 명령줄 > 이 파일 > 기본값 순서로 적용된다. LoRA 경로(--lora-modules)는 환경마다 달라 start.sh 가 붙인다.
+# 키를 바꾸기 전에 Pod 안에서 `vllm serve --help` 로 0.30.0 에 있는 플래그인지 확인한다.
+
+# 기본 모델. 커밋을 고정해 같은 가중치로 학습·서빙·평가한다 (어댑터의 base_model 과 같아야 한다)
+model: kakaocorp/kanana-2-3b-instruct
+revision: 6a5d7889964c4c590299d16e309eabab1f73f8a9
+# 앱의 SLM_EXTRACTION_MODEL. LoRA 없이 기본 모델을 부를 때의 이름
+served-model-name: kanana
+
+host: "0.0.0.0" # RunPod 프록시가 들어오려면 0.0.0.0
+port: 8000
+
+# 메모리 — 3.5B BF16 가중치 약 7GB, KV 캐시 토큰당 128KiB (32 레이어 × KV 헤드 8 × head_dim 128 × 2 × 2바이트)
+# 16GB GPU 에서도 수만 토큰이 남는다. 실제 값은 시작 로그의 KV cache / Maximum concurrency 줄로 확인한다
+gpu-memory-utilization: 0.90
+# 태깅 입력은 TAG_PROMPT + 질문·답변이라 짧다. 추출(대화 전체 + 1500 토큰 출력)까지 넣어 4096.
+# 모델 기본값(32768)으로 두면 메모리만 더 잡는다
+max-model-len: 4096
+max-num-seqs: 32
+# 모든 태깅 요청이 같은 TAG_PROMPT(system)로 시작해서 프리픽스 캐시 효과가 크다
+enable-prefix-caching: true
+
+# 모델의 generation_config.json 이 기본 샘플링을 바꾸지 않게 (평가 재현성)
+generation-config: vllm
+
+# LoRA — 태깅 어댑터 하나. train_lora.py 기본 r=16. 더 큰 r 로 학습했으면 여기를 올린다
+enable-lora: true
+max-loras: 1
+max-lora-rank: 16
+
+uvicorn-log-level: info
+# API 키는 여기 쓰지 않는다. vLLM 이 환경변수 VLLM_API_KEY 를 읽는다 (RunPod Secrets)

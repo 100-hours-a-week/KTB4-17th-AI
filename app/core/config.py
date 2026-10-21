@@ -75,6 +75,16 @@ class Settings(BaseSettings):
         description="시뮬레이션 LLM 호출에 JSON 모드(response_format)를 켤지 여부",
     )
 
+    # ── 태깅·추출 전용 소형 모델 (RunPod vLLM, serving/vllm) ─────────────
+    # 비워 두면 태깅·추출도 위 메인 LLM 을 쓴다. 실패하면 메인 LLM 으로 넘긴다 (app/core/slm.py)
+    slm_base_url: str = Field(default="", validation_alias="SLM_BASE_URL")
+    slm_api_key: str = Field(default="", validation_alias="SLM_API_KEY")
+    # vLLM 의 --lora-modules / --served-model-name 이름. 비워 둔 작업은 메인 LLM 으로 간다
+    slm_tagging_model: str = Field(default="", validation_alias="SLM_TAGGING_MODEL")
+    slm_extraction_model: str = Field(default="", validation_alias="SLM_EXTRACTION_MODEL")
+    # SLM 이 내려간 동안(콜드 스타트 등) /health 를 다시 확인하는 간격
+    slm_probe_interval_s: float = Field(default=15.0, gt=0, validation_alias="SLM_PROBE_INTERVAL_S")
+
     # 시뮬레이션 동시 실행 최대 수 (과도한 부하 방지용 세마포어 한도)
     simulation_max_inflight: int = Field(
         default=20,
@@ -130,9 +140,6 @@ class Settings(BaseSettings):
     extraction_job_stale_minutes: int = 10
 
     # ── 프로필 신뢰(대표사진 심사·얼굴 인증) ──────────────────────────
-    # /test 브라우저 테스트 페이지. 운영에서는 꺼 둔다
-    enable_test_ui: bool = Field(default=False, validation_alias="ENABLE_TEST_UI")
-
     yunet_model_path: Path = Field(
         default=Path("models/face_detection_yunet_2023mar.onnx"),
         validation_alias="YUNET_MODEL_PATH",
@@ -141,6 +148,18 @@ class Settings(BaseSettings):
     sface_model_path: Path = Field(
         default=Path("models/face_recognition_sface_2021dec.onnx"),
         validation_alias="SFACE_MODEL_PATH",
+    )
+    face_landmarker_model_path: Path = Field(
+        default=Path("models/face_landmarker.task"),
+        validation_alias="FACE_LANDMARKER_MODEL_PATH",
+    )
+    palm_model_path: Path = Field(
+        default=Path("models/palm_detection_mediapipe_2023feb.onnx"),
+        validation_alias="PALM_MODEL_PATH",
+    )
+    handpose_model_path: Path = Field(
+        default=Path("models/handpose_estimation_mediapipe_2023feb.onnx"),
+        validation_alias="HANDPOSE_MODEL_PATH",
     )
     synthetic_model_path: Path = Field(
         default=Path("models/community_forensics_vit_int8.onnx"),
@@ -198,6 +217,104 @@ class Settings(BaseSettings):
         validation_alias="LIVENESS_TOKEN_SECRET",
     )
     liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
+    # 신규 인증은 고개·손 챌린지를 발급한다. 이전 BE/FE 배포나 롤백 시 명시적으로 false로 전환한다.
+    active_liveness_enabled: bool = Field(default=True, validation_alias="ACTIVE_LIVENESS_ENABLED")
+    adaptive_liveness_enabled: bool = Field(default=False, validation_alias="ADAPTIVE_LIVENESS_ENABLED")
+    liveness_step_up_match_margin: float = Field(
+        default=0.08, ge=0, le=0.2, validation_alias="LIVENESS_STEP_UP_MATCH_MARGIN"
+    )
+
+    # ── v2 사용자 페르소나 메모리 RAG 설정 ──────────────────────────
+    embedding_model_name: str = Field(
+        default="nlpai-lab/KURE-v1-onnx-int8",
+        validation_alias="EMBEDDING_MODEL_NAME",
+        description="DB embedding_model 컬럼에 기록할 임베딩 모델 버전 식별자",
+    )
+    embedding_onnx_path: Path = Field(
+        default=Path("models/kure_v1_int8/model_quantized.onnx"),
+        validation_alias="EMBEDDING_ONNX_PATH",
+    )
+    embedding_tokenizer_path: Path = Field(
+        default=Path("models/kure_v1_int8/tokenizer.json"),
+        validation_alias="EMBEDDING_TOKENIZER_PATH",
+    )
+    embedding_pooling_mode: str = Field(
+        default="cls",
+        validation_alias="EMBEDDING_POOLING_MODE",
+        description="KURE-v1(bge-m3 계열) 및 arctic-embed-l-v2.0-ko의 기본 풀링 방식 ('cls' 또는 'mean')",
+    )
+    embedding_query_prefix: str = Field(
+        default="",
+        validation_alias="EMBEDDING_QUERY_PREFIX",
+        description="쿼리 임베딩 시 앞에 붙일 접두사 (KURE-v1은 빈 문자열, arctic-embed는 'query: ')",
+    )
+    embedding_dim: int = Field(default=1024, validation_alias="EMBEDDING_DIM")
+    embedding_max_length: int = Field(default=512, validation_alias="EMBEDDING_MAX_LENGTH")
+
+    # 실시간 검색 (retrieve) 파라미터 — pgvector <=> 는 코사인 거리(1 - similarity)
+    memory_top_k: int = Field(default=5, ge=1, le=20, validation_alias="MEMORY_TOP_K")
+    memory_max_cosine_distance: float = Field(
+        default=0.5,
+        gt=0.0,
+        lt=2.0,
+        validation_alias="MEMORY_MAX_COSINE_DISTANCE",
+        description="pgvector 코사인 거리(<=>) 상한 (0.5 = 코사인 유사도 0.5 이상만 허용)",
+    )
+    practice_v2_history_window: int = Field(
+        default=20,
+        ge=2,
+        le=40,
+        validation_alias="PRACTICE_V2_HISTORY_WINDOW",
+        description="v2 연습대화에서 LLM에 전달할 최근 메시지 수 (User 10턴 + AI 10턴 = 20)",
+    )
+
+    # 백그라운드 메모리 추출 & Reconcile 파라미터 (유사도 = 1 - 코사인 거리)
+    memory_trigger_turn_count: int = Field(default=8, ge=1, validation_alias="MEMORY_TRIGGER_TURN_COUNT")
+    memory_trigger_idle_minutes: int = Field(default=20, ge=1, validation_alias="MEMORY_TRIGGER_IDLE_MINUTES")
+    memory_context_overlap_pairs: int = Field(default=2, ge=0, le=5, validation_alias="MEMORY_CONTEXT_OVERLAP_PAIRS")
+    memory_reconcile_noop_sim: float = Field(default=0.99, validation_alias="MEMORY_RECONCILE_NOOP_SIM")
+    memory_reconcile_judge_sim: float = Field(default=0.70, validation_alias="MEMORY_RECONCILE_JUDGE_SIM")
+    memory_confidence_confirmed: float = Field(default=0.8, validation_alias="MEMORY_CONFIDENCE_CONFIRMED")
+    memory_confidence_tentative: float = Field(default=0.5, validation_alias="MEMORY_CONFIDENCE_TENTATIVE")
+    memory_tentative_ttl_days: int = Field(default=30, ge=1, validation_alias="MEMORY_TENTATIVE_TTL_DAYS")
+    memory_job_stale_minutes: int = Field(default=10, ge=1, validation_alias="MEMORY_JOB_STALE_MINUTES")
+    memory_extract_timeout_s: float = Field(default=25.0, validation_alias="MEMORY_EXTRACT_TIMEOUT_S")
+    memory_reconcile_timeout_s: float = Field(default=20.0, validation_alias="MEMORY_RECONCILE_TIMEOUT_S")
+
+    # ── v2 시뮬레이션 하네스 (docs/기획_및_설계/시뮬레이션_v2_하네스_기획안_최종.md) ──
+    # 심사 모델. 비우면 생성 모델(llm_model)과 같다
+    simulation_v2_judge_model: str | None = Field(default=None, validation_alias="SIMULATION_V2_JUDGE_MODEL")
+    # tools(function calling) 를 쓸지. 기본은 json_object 경로 — 2026-10-19 로컬 실측(gemini-2.5-flash-lite)에서
+    # tools 는 긴 대본 인자가 깨지는 형식 오류가 잦아 성공 6/14, json_object 는 11/14 였다
+    simulation_v2_use_tools: bool = Field(default=False, validation_alias="SIMULATION_V2_USE_TOOLS")
+    simulation_v2_job_timeout_s: float = Field(default=90.0, validation_alias="SIMULATION_V2_JOB_TIMEOUT_S")
+    simulation_v2_job_stale_minutes: int = Field(default=10, ge=1, validation_alias="SIMULATION_V2_JOB_STALE_MINUTES")
+    # 호출별 타임아웃 상한. 실제로는 min(이 값, job 남은 시간)
+    simulation_v2_generate_timeout_s: float = Field(default=45.0, validation_alias="SIMULATION_V2_GENERATE_TIMEOUT_S")
+    simulation_v2_judge_timeout_s: float = Field(default=20.0, validation_alias="SIMULATION_V2_JUDGE_TIMEOUT_S")
+    simulation_v2_repair_timeout_s: float = Field(default=20.0, validation_alias="SIMULATION_V2_REPAIR_TIMEOUT_S")
+    simulation_v2_report_timeout_s: float = Field(default=30.0, validation_alias="SIMULATION_V2_REPORT_TIMEOUT_S")
+    # 소재 매칭
+    # 2026-10-19 합성 라벨셋(관련 46·무관 156쌍, scripts/calibrate_topic_tau.py) 보정: 0.60 은 정밀도 0.81,
+    # 0.62 는 정밀도 0.91(재현율 0.46). 거짓 공통점이 혼동을 부추기므로 정밀도를 우선했다
+    simulation_v2_tau_shared: float = Field(default=0.62, validation_alias="SIMULATION_V2_TAU_SHARED")
+    simulation_v2_topic_dedup_sim: float = Field(default=0.80, validation_alias="SIMULATION_V2_TOPIC_DEDUP_SIM")
+    simulation_v2_max_shared_topics: int = Field(default=3, ge=1, validation_alias="SIMULATION_V2_MAX_SHARED_TOPICS")
+    # 프롬프트에 노출할 사용자당 fact 수 (소재 fact 포함)
+    simulation_v2_max_facts_per_user: int = Field(default=8, ge=1, validation_alias="SIMULATION_V2_MAX_FACTS_PER_USER")
+    # 규칙 검사 임계값
+    simulation_v2_echo_jaccard: float = Field(default=0.5, validation_alias="SIMULATION_V2_ECHO_JACCARD")
+    simulation_v2_low_effort_ratio: float = Field(default=0.6, validation_alias="SIMULATION_V2_LOW_EFFORT_RATIO")
+    simulation_v2_regenerate_local_ratio: float = Field(
+        default=0.3, validation_alias="SIMULATION_V2_REGENERATE_LOCAL_RATIO"
+    )
+    # 호출 예산 (하드 상한)
+    simulation_v2_script_budget: int = Field(default=5, ge=2, validation_alias="SIMULATION_V2_SCRIPT_BUDGET")
+    simulation_v2_regenerate_budget: int = Field(default=1, ge=0, validation_alias="SIMULATION_V2_REGENERATE_BUDGET")
+    simulation_v2_repair_budget: int = Field(default=2, ge=0, validation_alias="SIMULATION_V2_REPAIR_BUDGET")
+    simulation_v2_report_budget: int = Field(default=2, ge=1, validation_alias="SIMULATION_V2_REPORT_BUDGET")
+    # repair·regenerate 진입에 필요한 최소 남은 시간
+    simulation_v2_min_remaining_s: float = Field(default=25.0, validation_alias="SIMULATION_V2_MIN_REMAINING_S")
 
     @field_validator("c2pa_trust_anchors_path", mode="before")
     @classmethod

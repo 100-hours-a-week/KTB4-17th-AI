@@ -139,7 +139,9 @@ HTTP `201 Created`
 ```ts
 type VerificationChallengeResponse = {
   challenge_token: string;
-  challenges: ("LOOK_STRAIGHT")[];
+  challenges: Challenge[];
+  challenge_plan: Challenge[][] | null; // v2: 3회 시도별 불변 계획
+  protocol_version: 1 | 2;
   expires_at: string; // ISO 8601 UTC datetime
 };
 ```
@@ -148,7 +150,11 @@ type VerificationChallengeResponse = {
 
 - `challenge_token`은 변경하지 않고 인증 완료 요청에 전달한다.
 - 토큰은 기본 5분 후 만료된다.
-- 현재 챌린지는 고정 포즈 `LOOK_STRAIGHT` 하나다.
+- v2 챌린지는 `[LOOK_STRAIGHT, HAND_<모양>, HAND_UP|HAND_DOWN|HAND_SIDEWAYS, <고개 방향>]`의 네 코드다.
+- 손 모양은 FIST, ONE, TWO, THREE, FOUR, OPEN_PALM, THUMBS_UP, L_SHAPE, LOVE_YOU, CALL_ME이며 고개 방향은 TURN_LEFT, TURN_RIGHT, LOOK_UP, LOOK_DOWN이다.
+- `challenge_plan` 서로 동일한 세 항목을 토큰과 함께 변경 없이 저장하고 현재 시도의 항목만 프론트에 반환한다. 완료 요청에 1부터 시작하는 `attempt_no`를 전달한다.
+- 기본값 `ACTIVE_LIVENESS_ENABLED=true`는 v2 고개·손 챌린지를 발급한다. 배포 환경에 명시된 값이 우선하며, BE/FE v2 배포 후 신규 세션부터 적용한다.
+- `ACTIVE_LIVENESS_ENABLED=false`는 롤백·배포 호환용 v1 `[LOOK_STRAIGHT]` 토큰을 발급한다. v1 응답의 계획은 null이며 스위치 전환 전 발급한 토큰도 만료까지 검증한다.
 - 이 토큰에는 사용자 ID, 계정 권한, 대표사진 ID가 없으며 로그인 세션이나 API 접근 토큰으로 사용할 수 없다.
 - 메인 백엔드는 자체 인증 시도에 챌린지와 현재 대표사진 ID를 결합하고, 같은 사용자와 대표사진으로 완료 요청이 이어지는지 확인한다.
 
@@ -166,7 +172,8 @@ type VerificationChallengeResponse = {
 |---|---|---|---|
 | `challenge_token` | string | 예 | 챌린지 발급 API가 반환한 원문 토큰 |
 | `primary_photo` | binary file | 예 | 현재 계정에 확정된 대표사진 |
-| `live_video` | binary file | 예 | 해당 인증 시도에서 방금 촬영한 4초 영상 |
+| `live_video` | binary file | 예 | 정면 → 지정 방향 이동 → 정면 복귀를 담은 7초 영상. 손 자세는 내내 유지 |
+| `attempt_no` | integer | v2 필수 | 해당 세션의 시도 번호 1~3. 생략 시 이전 클라이언트 호환용 1 |
 
 ### 응답 스키마
 
@@ -183,12 +190,16 @@ type VerificationResponse = {
 type VerificationReasonCode =
   | "NO_FACE"
   | "LIVENESS_FAILED"
+  | "FACE_NOT_CENTERED"
+  | "HAND_NOT_DETECTED"
+  | "HAND_GESTURE_MISMATCH"
+  | "HEAD_MOVEMENT_NOT_COMPLETED"
   | "FACE_MISMATCH"
   | "FACE_COMPARISON_FAILED";
 
 type LivenessResult = {
   passed: boolean;
-  completed_challenges: ("LOOK_STRAIGHT")[];
+  completed_challenges: Challenge[];
   sampled_frames: number;
   valid_face_frames: number;
   frontal_face_frames: number;
@@ -199,7 +210,13 @@ type LivenessResult = {
   low_light_enhanced_frames: number;
   source_frame_count: number;
   source_fps: number | null;
-  sampling_strategy: "uniform_max_24";
+  sampling_strategy: "uniform_max_24" | "uniform_max_48_active_v2";
+  reason_codes: VerificationReasonCode[];
+  hand_frames: number;
+  matched_hand_frames: number;
+  expected_hand_direction: string | null;
+  head_peak_delta_deg: number | null;
+  head_returned: boolean;
   max_abs_yaw_deg: number;
   max_abs_pitch_deg: number;
   max_abs_roll_deg: number;
@@ -227,7 +244,7 @@ type MatchDiagnostics = {
   threshold: number;
   compared_frame_count: number;
   frame_similarities: number[];
-  aggregation: "median";
+  aggregation: "median" | "minimum_start_end";
 };
 ```
 
@@ -243,7 +260,11 @@ type MatchDiagnostics = {
 
 | 코드 | 의미 |
 |---|---|
-| `LIVENESS_FAILED` | 프레임 수, 얼굴 검출 또는 정면 유지 기준 미달 |
+| `LIVENESS_FAILED` | 프레임 수, 얼굴 검출 또는 영상 전체 검사 기준 미달 |
+| `FACE_NOT_CENTERED` | 촬영 시작의 얼굴 위치·거리·정면·안정성 기준 미달 |
+| `HAND_NOT_DETECTED` | 손을 충분한 프레임에서 검출하지 못함 |
+| `HAND_GESTURE_MISMATCH` | 지정 손 모양 또는 위·아래·가로 방향 불일치 |
+| `HEAD_MOVEMENT_NOT_COMPLETED` | 지정 방향 이동 및 마지막 정면 복귀 미완료 |
 | `FACE_MISMATCH` | 유사도 점수가 임계값보다 낮아 서로 다른 사람으로 판정 |
 | `FACE_COMPARISON_FAILED` | 얼굴은 검출했지만 비교 특징을 생성하지 못함 |
 | `NO_FACE` | 비교 가능한 얼굴 자체가 없음. 현재 정상 흐름에서는 주로 하위 호환용 |
@@ -275,9 +296,12 @@ AI 서비스의 챌린지는 인증·인가 상태가 아니다. 메인 백엔�
   → 메인 백엔드가 로그인·권한·대표사진 소유권 확인
   → 메인 백엔드가 인증 시도 생성
   → AI 서비스가 라이브 촬영 챌린지 발급
-  → 프론트에서 4초 촬영
+  → 프론트에서 얼굴 중앙·정면 확인 및 사용자 확정
+  → 손 모양·위·아래·가로·고개 방향 사전 안내 후 7초 촬영
   → 인증 완료 API에 토큰 + 확정 대표사진 + 라이브 영상 전달
   → VERIFIED면 해당 대표사진에 인증 마크 결합
 ```
 
 대표사진이 변경되면 메인 백엔드는 기존 인증 마크를 즉시 해제해야 한다.
+
+능동형 인증은 영상 시작과 끝의 가리지 않은 정면 얼굴을 각각 비교하고 둘 다 임계값을 넘어야 한다. 전체 배포 순서와 호환 조건은 [연동 및 배포 안내](../../FACE_VERIFICATION_ROLLOUT.md)를 따른다.
