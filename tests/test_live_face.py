@@ -102,15 +102,15 @@ def test_no_face_and_multiple_faces_block_centering(count):
     [
         ({"center_x": 0.25}, "MOVE LEFT"),
         ({"center_x": 0.75}, "MOVE RIGHT"),
-        ({"center_y": 0.30}, "MOVE DOWN"),
-        ({"center_y": 0.70}, "MOVE UP"),
+        ({"center_y": 0.10}, "MOVE DOWN"),
+        ({"center_y": 0.85}, "MOVE UP"),
         ({"width_ratio": 0.10}, "COME CLOSER"),
-        ({"height_ratio": 0.90}, "MOVE BACK"),
+        ({"width_ratio": 0.90, "height_ratio": 0.90}, "MOVE BACK"),
         ({"face_in_frame": False}, "KEEP FULL FACE IN VIEW"),
         ({"yaw": 30}, "LOOK STRAIGHT AT CAMERA"),
         ({"pitch": -30}, "LOOK STRAIGHT AT CAMERA"),
-        ({"pitch": 25}, "LOOK STRAIGHT AT CAMERA"),
-        ({"roll": 20}, "KEEP HEAD LEVEL"),
+        ({"pitch": 26}, "LOOK STRAIGHT AT CAMERA"),
+        ({"roll": 26}, "KEEP HEAD LEVEL"),
         ({"pose_valid": False}, "FACE POSE UNAVAILABLE"),
     ],
 )
@@ -124,6 +124,27 @@ def test_centering_rejects_wrong_position_distance_and_pose(changes, hint):
     assert not preview.ready
     assert not preview.confirm_center()
     assert preview.baseline is None
+
+
+@pytest.mark.parametrize(
+    ("changes", "hint"),
+    [
+        ({"center_x": 0.62}, None),
+        ({"center_x": 0.69}, None),
+        ({"center_x": 0.31}, None),
+        ({"center_x": 0.70}, "MOVE RIGHT"),
+        ({"center_x": 0.30}, "MOVE LEFT"),
+        ({"center_y": 0.30}, None),
+        ({"center_y": 0.70}, None),
+        ({"center_y": 0.80, "height_ratio": 0.40}, None),
+        ({"center_y": 0.81, "height_ratio": 0.38}, "MOVE UP"),
+        ({"width_ratio": 0.54, "height_ratio": 0.90, "center_y": 0.50}, None),
+        ({"yaw": 20, "pitch": 18, "roll": 22}, None),
+        ({"yaw": 25, "pitch": 25, "roll": 25}, None),
+    ],
+)
+def test_guide_overlap_and_frontal_tolerance(changes, hint):
+    assert centering_hint(centered_face(**changes)) == hint
 
 
 def test_even_stable_centered_face_requires_explicit_confirmation():

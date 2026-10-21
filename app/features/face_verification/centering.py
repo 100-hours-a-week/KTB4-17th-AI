@@ -6,6 +6,16 @@ from app.features.primary_photo.analyzer import FaceObservation
 
 CENTER_POSITION_STDDEV = 0.02
 CENTER_POSITION_MAX_DRIFT = 0.04
+GUIDE_BOUNDS = (0.31, 0.16, 0.69, 0.80)
+MAX_FRONTAL_ANGLE = 25.0
+
+
+def is_frontal(face: FaceObservation) -> bool:
+    return (
+        face.face_count == 1
+        and face.pose_valid
+        and all(abs(angle) <= MAX_FRONTAL_ANGLE for angle in (face.yaw, face.pitch, face.roll))
+    )
 
 
 def centering_hint(face: FaceObservation | None) -> str | None:
@@ -22,18 +32,25 @@ def centering_hint(face: FaceObservation | None) -> str | None:
         return "KEEP FULL FACE IN VIEW"
     if face.width_ratio < 0.18 or face.height_ratio < 0.30:
         return "COME CLOSER"
-    if face.width_ratio > 0.50 or face.height_ratio > 0.80:
+    left, top, right, bottom = GUIDE_BOUNDS
+    overlap_width = max(
+        0, min(face.center_x + face.width_ratio / 2, right) - max(face.center_x - face.width_ratio / 2, left)
+    )
+    overlap_height = max(
+        0, min(face.center_y + face.height_ratio / 2, bottom) - max(face.center_y - face.height_ratio / 2, top)
+    )
+    if overlap_width * overlap_height < face.width_ratio * face.height_ratio * 0.5 - 1e-9:
+        if face.center_x < left:
+            return "MOVE LEFT"
+        if face.center_x > right:
+            return "MOVE RIGHT"
+        if face.center_y < top:
+            return "MOVE DOWN"
+        if face.center_y > bottom:
+            return "MOVE UP"
         return "MOVE BACK"
-    if face.center_x < 0.38:
-        return "MOVE LEFT"
-    if face.center_x > 0.62:
-        return "MOVE RIGHT"
-    if face.center_y < 0.34:
-        return "MOVE DOWN"
-    if face.center_y > 0.62:
-        return "MOVE UP"
-    if abs(face.yaw) > 15 or abs(face.pitch) > 15:
+    if abs(face.yaw) > MAX_FRONTAL_ANGLE or abs(face.pitch) > MAX_FRONTAL_ANGLE:
         return "LOOK STRAIGHT AT CAMERA"
-    if abs(face.roll) > 12:
+    if abs(face.roll) > MAX_FRONTAL_ANGLE:
         return "KEEP HEAD LEVEL"
     return None
