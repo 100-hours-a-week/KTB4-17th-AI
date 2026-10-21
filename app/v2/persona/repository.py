@@ -90,7 +90,7 @@ class PersonaMemoryRepository:
         query_vec: list[float],
         *,
         top_k: int = 5,
-        max_distance: float = 0.65,
+        max_distance: float = 0.5,
     ) -> list[tuple[str, str]]:
         """실시간 응답 경로: confirmed 상태의 Fact 중 코사인 거리 < max_distance 인 Top-K 를 (날짜, 문장) 으로 반환한다."""
         if self._is_postgres:

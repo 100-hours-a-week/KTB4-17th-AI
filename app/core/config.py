@@ -250,11 +250,11 @@ class Settings(BaseSettings):
     # 실시간 검색 (retrieve) 파라미터 — pgvector <=> 는 코사인 거리(1 - similarity)
     memory_top_k: int = Field(default=5, ge=1, le=20, validation_alias="MEMORY_TOP_K")
     memory_max_cosine_distance: float = Field(
-        default=0.65,
+        default=0.5,
         gt=0.0,
         lt=2.0,
         validation_alias="MEMORY_MAX_COSINE_DISTANCE",
-        description="pgvector 코사인 거리(<=>) 상한 (0.65 = 코사인 유사도 0.35 이상만 허용)",
+        description="pgvector 코사인 거리(<=>) 상한 (0.5 = 코사인 유사도 0.5 이상만 허용)",
     )
     practice_v2_history_window: int = Field(
         default=20,
