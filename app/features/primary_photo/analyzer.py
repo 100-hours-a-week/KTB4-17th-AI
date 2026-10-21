@@ -16,6 +16,8 @@ from app.core.media import enhance_low_light
 from .head_pose import estimate_head_pose
 from .schemas import Pose, Quality, ReasonCode
 
+MAX_DETECTION_EDGE_PX = 1024
+
 
 @dataclass(frozen=True)
 class FaceObservation:
@@ -70,15 +72,13 @@ class FaceAnalyzer:
         use_pnp_pose: bool = False,
     ) -> FaceObservation:
         with self._lock:
-            height, width = image.shape[:2]
             analysis_image = image
             low_light_enhanced = False
-            self._detector.setInputSize((width, height))
-            _, detected = self._detector.detect(image)
+            detected = self._detect_faces(image)
             detection_method = "yunet"
             if detected is None and allow_low_light_enhancement and float(image.mean()) < 80:
                 analysis_image = enhance_low_light(image)
-                _, detected = self._detector.detect(analysis_image)
+                detected = self._detect_faces(analysis_image)
                 if detected is not None:
                     detection_method = "yunet-low-light"
                     low_light_enhanced = True
@@ -158,6 +158,25 @@ class FaceAnalyzer:
             ),
             pose_method="pnp" if use_pnp_pose else "lbf",
         )
+
+    def _detect_faces(self, image: np.ndarray) -> np.ndarray | None:
+        """큰 얼굴의 YuNet 오검출을 줄이고 검출 좌표는 원본 크기로 반환한다. 잠금 안에서 호출한다."""
+        height, width = image.shape[:2]
+        detection_image = image
+        if max(height, width) > MAX_DETECTION_EDGE_PX:
+            scale = MAX_DETECTION_EDGE_PX / max(height, width)
+            size = (max(1, round(width * scale)), max(1, round(height * scale)))
+            detection_image = cv2.resize(image, size, interpolation=cv2.INTER_AREA)
+
+        detection_height, detection_width = detection_image.shape[:2]
+        self._detector.setInputSize((detection_width, detection_height))
+        _, detected = self._detector.detect(detection_image)
+        if detected is not None and detection_image is not image:
+            detected = detected.copy()
+            # bbox와 5점 랜드마크만 환산한다. 마지막 열의 검출 신뢰도는 유지한다.
+            detected[:, 0:14:2] *= width / detection_width
+            detected[:, 1:14:2] *= height / detection_height
+        return detected
 
     def _detect_closeup_faces(self, image: np.ndarray) -> np.ndarray | None:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
