@@ -31,12 +31,13 @@ from app.features.persona.schemas import (
     Narrative,
     PersonaResponse,
 )
-from app.features.persona.service import known_scores, narrative_contradiction, persona_response
+from app.features.persona.service import persona_response  # load_persona 와 같은 변환 — 공유 유지
 
 from .agents import ConversationAgent, ExtractionFailed
 from .models import V2ExtractionJob, V2ImportedUtterance
 from .parsers import KakaoLine, parse_kakao
 from .repository import ExtractionRepository, Identity
+from .scoring import known_scores, narrative_contradiction
 
 logger = logging.getLogger(__name__)
 

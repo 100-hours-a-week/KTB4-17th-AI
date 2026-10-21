@@ -15,12 +15,22 @@ from pydantic import BaseModel, Field
 
 from app.core.config import get_settings
 from app.core.guardrail import Domain, Grade, GuardrailContext, validate
-from app.features.persona.profile import describe
-from app.features.simulation_migration.order import contains_farewell
+from app.v2.persona.profile import describe
 
 from .schemas import Issue, LLMCaller, ScriptLineV2, SimContext, TopicPlan, owner_of
 
 logger = logging.getLogger(__name__)
+
+# 작별 인사로 대화를 닫는 표현 — v1 simulation_migration/order.py 복제본
+_FAREWELL_RE = re.compile(
+    r"들어가|나중에\s*봐|나중에\s*봬|또\s*봐|연락할(?:게|게요)|연락드릴|잘\s*자|좋은\s*밤|좋은\s*저녁|편안한\s*밤|조심히"
+)
+
+
+def contains_farewell(text: str) -> bool:
+    """작별 인사로 대화를 닫는 표현이 있는지 본다."""
+    return _FAREWELL_RE.search(text) is not None
+
 
 _FAIL_GRADES = {Grade.RETRYABLE, Grade.BLOCK}
 
@@ -61,8 +71,6 @@ def _farewell_phrase(text: str) -> str | None:
     if m:
         return m.group(0)
     if contains_farewell(text):
-        from app.features.simulation_migration.order import _FAREWELL_RE
-
         m2 = _FAREWELL_RE.search(text)
         return m2.group(0) if m2 else "작별 표현"
     return None

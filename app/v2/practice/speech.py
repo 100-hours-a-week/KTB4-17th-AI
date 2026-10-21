@@ -12,7 +12,7 @@ import re
 
 from langfuse import observe
 
-from app.features.persona.agents import LLMError, _call_json
+from app.v2.llm import LLMError, _call_json
 
 logger = logging.getLogger(__name__)
 

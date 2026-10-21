@@ -4,12 +4,12 @@ import asyncio
 
 import pytest
 
-from app.features.persona.agents import LLMError
-from app.features.practice.agents import PartnerAgent
 from app.features.practice.schemas import PracticeStartRequest
+from app.v2.llm import LLMError
 from app.v2.persona.repository import PersonaMemoryRepository
 from app.v2.practice import service as service_mod
 from app.v2.practice import speech
+from app.v2.practice.agents import PartnerAgent
 from app.v2.practice.models import V2PracticeSpeechState
 from app.v2.practice.service import V2PracticeService
 from tests.conftest import seed_persona, with_db

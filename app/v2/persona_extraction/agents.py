@@ -2,7 +2,7 @@
 
 점수는 온보딩 추출(persona.agents.ExtractionAgent)과 같은 차원·루브릭을 쓰고, 말투는 v1 카카오 추출의 표면 말투 필드만 뽑는다.
 온보딩이 "본인이 답한 것"이라면 이쪽은 "대화에서 관찰한 것"이라 근거를 발화 번호로 받아 코드가 검증한다.
-LLM 클라이언트·JSON 파싱은 persona.agents 의 것을 그대로 쓴다 — 같은 OpenRouter 설정을 공유한다.
+LLM 클라이언트·JSON 파싱은 app/v2/llm.py 를 쓴다 (v1 persona.agents 복제본, 같은 OpenRouter 설정).
 """
 
 from __future__ import annotations
@@ -15,14 +15,25 @@ from pydantic import ValidationError
 
 from app.core.config import get_settings
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
-from app.features.persona.agents import LLMError, _call_json, _scored_section
-from app.features.persona.schemas import ConversationStyle
+from app.features.persona.schemas import SCORED, ConversationStyle
+from app.v2.llm import LLMError, _call_json
 
 from .schemas import V2Extraction
 
 logger = logging.getLogger(__name__)
 
 MAX_PHRASES = 10
+
+
+def _scored_section() -> str:
+    """점수형 차원 설명 — v1 persona.agents._scored_section 복제본."""
+    lines = []
+    for key, d in SCORED.items():
+        lines.append(f"- {key} ({d.label})")
+        if d.low and d.high:
+            lines.append(f"    0 → {d.low}")
+            lines.append(f"    100 → {d.high}")
+    return "\n".join(lines)
 
 
 class ExtractionFailed(Exception):

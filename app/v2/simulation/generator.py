@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Any
 
-from app.features.persona.profile import describe
+from app.v2.persona.profile import describe
 
 from .schemas import LLMCaller, LLMResult, ScriptLineV2, Segment, SimContext, TopicFact, TopicPlan
 from .topics import sanitize
