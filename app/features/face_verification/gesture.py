@@ -2,7 +2,8 @@
 
 손가락이 펴졌는지는 관절 굽힘 각도로, 엄지는 손바닥 바깥(검지 쪽)으로 얼마나 나왔는지로 본다.
 손 모양은 좌우 반전·손바닥/손등과 무관하게 읽고, 위/아래/가로 방향은 따로 구분한다.
-안내한 방향과 같아야 일치한다. 가로는 왼쪽·오른쪽을 모두 허용한다.
+주먹·사랑해·전화 모양과 아래 방향 챌린지는 방향을 검사하지 않는다.
+그 외에는 안내한 방향과 같아야 일치한다. 가로는 왼쪽·오른쪽을 모두 허용한다.
 
 좌표는 화면 좌표(x, y + x와 같은 축척의 상대 깊이)를 쓴다. 모델의 world 좌표는 손바닥을 몸에 댄
 평평한 손도 40~50° 굽은 것으로 읽어 펴짐 판정에 쓸 수 없었다.
@@ -138,13 +139,23 @@ def read_gesture(points: np.ndarray) -> GestureReading:
     )
 
 
+def requires_hand_direction(gesture: HandGesture, direction: HandDirection) -> bool:
+    return direction != HandDirection.DOWN and gesture not in (
+        HandGesture.FIST,
+        HandGesture.LOVE_YOU,
+        HandGesture.CALL_ME,
+    )
+
+
 def matches_gesture(
     reading: GestureReading,
     expected: HandGesture,
     expected_direction: HandDirection = HandDirection.UP,
 ) -> bool:
-    """모양과 위/아래/가로 방향이 모두 같은 경우만 일치. 좌우와 손바닥/손등은 허용한다."""
-    return reading.gesture == expected and reading.direction == expected_direction
+    """손 모양은 항상 검사하고, 방향 검사가 필요한 챌린지만 요청 방향과 비교한다."""
+    return reading.gesture == expected and (
+        not requires_hand_direction(expected, expected_direction) or reading.direction == expected_direction
+    )
 
 
 def judge_hold(
@@ -157,7 +168,7 @@ def judge_hold(
 ) -> GestureHold:
     """영상 프레임마다 읽은 손 모양으로 '지정한 모양을 유지했는가'를 판정한다.
 
-    한 프레임에 손이 여러 개면 모양과 방향이 모두 같은 손이 하나라도 있으면 일치로 센다.
+    한 프레임에 손이 여러 개면 모양과 필요한 방향 조건을 만족하는 손이 하나라도 있으면 일치로 센다.
     """
     hand_frames = [readings for readings in frames if readings]
     expected_label = expected.value if expected_direction == HandDirection.UP else f"{expected}:{expected_direction}"

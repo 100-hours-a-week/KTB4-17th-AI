@@ -259,6 +259,17 @@
             "title": "Frontal Face Frames",
             "type": "integer"
           },
+          "frontal_hold_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Frontal Hold Seconds"
+          },
           "hand_frames": {
             "default": 0,
             "title": "Hand Frames",
@@ -315,12 +326,28 @@
             "title": "Passed",
             "type": "boolean"
           },
+          "pose_hold_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pose Hold Seconds"
+          },
           "reason_codes": {
             "items": {
               "$ref": "#/components/schemas/app__features__face_verification__schemas__ReasonCode"
             },
             "title": "Reason Codes",
             "type": "array"
+          },
+          "repeated_frame_ratio": {
+            "default": 0.0,
+            "title": "Repeated Frame Ratio",
+            "type": "number"
           },
           "required_frontal_face_frames": {
             "default": 6,
@@ -712,6 +739,16 @@
             "title": "Model Version",
             "type": "string"
           },
+          "next_challenge": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationChallengeResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reason_codes": {
             "items": {
               "$ref": "#/components/schemas/app__features__face_verification__schemas__ReasonCode"
@@ -749,7 +786,8 @@
           "FACE_NOT_CENTERED",
           "HAND_NOT_DETECTED",
           "HAND_GESTURE_MISMATCH",
-          "HEAD_MOVEMENT_NOT_COMPLETED"
+          "HEAD_MOVEMENT_NOT_COMPLETED",
+          "ADDITIONAL_CHALLENGE_REQUIRED"
         ],
         "title": "ReasonCode",
         "type": "string"

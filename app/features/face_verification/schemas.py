@@ -42,6 +42,7 @@ class ReasonCode(StrEnum):
     HAND_NOT_DETECTED = "HAND_NOT_DETECTED"
     HAND_GESTURE_MISMATCH = "HAND_GESTURE_MISMATCH"
     HEAD_MOVEMENT_NOT_COMPLETED = "HEAD_MOVEMENT_NOT_COMPLETED"
+    ADDITIONAL_CHALLENGE_REQUIRED = "ADDITIONAL_CHALLENGE_REQUIRED"
 
 
 class VerificationChallengeResponse(BaseModel):
@@ -101,6 +102,9 @@ class LivenessResult(BaseModel):
     expected_hand_direction: str | None = None
     head_peak_delta_deg: float | None = None
     head_returned: bool | None = None
+    frontal_hold_seconds: float | None = None
+    pose_hold_seconds: float | None = None
+    repeated_frame_ratio: float = 0.0
 
 
 class MatchDiagnostics(BaseModel):
@@ -117,3 +121,4 @@ class VerificationResponse(BaseModel):
     liveness: LivenessResult
     model_version: str
     match: MatchDiagnostics | None = None
+    next_challenge: VerificationChallengeResponse | None = None

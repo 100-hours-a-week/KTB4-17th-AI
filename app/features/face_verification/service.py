@@ -52,7 +52,7 @@ class FaceVerificationService:
                 model_version=MODEL_VERSION,
             )
         similarities: list[float] = []
-        active = liveness.result.sampling_strategy == "uniform_max_48_active_v2"
+        active = liveness.result.sampling_strategy in ("uniform_max_48_active_v2", "uniform_max_48_adaptive_v3")
         failed_frame = False
         frames = liveness.candidate_frames or (liveness.best_frame,)
         for frame in frames:
@@ -69,15 +69,32 @@ class FaceVerificationService:
                 liveness=liveness.result,
                 model_version=MODEL_VERSION,
             )
-        similarity = float(min(similarities) if active else statistics.median(similarities))
+        similarity = float(statistics.median(similarities))
         threshold = self.matcher.threshold
         matched = similarity >= threshold
         match_diagnostics = MatchDiagnostics(
             threshold=threshold,
             compared_frame_count=len(similarities),
             frame_similarities=[round(item, 6) for item in similarities],
-            aggregation="minimum_start_end" if active else "median",
+            aggregation="median_initial_frontal" if active else "median",
         )
+        # 기본 판정을 만족한 경계 사례만 추가 확인한다. 동일인 비교 실패를 우회하지 않는다.
+        if (
+            len(challenges) == 3
+            and matched
+            and (
+                similarity < threshold + self.signer.step_up_match_margin or liveness.result.repeated_frame_ratio >= 0.8
+            )
+        ):
+            return VerificationResponse(
+                decision=VerificationDecision.RETRY,
+                reason_codes=[ReasonCode.ADDITIONAL_CHALLENGE_REQUIRED],
+                similarity=round(similarity, 6),
+                liveness=liveness.result,
+                model_version=MODEL_VERSION,
+                match=match_diagnostics,
+                next_challenge=self.signer.step_up(challenge_token),
+            )
         return VerificationResponse(
             decision=VerificationDecision.VERIFIED if matched else VerificationDecision.NOT_VERIFIED,
             reason_codes=[] if matched else [ReasonCode.FACE_MISMATCH],

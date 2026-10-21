@@ -20,7 +20,7 @@ MAX_SAMPLED_FRAMES = 24
 class ChallengeTarget:
     gesture: HandGesture
     direction: HandDirection
-    head: HeadMovement
+    head: HeadMovement | None
 
 
 # 10가지 손 모양 × 위/아래/가로 × 고개 4방향. 검출불가는 출제하지 않는다.
