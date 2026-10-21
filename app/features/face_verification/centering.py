@@ -4,6 +4,9 @@ from __future__ import annotations
 
 from app.features.primary_photo.analyzer import FaceObservation
 
+CENTER_POSITION_STDDEV = 0.02
+CENTER_POSITION_MAX_DRIFT = 0.04
+
 
 def centering_hint(face: FaceObservation | None) -> str | None:
     """문제가 없으면 None. 안내 방향은 거울 미리보기 기준이다."""
@@ -21,13 +24,13 @@ def centering_hint(face: FaceObservation | None) -> str | None:
         return "COME CLOSER"
     if face.width_ratio > 0.50 or face.height_ratio > 0.80:
         return "MOVE BACK"
-    if face.center_x < 0.42:
+    if face.center_x < 0.38:
         return "MOVE LEFT"
-    if face.center_x > 0.58:
+    if face.center_x > 0.62:
         return "MOVE RIGHT"
-    if face.center_y < 0.38:
+    if face.center_y < 0.34:
         return "MOVE DOWN"
-    if face.center_y > 0.58:
+    if face.center_y > 0.62:
         return "MOVE UP"
     if abs(face.yaw) > 15 or abs(face.pitch) > 15:
         return "LOOK STRAIGHT AT CAMERA"

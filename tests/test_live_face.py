@@ -137,6 +137,15 @@ def test_even_stable_centered_face_requires_explicit_confirmation():
     assert preview.baseline == HeadPose(0, 0)
 
 
+def test_slightly_off_center_face_with_small_position_jitter_can_be_confirmed():
+    preview = demo.HeadPreview()
+    for index in range(demo.CALIBRATION_FRAMES):
+        preview.update(centered_face(center_x=0.59 + (0.018 if index % 2 else -0.018), center_y=0.60))
+
+    assert preview.ready
+    assert preview.confirm_center()
+
+
 def test_face_lost_before_enter_invalidates_prepared_center():
     preview = demo.HeadPreview()
     for _ in range(demo.CALIBRATION_FRAMES):

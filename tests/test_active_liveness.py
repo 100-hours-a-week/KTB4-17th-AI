@@ -70,6 +70,9 @@ def evaluate(
     overlap=False,
     underreported=False,
     unstable_center=False,
+    center_x=0.5,
+    center_y=0.48,
+    slight_center_drift=False,
 ):
     target = next(
         item
@@ -107,9 +110,11 @@ def evaluate(
         if missing_middle and 25 <= index < 36:
             return centered_face(face_count=0)
         pitch = -20 if 12 <= index < (48 if no_return else 30) else 0
+        x = center_x + (0.018 if index % 2 else -0.018) if slight_center_drift else center_x
         return centered_face(
             pitch=pitch,
-            center_x=0.2 if off_center and index < 3 else (0.55 if unstable_center and index == 1 else 0.5),
+            center_x=0.2 if off_center and index < 3 else (0.55 if unstable_center and index == 1 else x),
+            center_y=center_y,
             face_count=2 if multi_face and index == 25 else 1,
         )
 
@@ -134,6 +139,13 @@ def test_active_video_passes_only_with_requested_hand_head_and_return(monkeypatc
     assert len(result.candidate_frames) == 2
     assert result.candidate_frames[0][0, 0, 0] == 0
     assert result.candidate_frames[1][0, 0, 0] == 47
+
+
+@pytest.mark.parametrize("options", [{"center_x": 0.61, "center_y": 0.60}, {"slight_center_drift": True}])
+def test_active_video_accepts_small_offset_and_natural_position_jitter(monkeypatch, options):
+    result = evaluate(monkeypatch, **options)
+    assert result.result.passed
+    assert len(result.candidate_frames) == 2
 
 
 @pytest.mark.parametrize(

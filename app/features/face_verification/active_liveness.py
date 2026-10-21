@@ -7,7 +7,7 @@ import tempfile
 import cv2
 import numpy as np
 
-from .centering import centering_hint
+from .centering import CENTER_POSITION_MAX_DRIFT, centering_hint
 from .gesture import judge_hold, read_gesture
 from .hand import HandLandmarker, HandLandmarks
 from .head import BASELINE_FRAMES, judge_head_turn, pose_from
@@ -129,7 +129,12 @@ class ActiveLivenessAnalyzer:
                 max(getattr(face, axis) for face in faces[:BASELINE_FRAMES])
                 - min(getattr(face, axis) for face in faces[:BASELINE_FRAMES])
                 <= tolerance
-                for axis, tolerance in (("yaw", 6), ("pitch", 6), ("center_x", 0.03), ("center_y", 0.03))
+                for axis, tolerance in (
+                    ("yaw", 6),
+                    ("pitch", 6),
+                    ("center_x", CENTER_POSITION_MAX_DRIFT),
+                    ("center_y", CENTER_POSITION_MAX_DRIFT),
+                )
             )
         valid = sum(pose_from(face) is not None for face in faces)
         reasons = []
