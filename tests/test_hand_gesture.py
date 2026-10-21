@@ -72,6 +72,38 @@ CASES = [
 ]
 
 
+@pytest.mark.parametrize(("fingers", "options", "expected"), CASES)
+@pytest.mark.parametrize("rotation", [0, 90, 180, -90])
+def test_down_target_checks_shape_without_direction(fingers, options, expected, rotation):
+    points = make_hand(fingers, **options)
+    theta = math.radians(rotation)
+    points[:, :2] = (points[:, :2] - [320, 360]) @ np.array(
+        [[math.cos(theta), math.sin(theta)], [-math.sin(theta), math.cos(theta)]]
+    ) + [320, 360]
+    reading = read_gesture(points)
+
+    assert matches_gesture(reading, expected, HandDirection.DOWN)
+    assert judge_hold([[reading]] * 8, expected, expected_direction=HandDirection.DOWN).passed
+    other = HandGesture.ONE if expected != HandGesture.ONE else HandGesture.TWO
+    assert not matches_gesture(reading, other, HandDirection.DOWN)
+
+
+@pytest.mark.parametrize("expected", [HandGesture.FIST, HandGesture.LOVE_YOU, HandGesture.CALL_ME])
+@pytest.mark.parametrize("direction", [HandDirection.UP, HandDirection.DOWN, HandDirection.SIDEWAYS])
+@pytest.mark.parametrize("rotation", [0, 90, 180, -90])
+def test_direction_free_gestures_accept_every_orientation(expected, direction, rotation):
+    fingers, options, _ = next(case for case in CASES if case[2] == expected)
+    points = make_hand(fingers, **options)
+    theta = math.radians(rotation)
+    points[:, :2] = (points[:, :2] - [320, 360]) @ np.array(
+        [[math.cos(theta), math.sin(theta)], [-math.sin(theta), math.cos(theta)]]
+    ) + [320, 360]
+    reading = read_gesture(points)
+
+    assert matches_gesture(reading, expected, direction)
+    assert judge_hold([[reading]] * 8, expected, expected_direction=direction).passed
+
+
 def test_random_pool_has_all_thirty_hand_poses_and_four_head_directions():
     assert len(set(CHALLENGE_TARGETS)) == 120
     assert {(target.gesture, target.direction) for target in CHALLENGE_TARGETS} == {
@@ -121,8 +153,10 @@ def test_every_random_combination_accepts_requested_direction_and_rejects_opposi
     assert reading.gesture == target.gesture
     assert result.passed
     assert result.gesture.expected_direction == target.direction
-    other_direction = HandDirection.UP if target.direction == HandDirection.DOWN else HandDirection.DOWN
-    assert not judge_challenge(frames, gesture=target.gesture, direction=other_direction, head=target.head).passed
+    other_direction = HandDirection.SIDEWAYS if target.direction == HandDirection.UP else HandDirection.UP
+    assert judge_challenge(frames, gesture=target.gesture, direction=other_direction, head=target.head).passed == (
+        target.gesture in (HandGesture.FIST, HandGesture.LOVE_YOU, HandGesture.CALL_ME)
+    )
 
 
 @pytest.mark.parametrize(("fingers", "options", "expected"), CASES)
@@ -159,8 +193,10 @@ def test_horizontal_hands_accept_both_left_and_right(fingers, options, expected,
     assert reading.gesture == expected
     assert reading.direction == HandDirection.SIDEWAYS
     assert matches_gesture(reading, expected, HandDirection.SIDEWAYS)
-    assert not matches_gesture(reading, expected, HandDirection.UP)
-    assert not matches_gesture(reading, expected, HandDirection.DOWN)
+    assert matches_gesture(reading, expected, HandDirection.UP) == (
+        expected in (HandGesture.FIST, HandGesture.LOVE_YOU, HandGesture.CALL_ME)
+    )
+    assert matches_gesture(reading, expected, HandDirection.DOWN)
 
 
 def test_l_shape_needs_open_angle_between_thumb_and_index():
@@ -196,8 +232,9 @@ def test_upside_down_gesture_does_not_match_upright_target(fingers, options, exp
     reading = read_gesture(points)
 
     assert reading.direction == HandDirection.DOWN
-    assert not matches_gesture(reading, expected)
-    assert not judge_hold([[reading]] * 8, expected).passed
+    direction_free = expected in (HandGesture.FIST, HandGesture.LOVE_YOU, HandGesture.CALL_ME)
+    assert matches_gesture(reading, expected) == direction_free
+    assert judge_hold([[reading]] * 8, expected).passed == direction_free
 
 
 @pytest.mark.parametrize(

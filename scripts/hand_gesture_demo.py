@@ -46,6 +46,7 @@ from app.features.face_verification.gesture import (  # noqa: E402
     HandGesture,
     matches_gesture,
     read_gesture,
+    requires_hand_direction,
 )
 from app.features.face_verification.hand import HandLandmarker, HandLandmarks  # noqa: E402
 from app.features.face_verification.head import (  # noqa: E402
@@ -328,11 +329,12 @@ def pose_name(gesture: HandGesture | None, direction: HandDirection) -> str:
 
 def announce_target(gesture: HandGesture | None, direction: HandDirection, head: HeadMovement | None) -> None:
     if gesture:
-        name = (
-            "👎 엄지 아래"
-            if gesture == HandGesture.THUMBS_UP and direction == HandDirection.DOWN
-            else GESTURE_LABELS[gesture]
-        )
+        name = GESTURE_LABELS[gesture]
+        if not requires_hand_direction(gesture, direction):
+            print(f"손 안내: {name} — 방향에 상관없이 손 모양을 유지하세요.")
+            if head:
+                print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]} 후 정면으로 돌아오세요.")
+            return
         orientation = {
             HandDirection.UP: "위쪽",
             HandDirection.DOWN: "아래쪽",

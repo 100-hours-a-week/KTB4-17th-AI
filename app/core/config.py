@@ -219,6 +219,10 @@ class Settings(BaseSettings):
     liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
     # 신규 인증은 고개·손 챌린지를 발급한다. 이전 BE/FE 배포나 롤백 시 명시적으로 false로 전환한다.
     active_liveness_enabled: bool = Field(default=True, validation_alias="ACTIVE_LIVENESS_ENABLED")
+    adaptive_liveness_enabled: bool = Field(default=False, validation_alias="ADAPTIVE_LIVENESS_ENABLED")
+    liveness_step_up_match_margin: float = Field(
+        default=0.08, ge=0, le=0.2, validation_alias="LIVENESS_STEP_UP_MATCH_MARGIN"
+    )
 
     # ── v2 사용자 페르소나 메모리 RAG 설정 ──────────────────────────
     embedding_model_name: str = Field(

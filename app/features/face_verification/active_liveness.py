@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import tempfile
+from hashlib import blake2b
 
 import cv2
 import numpy as np
 
 from .centering import CENTER_POSITION_MAX_DRIFT, centering_hint
-from .gesture import judge_hold, read_gesture
+from .continuous_hold import find_hold
+from .gesture import judge_hold, matches_gesture, read_gesture
 from .hand import HandLandmarker, HandLandmarks
 from .head import BASELINE_FRAMES, judge_head_turn, pose_from
 from .live_face import LiveFaceAnalyzer
@@ -43,6 +45,7 @@ class ActiveLivenessAnalyzer:
     def evaluate(self, video: bytes, suffix: str, challenges: list[Challenge]) -> LivenessEvaluation:
         target = decode_target(challenges)
         faces, readings, records, candidates = [], [], [], []
+        fingerprints, clear_frontal, presentation_times = [], [], []
         invalid_video = False
         source_fps, reported = 0.0, 0
         with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
@@ -87,8 +90,10 @@ class ActiveLivenessAnalyzer:
                     face = self.face_analyzer.observe(frame)
                     hands = self.hand_analyzer.detect(frame)
                     faces.append(face)
+                    fingerprints.append(blake2b(frame.tobytes(), digest_size=16).digest())
                     readings.append([read_gesture(hand.image_points) for hand in hands])
                     sample_index = len(faces) - 1
+                    presentation_times.append(capture.get(cv2.CAP_PROP_POS_MSEC))
                     pose = pose_from(face)
                     frontal = (
                         pose is not None and abs(face.yaw) <= 20 and abs(face.pitch) <= 20 and abs(face.roll) <= 20
@@ -108,7 +113,9 @@ class ActiveLivenessAnalyzer:
                             roll=face.roll if pose else None,
                         )
                     )
-                    if frontal and not any(hand_overlaps_face(hand, face, frame.shape[:2]) for hand in hands):
+                    unobscured = frontal and not any(hand_overlaps_face(hand, face, frame.shape[:2]) for hand in hands)
+                    clear_frontal.append(unobscured and centering_hint(face) is None)
+                    if unobscured:
                         candidates.append(
                             (abs(face.yaw) + abs(face.pitch) + abs(face.roll), sample_index, frame.copy())
                         )
@@ -120,7 +127,7 @@ class ActiveLivenessAnalyzer:
         hold = judge_hold(
             readings, target.gesture, expected_direction=target.direction, min_hand_ratio=0.8, min_match_ratio=0.8
         )
-        head = judge_head_turn([pose_from(face) for face in faces], target.head)
+        head = judge_head_turn([pose_from(face) for face in faces], target.head) if target.head else None
         centered = len(faces) >= BASELINE_FRAMES and all(
             centering_hint(face) is None for face in faces[:BASELINE_FRAMES]
         )
@@ -145,16 +152,48 @@ class ActiveLivenessAnalyzer:
             or any(face.face_count > 1 for face in faces)
         ):
             reasons.append(ReasonCode.LIVENESS_FAILED)
+        adaptive = target.head is None
+        frontal_window = pose_window = None
+        media_times = (
+            len(presentation_times) >= 2
+            and np.isfinite(presentation_times).all()
+            and min(presentation_times) >= 0
+            and (np.diff(presentation_times) > 0).all()
+        )
+        times = (
+            [value / 1000 for value in presentation_times]
+            if media_times
+            else [record.source_frame_index / source_fps for record in records]
+            if source_fps
+            else []
+        )
+        if media_times:
+            for record, timestamp in zip(records, presentation_times, strict=True):
+                record.timestamp_ms = round(timestamp)
+        if adaptive:
+            frontal_window = find_hold(clear_frontal, times, 2.0)
+            centered = frontal_window.seconds >= 2.0
+            pose_matches = [
+                clear and any(matches_gesture(reading, target.gesture, target.direction) for reading in frame)
+                for clear, frame in zip(clear_frontal, readings, strict=True)
+            ]
+            pose_window = find_hold(
+                pose_matches,
+                times,
+                3.0,
+                start=frontal_window.indices[-1] + 1 if centered else len(faces),
+            )
         if not centered:
             reasons.append(ReasonCode.FACE_NOT_CENTERED)
-        if not hold.passed:
+        if (adaptive and pose_window.seconds < 3.0) or (not adaptive and not hold.passed):
             reasons.append(
                 ReasonCode.HAND_NOT_DETECTED
                 if hold.hand_frames < len(faces) * 0.8
                 else ReasonCode.HAND_GESTURE_MISMATCH
             )
         ended_centered = (
-            head.baseline is not None
+            head is not None
+            and head.baseline is not None
             and len(faces) >= 2
             and all(
                 (pose := pose_from(face)) is not None
@@ -162,17 +201,18 @@ class ActiveLivenessAnalyzer:
                 for face in faces[-2:]
             )
         )
-        if not head.passed or not ended_centered:
+        if head is not None and (not head.passed or not ended_centered):
             reasons.append(ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED)
-        if not candidates:
+        # 동일인 비교는 움직이기 전 기준 정면 구간에서만 수행한다.
+        # 복귀 동작의 완료 여부는 위 head/ended_centered 검사에서 별도로 확인한다.
+        initial = sorted((item for item in candidates if item[1] < BASELINE_FRAMES), key=lambda item: item[1])
+        if adaptive and centered:
+            initial = [item for item in candidates if item[1] in frontal_window.indices]
+            initial = [initial[index] for index in np.linspace(0, len(initial) - 1, min(3, len(initial)), dtype=int)]
+        if len(initial) < 2:
             reasons.append(ReasonCode.FACE_COMPARISON_FAILED)
         passed = not reasons
-        # 시작과 끝의 얼굴을 둘 다 비교한다. 초기 정면 프레임만 골라 동일인을 판단하지 않는다.
-        selected = []
-        if passed:
-            temporal = sorted(candidates, key=lambda item: item[1])
-            first, last = temporal[0], temporal[-1]
-            selected = [first, last] if first[1] != last[1] else [first]
+        selected = initial if passed else []
         for rank, (_, sample, _) in enumerate(selected, 1):
             records[sample].status, records[sample].candidate_rank = FrameStatus.MATCH_CANDIDATE, rank
         candidate_frames = tuple(frame for _, _, frame in selected)
@@ -191,7 +231,7 @@ class ActiveLivenessAnalyzer:
                 candidate_frame_count=len(candidate_frames),
                 source_frame_count=reported,
                 source_fps=source_fps or None,
-                sampling_strategy="uniform_max_48_active_v2",
+                sampling_strategy="uniform_max_48_adaptive_v3" if adaptive else "uniform_max_48_active_v2",
                 max_abs_yaw_deg=20,
                 max_abs_pitch_deg=20,
                 max_abs_roll_deg=20,
@@ -200,8 +240,11 @@ class ActiveLivenessAnalyzer:
                 hand_frames=hold.hand_frames,
                 matched_hand_frames=hold.matched_frames,
                 expected_hand_direction=target.direction,
-                head_peak_delta_deg=head.peak_delta_deg,
-                head_returned=head.returned and ended_centered,
+                head_peak_delta_deg=head.peak_delta_deg if head else None,
+                head_returned=head.returned and ended_centered if head else None,
+                frontal_hold_seconds=round(frontal_window.seconds, 3) if frontal_window else None,
+                pose_hold_seconds=round(pose_window.seconds, 3) if pose_window else None,
+                repeated_frame_ratio=1 - len(set(fingerprints)) / len(fingerprints) if fingerprints else 0,
             ),
             best_frame=candidate_frames[0] if candidate_frames else None,
             candidate_frames=candidate_frames,
