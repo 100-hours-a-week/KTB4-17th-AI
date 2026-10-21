@@ -4,6 +4,7 @@ import threading
 
 import cv2
 import numpy as np
+import pytest
 
 from app.core.config import Settings
 from app.features.primary_photo.analyzer import FaceAnalyzer, FaceObservation
@@ -14,6 +15,120 @@ def analyzer_without_models() -> FaceAnalyzer:
     analyzer = object.__new__(FaceAnalyzer)
     analyzer.settings = Settings(min_image_edge_px=64, min_blur_variance=0)
     return analyzer
+
+
+@pytest.mark.parametrize(
+    ("shape", "detector_size"),
+    [((1800, 1800), (1024, 1024)), ((1801, 2400), (1024, 768)), ((2400, 1801), (768, 1024)), ((480, 640), (640, 480))],
+)
+def test_detection_preserves_original_face_geometry_and_quality(shape, detector_size):
+    analyzer = analyzer_without_models()
+    analyzer._lock = threading.Lock()
+    image = np.full((*shape, 3), 128, dtype=np.uint8)
+    fitted = []
+    sharpness_inputs = []
+
+    class Detector:
+        def setInputSize(self, size):
+            assert size == detector_size
+
+        def detect(self, detector_image):
+            assert detector_image.shape[:2] == detector_size[::-1]
+            width, height = detector_size
+            face = np.array(
+                [
+                    width * 0.2,
+                    height * 0.1,
+                    width * 0.5,
+                    height * 0.6,
+                    width * 0.3,
+                    height * 0.3,
+                    width * 0.6,
+                    height * 0.3,
+                    width * 0.45,
+                    height * 0.4,
+                    width * 0.35,
+                    height * 0.5,
+                    width * 0.55,
+                    height * 0.5,
+                    0.95,
+                ],
+                dtype=np.float32,
+            )
+            return None, face[None, :]
+
+    def fit(original, detection):
+        assert original is image
+        fitted.append(detection.copy())
+        return np.zeros((68, 2))
+
+    def sharpness(original, detection):
+        assert original is image
+        sharpness_inputs.append(detection.copy())
+        return 17.5
+
+    analyzer._detector = Detector()
+    analyzer._fit_landmarks = fit
+    analyzer._face_blur_variance = sharpness
+    result = analyzer.analyze(image)
+
+    height, width = shape
+    expected = np.array(
+        [
+            width * 0.2,
+            height * 0.1,
+            width * 0.5,
+            height * 0.6,
+            width * 0.3,
+            height * 0.3,
+            width * 0.6,
+            height * 0.3,
+            width * 0.45,
+            height * 0.4,
+            width * 0.35,
+            height * 0.5,
+            width * 0.55,
+            height * 0.5,
+            0.95,
+        ]
+    )
+    np.testing.assert_allclose(fitted[0], expected, rtol=1e-6)
+    np.testing.assert_allclose(sharpness_inputs[0], expected, rtol=1e-6)
+    assert result.quality.face_area_ratio == pytest.approx(0.3)
+    assert (result.quality.height, result.quality.width) == shape
+    assert result.quality.blur_variance == 17.5
+
+
+def test_closeup_fallback_uses_original_coordinates_after_scaled_detection():
+    analyzer = analyzer_without_models()
+    analyzer._lock = threading.Lock()
+    image = np.full((1800, 1800, 3), 128, dtype=np.uint8)
+    face = np.array([[100, 200, 400, 500]], dtype=np.float32)
+
+    class Detector:
+        def setInputSize(self, size):
+            assert size == (1024, 1024)
+
+        def detect(self, detector_image):
+            return None, None
+
+    def fallback(original):
+        assert original is image
+        return face
+
+    def fit(original, detection):
+        assert original is image
+        np.testing.assert_array_equal(detection, face[0])
+        return np.zeros((68, 2))
+
+    analyzer._detector = Detector()
+    analyzer._detect_closeup_faces = fallback
+    analyzer._fit_landmarks = fit
+    observation = analyzer.observe(image, allow_detection_fallback=True)
+
+    assert observation.face_count == 1
+    assert observation.center_x == pytest.approx(300 / 1800)
+    assert observation.center_y == pytest.approx(450 / 1800)
 
 
 def test_masked_secondary_faces_are_allowed():
@@ -137,17 +252,19 @@ def test_dominant_face_is_not_discarded_as_masked_in_low_light():
     assert observation.masked_face_count == 1
 
 
-def test_low_light_retry_enhances_detector_input():
+@pytest.mark.parametrize("edge", [120, 1800])
+def test_low_light_retry_enhances_detector_input(edge):
     analyzer = analyzer_without_models()
     analyzer._lock = threading.Lock()
     face = np.array([20, 20, 80, 80], dtype=np.float32)
     detector_means = []
 
     class StubDetector:
-        def setInputSize(self, _size):
-            pass
+        def setInputSize(self, size):
+            assert size == (min(edge, 1024), min(edge, 1024))
 
         def detect(self, image):
+            assert image.shape[:2] == (min(edge, 1024), min(edge, 1024))
             detector_means.append(float(image.mean()))
             return (None, np.stack([face])) if image.mean() >= 40 else (None, None)
 
@@ -155,7 +272,7 @@ def test_low_light_retry_enhances_detector_input():
     analyzer._fit_landmarks = lambda _image, _face: np.zeros((68, 2), dtype=np.float64)
 
     observation = analyzer.observe(
-        np.full((120, 120, 3), 15, dtype=np.uint8),
+        np.full((edge, edge, 3), 15, dtype=np.uint8),
         allow_detection_fallback=True,
         allow_low_light_enhancement=True,
     )
