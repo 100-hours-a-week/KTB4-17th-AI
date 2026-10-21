@@ -105,6 +105,7 @@ async def _speak(
     last_messages: list[dict[str, str]] = []
     last_validation: CheckResult | ValidationResult | None = None
     first_validation_grade: Grade | None = None
+    format_feedback: str | None = None
 
     while llm_calls < 3:
         messages = speaker_messages(
@@ -117,6 +118,7 @@ async def _speak(
             regen_rule_id=regen_rule_id,
             index=index,
             turns=turns,
+            format_error=format_feedback,
         )
         last_messages = [dict(m) for m in messages]
         llm_calls += 1
@@ -139,6 +141,10 @@ async def _speak(
         except LLMError as e:
             if e.retryable and format_retries == 0 and llm_calls < 3:
                 format_retries += 1
+                if e.reason == "truncated":
+                    format_feedback = "응답이 생성 도중 잘렸다. 짧은 대사로 완전한 JSON 객체를 작성하라."
+                elif e.reason == "empty_response":
+                    format_feedback = "응답이 비어 있다. 공백이 아닌 실제 대사를 작성하라."
                 continue
             return SpeakResult(
                 text=None,
@@ -184,6 +190,7 @@ async def _speak(
             )
             if format_retries == 0 and llm_calls < 3:
                 format_retries += 1
+                format_feedback = format_error
                 continue
             return SpeakResult(
                 text=None,
@@ -193,6 +200,7 @@ async def _speak(
                 reason="invalid_json",
             )
 
+        format_feedback = None
         # ── 2. 내용 검사 (가드레일, self_addressed, 마지막 b의 물음표) ──
         mode = effective_mode(None)
         if mode == "off":
