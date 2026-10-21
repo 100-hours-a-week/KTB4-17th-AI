@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -14,6 +15,8 @@ from app.features.simulation_migration.order import (
     strip_name_prefix,
 )
 from app.features.simulation_migration.prompts import parse_speaker_json, speaker_messages
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -157,20 +160,28 @@ async def _speak(
             )
 
         # ── 1. 형식 검사 (빈 값, 300자 초과, JSON 오류, 이름표 잔여) ──
-        format_failed = False
+        format_error: str | None = None
         parsed_text = ""
         try:
             parsed_text = parse_speaker_json(raw_text)
             stripped = strip_name_prefix(parsed_text, nickname_self)
             # 한 번 벗긴 뒤에도 여전히 이름표가 남아있는지 검사
             if strip_name_prefix(stripped, nickname_self) != stripped:
-                format_failed = True
+                format_error = "repeated_name_prefix"
             else:
                 clean_text = stripped
-        except (ValueError, TypeError):
-            format_failed = True
+        except (ValueError, TypeError) as e:
+            # parse_speaker_json의 예외는 원문 없이 실패 조건·위치·길이만 담는다.
+            format_error = str(e)
 
-        if format_failed:
+        if format_error is not None:
+            logger.warning(
+                "simulation speaker format failed: speaker=%s index=%s attempt=%s detail=%s",
+                speaker,
+                index,
+                llm_calls,
+                format_error,
+            )
             if format_retries == 0 and llm_calls < 3:
                 format_retries += 1
                 continue
