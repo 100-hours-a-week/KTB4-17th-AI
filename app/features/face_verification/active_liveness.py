@@ -22,9 +22,6 @@ from .schemas import Challenge, FrameDiagnostic, FrameStatus, LivenessResult, Re
 
 logger = logging.getLogger(__name__)
 
-# FE는 12°로 안내한다. 서버는 브라우저·서버 모델의 각도 차이와 샘플 시점 차이를 감안해 2°를 허용한다.
-HEAD_MATCH_MIN_DELTA_DEG = HEAD_TURN_MIN_DELTA_DEG - 2.0
-
 MAX_ACTIVE_FRAMES = 48
 MIN_ACTIVE_FRAMES = 12
 MAX_VIDEO_SECONDS = 18.0
@@ -62,7 +59,7 @@ def head_blocker(face, delta: float, clear: bool) -> str | None:
         return "a"
     if not clear:
         return "c"
-    if delta < HEAD_MATCH_MIN_DELTA_DEG:
+    if delta < HEAD_TURN_MIN_DELTA_DEG:
         return "d"
     return None
 
