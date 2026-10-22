@@ -278,6 +278,16 @@ def test_head_failure_log_traces_each_head_frame(monkeypatch, caplog):
     assert "d9" in message
 
 
+def test_pose_failure_log_traces_each_pose_frame(monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
+    evaluate(monkeypatch, wrong_hand=True)
+    message = caplog.records[-1].getMessage()
+    assert "stage_trace=pose:" in message
+    assert "gONE" in message
+    evaluate(monkeypatch, overlap=True)
+    assert "stage_trace=frontal:c" in caplog.records[-1].getMessage()
+
+
 def test_identity_uses_initial_frontal_frames_not_return_frames(monkeypatch):
     monkeypatch.setattr("app.features.face_verification.service.decode_image", lambda _: np.zeros((80, 80, 3)))
     live = evaluate(monkeypatch)

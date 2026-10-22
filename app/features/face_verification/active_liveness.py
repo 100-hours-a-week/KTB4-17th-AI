@@ -67,6 +67,26 @@ def head_blocker(face, delta: float, clear: bool) -> str | None:
     return None
 
 
+def frame_blocker(face, uncovered: bool, readings=None, target=None) -> str:
+    """정면·손 포즈 단계 프레임이 통과하지 못한 이유. 통과하면 "ok".
+
+    n: 자세 측정 실패, p: 얼굴 위치·크기·각도, c: 손 가림, h: 손 미검출, g<읽은 손>: 손 모양·방향 불일치
+    """
+    if pose_from(face) is None:
+        return "n"
+    if centering_hint(face) is not None:
+        return "p"
+    if not uncovered:
+        return "c"
+    if target is None:
+        return "ok"
+    if not readings:
+        return "h"
+    if any(matches_gesture(reading, target.gesture, target.direction) for reading in readings):
+        return "ok"
+    return "g" + readings[0].label
+
+
 def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int]) -> bool:
     if face.center_x is None or face.center_y is None or face.width_ratio is None or face.height_ratio is None:
         return True
@@ -223,6 +243,14 @@ class ActiveLivenessAnalyzer:
             start=frontal_window.indices[-1] + 1 if centered else len(faces),
         )
         pose_passed = pose_window.seconds >= REQUIRED_HOLD_SECONDS
+        # 실패 로그용 프레임별 탈락 사유. 정면을 못 채웠으면 정면 단계, 아니면 손 포즈 단계를 남긴다.
+        stage_start = frontal_window.indices[-1] + 1 if centered else 0
+        stage_trace = ("pose:" if centered else "frontal:") + ",".join(
+            frame_blocker(face, clear, frame, target if centered else None)
+            for face, clear, frame in zip(
+                faces[stage_start:], uncovered[stage_start:], readings[stage_start:], strict=True
+            )
+        )
         baseline = None
         head_peak = None
         head_trace = "-"
@@ -273,7 +301,7 @@ class ActiveLivenessAnalyzer:
             logger.warning(
                 "liveness failed reasons=%s invalid_video=%s reported_frames=%d decoded_frames=%d source_fps=%.2f "
                 "sampled=%d valid_pose=%d multi_face_frames=%d no_face_frames=%d frontal_hold=%.2f pose_hold=%.2f "
-                "head_hold=%s head_trace=%s",
+                "head_hold=%s stage_trace=%s head_trace=%s",
                 ",".join(reason.value for reason in reasons),
                 invalid_video,
                 reported,
@@ -286,6 +314,7 @@ class ActiveLivenessAnalyzer:
                 frontal_window.seconds,
                 pose_window.seconds,
                 f"{head_window.seconds:.2f}" if head_window else "-",
+                stage_trace,
                 head_trace,
             )
         selected = initial if passed else []
