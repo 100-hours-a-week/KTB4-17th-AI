@@ -6,6 +6,10 @@ from dataclasses import dataclass
 import numpy as np
 
 HOLD_SECONDS = 3.0
+# 브라우저는 3초를 채우면 촬영을 넘긴다. 서버는 영상을 약 0.38초 간격으로 샘플링하므로
+# 같은 3초도 경계에 따라 한 칸 짧게 잴 수 있어 그만큼을 허용한다.
+SAMPLE_TOLERANCE_SECONDS = 0.4
+REQUIRED_HOLD_SECONDS = HOLD_SECONDS - SAMPLE_TOLERANCE_SECONDS
 MAX_SAMPLE_GAP_SECONDS = 0.75
 DETECTION_GRACE_SECONDS = 0.8
 
