@@ -68,6 +68,15 @@ class Settings(BaseSettings):
         description="호출할 기본 LLM 모델명",
     )
 
+    # v2 기능(app/v2/**) 전용 메인 LLM 모델. v1 은 llm_model 을 그대로 쓴다.
+    # 코드 기본값으로 동작한다 — 환경 변수가 없어도 이 값이 쓰인다 (#116 재발 방지)
+    # 2026-10-22 v2 시뮬레이션 실측: 2.5-flash-lite 4/5 → 3.1-flash-lite 5/5, 실행당 비용 약 3배
+    llm_model_v2: str = Field(
+        default="google/gemini-3.1-flash-lite",
+        validation_alias="LLM_MODEL_V2",
+        description="v2 기능이 호출할 LLM 모델명",
+    )
+
     # response_format={"type": "json_object"} 를 붙일지. 지원 안 하는 로컬 모델이면 0 으로 끈다
     llm_json_mode: bool = Field(
         default=True,
@@ -288,7 +297,7 @@ class Settings(BaseSettings):
     memory_reconcile_timeout_s: float = Field(default=20.0, validation_alias="MEMORY_RECONCILE_TIMEOUT_S")
 
     # ── v2 시뮬레이션 하네스 (docs/기획_및_설계/시뮬레이션_v2_하네스_기획안_최종.md) ──
-    # 심사 모델. 비우면 생성 모델(llm_model)과 같다
+    # 심사 모델. 비우면 생성 모델(llm_model_v2)과 같다
     simulation_v2_judge_model: str | None = Field(default=None, validation_alias="SIMULATION_V2_JUDGE_MODEL")
     # tools(function calling) 를 쓸지. 기본은 json_object 경로 — 2026-10-19 로컬 실측(gemini-2.5-flash-lite)에서
     # tools 는 긴 대본 인자가 깨지는 형식 오류가 잦아 성공 6/14, json_object 는 11/14 였다

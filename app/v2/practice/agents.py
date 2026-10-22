@@ -72,7 +72,7 @@ async def _stream(
                 # OpenRouter 및 로컬 서버로 스트리밍 요청 전송
                 stream = await client.chat.completions.create(
                     name="practice-reply",
-                    model=settings.llm_model,  # .env 의 LLM_MODEL (e.g. anthropic/claude-3.5-sonnet 또는 local-model)
+                    model=settings.llm_model_v2,  # v2 전용 모델 (config.llm_model_v2)
                     messages=payload_messages,  # type: ignore[arg-type]
                     max_tokens=max_tokens,
                     stream=True,
