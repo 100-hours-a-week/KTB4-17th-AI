@@ -162,6 +162,12 @@ jobs:
             CONTAINER_NAME: ai
 
         steps:
+            # migration - Release Tag 실
+            - name: Checkout release source
+              uses: actions/checkout@v7
+              with:
+                  ref: ${{ inputs.release_tag }}
+
             - name: Configure AWS credentials
               uses: aws-actions/configure-aws-credentials@v6
               with:
@@ -192,6 +198,18 @@ jobs:
                   task-definition-arn: ${{ steps.current.outputs.arn }}
                   container-name: ${{ env.CONTAINER_NAME }}
                   image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}@${{ needs.promote_image.outputs.image_digest }}
+
+            # 서비스와 같은 이미지·role·secrets·네트워크를 사용하는 일회성 Fargate 태스크에서
+            # migration을 먼저 실행한다. 종료 코드가 0이 아니면 아래 서비스 배포로 진행하지 않는다.
+            - name: Run database migrations
+              env:
+                  TASK_DEFINITION_FILE: ${{ steps.render.outputs.task-definition }}
+              run: |
+                  bash scripts/run_ecs_migration.sh \
+                    "$TASK_DEFINITION_FILE" \
+                    service.json \
+                    "$ECS_CLUSTER" \
+                    "$CONTAINER_NAME"
 
             # 새 Task Definition revision 등록 후 롤링 배포
             # 서비스가 안정될 때까지 최대 20분 대기, 실패 시 서비스의 circuit breaker가 롤백한다.
