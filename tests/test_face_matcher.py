@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from app.core.config import Settings
-from app.features.face_verification.matcher import FaceMatcher
+from app.features.face_verification.matcher import FaceMatcher, FaceNotFound
 
 
 def test_feature_uses_largest_face_when_background_face_is_also_detected():
@@ -70,7 +71,7 @@ def test_feature_retries_with_low_light_enhancement():
     assert detector_means[1] >= 40
 
 
-def test_feature_uses_haar_crop_when_yunet_misses_a_closeup_face():
+def test_haar_roi_retries_yunet_and_keeps_landmark_alignment():
     matcher = object.__new__(FaceMatcher)
     matcher.detector_path = Settings().yunet_model_path
     matcher.recognizer_path = Settings().sface_model_path
@@ -79,8 +80,10 @@ def test_feature_uses_haar_crop_when_yunet_misses_a_closeup_face():
         def setInputSize(self, _size):
             pass
 
-        def detect(self, _image):
-            return None, None
+        def detect(self, image):
+            if image.shape[:2] == (140, 140):
+                return None, None
+            return None, np.array([[10, 10, 70, 80, *([0] * 11)]], dtype=np.float32)
 
     class FallbackDetector:
         def detectMultiScale(self, _gray, **_kwargs):
@@ -88,6 +91,11 @@ def test_feature_uses_haar_crop_when_yunet_misses_a_closeup_face():
 
     class FakeRecognizer:
         received_shape = None
+        aligned = False
+
+        def alignCrop(self, image, face):
+            self.aligned = True
+            return np.zeros((112, 112, 3), dtype=np.uint8)
 
         def feature(self, aligned):
             self.received_shape = aligned.shape
@@ -101,6 +109,10 @@ def test_feature_uses_haar_crop_when_yunet_misses_a_closeup_face():
 
     assert feature.shape == (1, 128)
     assert matcher._recognizer.received_shape == (112, 112, 3)
+    assert matcher._recognizer.aligned
+    matcher._detect = lambda image: None
+    with pytest.raises(FaceNotFound):
+        matcher._fallback_feature(np.full((140, 140, 3), 100, dtype=np.uint8))
 
 
 def test_matcher_downscales_high_res_detection_and_caches_reference_feature():

@@ -53,16 +53,14 @@ class FaceVerificationService:
             )
         similarities: list[float] = []
         active = liveness.result.sampling_strategy in ("uniform_max_48_active_v2", "uniform_max_48_adaptive_v3")
-        failed_frame = False
         frames = liveness.candidate_frames or (liveness.best_frame,)
         for frame in frames:
             try:
                 _, similarity = self.matcher.compare(reference, frame)
                 similarities.append(similarity)
             except FaceNotFound:
-                failed_frame = True
                 continue
-        if not similarities or (active and (failed_frame or len(similarities) < 2)):
+        if not similarities or (active and len(similarities) < 2):
             return VerificationResponse(
                 decision=VerificationDecision.RETRY,
                 reason_codes=[ReasonCode.FACE_COMPARISON_FAILED],
