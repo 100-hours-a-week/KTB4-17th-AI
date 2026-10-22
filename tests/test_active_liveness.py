@@ -302,7 +302,9 @@ def test_active_video_accepts_small_offset_and_natural_position_jitter(monkeypat
 
 def test_active_liveness_skips_unsampled_frames_with_grab_and_downscales_hd_frames(monkeypatch):
     target = next(
-        item for item in CHALLENGE_TARGETS if item.gesture == "TWO" and item.direction == "DOWN" and item.head == "LOOK_UP"
+        item
+        for item in CHALLENGE_TARGETS
+        if item.gesture == "TWO" and item.direction == "DOWN" and item.head == "LOOK_UP"
     )
     points = make_hand("01100")
     points[:, 1] = 720 - points[:, 1]

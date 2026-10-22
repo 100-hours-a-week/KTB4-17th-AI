@@ -1,7 +1,7 @@
 """YuNet 검출·정렬과 SFace 임베딩을 이용한 1:1 얼굴 비교."""
 
-from hashlib import blake2b
 import threading
+from hashlib import blake2b
 
 import cv2
 import numpy as np

@@ -386,9 +386,11 @@ def draw_live_challenge_hud(
     """카메라 화면 상단·하단에 손 인식 여부와 고개 동작 진행률(각도 게이지·단계)을 실시간 표시한다."""
     cv2.rectangle(view, (0, 0), (frame_width, 96), (22, 22, 22), -1)
 
-    hand_matched = any(
-        matches_gesture(read_gesture(hand.image_points), gesture, direction) for hand in hands
-    ) if gesture else bool(hands)
+    hand_matched = (
+        any(matches_gesture(read_gesture(hand.image_points), gesture, direction) for hand in hands)
+        if gesture
+        else bool(hands)
+    )
     hand_color = (90, 230, 120) if hand_matched else ((80, 180, 255) if hands else (160, 160, 160))
     hand_state = "MATCH [OK]" if hand_matched else ("WRONG POSE" if hands else "SHOW HAND")
     if gesture:
@@ -412,7 +414,9 @@ def draw_live_challenge_hud(
         elif head.stage == "RETURN":
             progress = max(0.0, min(1.0, 1.0 - (return_delta - HEAD_RETURN_MAX_DELTA_DEG) / 18.0))
             head_color = (80, 220, 255)
-            head_text = f"HEAD [2/2 TURN OK! RETURN CENTER]: delta {return_delta:.1f} deg (<= {HEAD_RETURN_MAX_DELTA_DEG:.0f})"
+            head_text = (
+                f"HEAD [2/2 TURN OK! RETURN CENTER]: delta {return_delta:.1f} deg (<= {HEAD_RETURN_MAX_DELTA_DEG:.0f})"
+            )
         else:
             progress = 1.0
             head_color = (90, 230, 120)
@@ -438,7 +442,9 @@ def draw_live_challenge_hud(
                 cv2.LINE_AA,
             )
 
-    controls = "N: new random | R: retry | C: re-center | Q: quit" if random_mode else "R: retry | C: re-center | Q: quit"
+    controls = (
+        "N: new random | R: retry | C: re-center | Q: quit" if random_mode else "R: retry | C: re-center | Q: quit"
+    )
     if recording_remaining is not None:
         controls += f" | REC {max(0.0, recording_remaining):.1f}s"
     cv2.putText(view, controls, (12, 91), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (210, 210, 210), 1, cv2.LINE_AA)
@@ -487,9 +493,7 @@ def run_camera(
                 view = draw_centering_guide(cv2.flip(frame, 1), head)
             else:
                 detected_hands = landmarker.detect(frame)
-                view = annotate(
-                    frame, detected_hands, mirror=True, target=gesture, target_direction=direction
-                )
+                view = annotate(frame, detected_hands, mirror=True, target=gesture, target_direction=direction)
             view = draw_head_panel(view, head)
             if (gesture or head.target) and head.baseline is not None:
                 draw_live_challenge_hud(
