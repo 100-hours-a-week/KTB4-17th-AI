@@ -23,7 +23,7 @@ class ChallengeTarget:
     head: HeadMovement | None
 
 
-# 10가지 손 모양 × 위/아래/가로 × 고개 4방향. 검출불가는 출제하지 않는다.
+# 10가지 손 모양 × 위/아래/가로 × 고개 상하 2방향. 검출불가는 출제하지 않는다.
 CHALLENGE_TARGETS = tuple(
     ChallengeTarget(gesture, direction, head)
     for gesture in HandGesture

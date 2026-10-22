@@ -210,20 +210,9 @@ class ActiveLivenessAnalyzer:
                 if hold.hand_frames < len(faces) * 0.8
                 else ReasonCode.HAND_GESTURE_MISMATCH
             )
-        ended_centered = (
-            head is not None
-            and head.baseline is not None
-            and len(faces) >= 2
-            and all(
-                (pose := pose_from(face)) is not None
-                and max(abs(pose.yaw - head.baseline.yaw), abs(pose.pitch - head.baseline.pitch)) <= 6
-                for face in faces[-2:]
-            )
-        )
-        if head is not None and (not head.passed or not ended_centered):
+        if head is not None and not head.passed:
             reasons.append(ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED)
         # 동일인 비교는 움직이기 전 기준 정면 구간에서만 수행한다.
-        # 복귀 동작의 완료 여부는 위 head/ended_centered 검사에서 별도로 확인한다.
         initial = sorted((item for item in candidates if item[1] < BASELINE_FRAMES), key=lambda item: item[1])
         if adaptive and centered:
             initial = [item for item in candidates if item[1] in frontal_window.indices]
@@ -260,7 +249,7 @@ class ActiveLivenessAnalyzer:
                 matched_hand_frames=hold.matched_frames,
                 expected_hand_direction=target.direction,
                 head_peak_delta_deg=head.peak_delta_deg if head else None,
-                head_returned=head.returned and ended_centered if head else None,
+                head_returned=head.passed if head else None,
                 frontal_hold_seconds=round(frontal_window.seconds, 3) if frontal_window else None,
                 pose_hold_seconds=round(pose_window.seconds, 3) if pose_window else None,
                 repeated_frame_ratio=1 - len(set(fingerprints)) / len(fingerprints) if fingerprints else 0,

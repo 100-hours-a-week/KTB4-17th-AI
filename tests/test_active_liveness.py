@@ -64,6 +64,7 @@ def evaluate(
     wrong_hand=False,
     no_hand=False,
     no_return=False,
+    no_turn=False,
     off_center=False,
     multi_face=False,
     missing_middle=False,
@@ -114,9 +115,13 @@ def evaluate(
 
     def face(frame):
         index = int(frame[0, 0, 0])
-        if missing_middle and 25 <= index < 36:
+        if missing_middle and 12 <= index < 23:
             return centered_face(face_count=0)
-        pitch = -20 if not adaptive and 12 <= index < (48 if no_return else 30) else neutral_pitch
+        pitch = (
+            -20
+            if not adaptive and not no_turn and not missing_middle and 12 <= index < (48 if no_return else 30)
+            else neutral_pitch
+        )
         x = center_x + (0.018 if index % 2 else -0.018) if slight_center_drift else center_x
         return centered_face(
             pitch=pitch,
@@ -196,8 +201,11 @@ def test_only_server_risk_escalates_and_step_up_does_not_extend_expiry(monkeypat
 
 @pytest.mark.parametrize("direction", ["UP", "DOWN", "SIDEWAYS"])
 @pytest.mark.parametrize("no_metadata", [False, True])
-def test_active_video_passes_only_with_requested_hand_head_and_return(monkeypatch, direction, no_metadata):
-    result = evaluate(monkeypatch, direction=direction, no_metadata=no_metadata)
+@pytest.mark.parametrize("no_return", [False, True])
+def test_active_video_passes_with_requested_hand_and_head_without_requiring_return(
+    monkeypatch, direction, no_metadata, no_return
+):
+    result = evaluate(monkeypatch, direction=direction, no_metadata=no_metadata, no_return=no_return)
     assert result.result.passed and result.result.expected_hand_direction == direction
     assert result.result.head_returned
     assert len(result.candidate_frames) >= 2
@@ -210,7 +218,7 @@ def test_active_video_passes_only_with_requested_hand_head_and_return(monkeypatc
     [
         ({"wrong_hand": True}, ReasonCode.HAND_GESTURE_MISMATCH),
         ({"no_hand": True}, ReasonCode.HAND_NOT_DETECTED),
-        ({"no_return": True}, ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED),
+        ({"no_turn": True}, ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED),
         ({"off_center": True}, ReasonCode.FACE_NOT_CENTERED),
         ({"multi_face": True}, ReasonCode.LIVENESS_FAILED),
         ({"missing_middle": True}, ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED),
