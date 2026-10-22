@@ -31,9 +31,9 @@ class FaceMatcher:
         self._cached_ref_feature: np.ndarray | None = None
 
     def compare(self, reference: np.ndarray, live: np.ndarray) -> tuple[bool, float]:
-        self._load()
         ref_key = blake2b(memoryview(np.ascontiguousarray(reference)), digest_size=16).digest()
         with self._lock:
+            self._load()
             if self._cached_ref_key == ref_key and self._cached_ref_feature is not None:
                 reference_feature = self._cached_ref_feature
             else:
@@ -103,5 +103,10 @@ class FaceMatcher:
         crop = image[y1:y2, x1:x2]
         if crop.size == 0:
             raise FaceNotFound("얼굴 비교 특징을 만들 수 없습니다.")
-        aligned = cv2.resize(crop, (112, 112), interpolation=cv2.INTER_AREA)
+        # Haar는 재검출할 영역만 찾는다. 특징 추출에는 반드시 YuNet의 5점 정렬을 쓴다.
+        landmarks = self._detect(crop)
+        if landmarks is None or len(landmarks) == 0:
+            raise FaceNotFound("얼굴 비교를 위한 정렬점을 찾을 수 없습니다.")
+        primary = max(landmarks, key=lambda face: float(face[2] * face[3]))
+        aligned = self._recognizer.alignCrop(crop, primary)
         return self._recognizer.feature(aligned)
