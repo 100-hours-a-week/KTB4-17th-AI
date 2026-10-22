@@ -28,9 +28,27 @@ MIN_SAMPLED_FRAMES = 8
 MIN_VALID_FACE_FRAMES = 6
 MAX_CANDIDATE_FRAMES = 3
 MAX_SAMPLED_FRAMES = 24
+MAX_FRAME_EDGE_PX = 720
 DEFAULT_MAX_ABS_YAW_DEG = 25.0
 DEFAULT_MAX_ABS_PITCH_DEG = 25.0
 DEFAULT_MAX_ABS_ROLL_DEG = 40.0
+
+
+def _skip_frame(capture) -> bool:
+    grab = getattr(capture, "grab", None)
+    if callable(grab):
+        return bool(grab())
+    ok, _ = capture.read()
+    return bool(ok)
+
+
+def _downscale_frame(frame: np.ndarray) -> np.ndarray:
+    height, width = frame.shape[:2]
+    if max(height, width) <= MAX_FRAME_EDGE_PX:
+        return frame
+    scale = MAX_FRAME_EDGE_PX / max(height, width)
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
 
 
 class InvalidChallenge(ValueError):
@@ -165,13 +183,17 @@ class LivenessAnalyzer:
                         break
                     if target_indices is not None and sampled >= len(target_indices):
                         break
+                    source_index = index
+                    if target_indices is not None and source_index not in target_indices:
+                        if not _skip_frame(capture):
+                            break
+                        index += 1
+                        continue
                     ok, frame = capture.read()
                     if not ok:
                         break
-                    source_index = index
                     index += 1
-                    if target_indices is not None and source_index not in target_indices:
-                        continue
+                    frame = _downscale_frame(frame)
                     timestamp_ms = round(source_index / source_fps * 1000) if source_fps else None
                     sampled += 1
                     observation = self.face_analyzer.observe(
@@ -186,6 +208,8 @@ class LivenessAnalyzer:
                         pose_score = abs(observation.yaw) + abs(observation.pitch) + abs(observation.roll)
                         sharpness = observation.face_blur_variance or 0.0
                         candidates.append((pose_score, -sharpness, sampled - 1, frame.copy()))
+                        candidates.sort(key=lambda item: (item[0], item[1]))
+                        del candidates[MAX_CANDIDATE_FRAMES:]
             finally:
                 capture.release()
 

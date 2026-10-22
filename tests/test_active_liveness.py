@@ -121,7 +121,7 @@ def evaluate(
         return centered_face(
             pitch=pitch,
             roll=neutral_roll,
-            center_x=0.2 if off_center and index < 3 else (0.55 if unstable_center and index == 1 else x),
+            center_x=0.05 if off_center and index < 3 else (0.65 if unstable_center and index == 1 else x),
             center_y=center_y,
             face_count=2 if multi_face and index == 25 else 1,
         )
@@ -298,3 +298,64 @@ def test_active_video_accepts_small_offset_and_natural_position_jitter(monkeypat
     result = evaluate(monkeypatch, **options)
     assert result.result.passed
     assert len(result.candidate_frames) >= 2
+
+
+def test_active_liveness_skips_unsampled_frames_with_grab_and_downscales_hd_frames(monkeypatch):
+    target = next(
+        item
+        for item in CHALLENGE_TARGETS
+        if item.gesture == "TWO" and item.direction == "DOWN" and item.head == "LOOK_UP"
+    )
+    points = make_hand("01100")
+    points[:, 1] = 720 - points[:, 1]
+    stats = {"grab": 0, "read": 0, "observed_shapes": []}
+
+    class GrabCapture:
+        def __init__(self, _path):
+            self.index = 0
+
+        def get(self, prop):
+            if prop == cv2.CAP_PROP_FPS:
+                return 15
+            if prop == cv2.CAP_PROP_FRAME_COUNT:
+                return 0  # WebM without frame count header
+            return self.index * (1000.0 / 15.0)
+
+        def isOpened(self):
+            return self.index < 96
+
+        def grab(self):
+            if self.index >= 96:
+                return False
+            stats["grab"] += 1
+            self.index += 1
+            return True
+
+        def read(self):
+            if self.index >= 96:
+                return False, None
+            stats["read"] += 1
+            frame = np.full((1080, 1920, 3), self.index, dtype=np.uint8)
+            self.index += 1
+            return True, frame
+
+        def release(self):
+            pass
+
+    def observe(frame):
+        stats["observed_shapes"].append(frame.shape[:2])
+        return centered_face()
+
+    def detect(_frame):
+        return [SimpleNamespace(image_points=points, box=np.array([62, 5, 79, 60]))]
+
+    monkeypatch.setattr("app.features.face_verification.active_liveness.cv2.VideoCapture", GrabCapture)
+    evaluation = ActiveLivenessAnalyzer(SimpleNamespace(observe=observe), SimpleNamespace(detect=detect)).evaluate(
+        b"video", ".webm", encode_target(target)[:3]
+    )
+
+    assert evaluation.result.passed
+    # 1st pass counts all 96 frames via grab(), 2nd pass grabs 48 unsampled frames and reads only 48 sampled frames
+    assert stats["read"] == 48
+    assert stats["grab"] == 96 + 48
+    assert all(max(shape) == 720 for shape in stats["observed_shapes"])

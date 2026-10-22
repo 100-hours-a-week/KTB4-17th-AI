@@ -168,7 +168,13 @@ class Settings(BaseSettings):
     c2pa_trust_anchors_path: Path | None = Field(default=None, validation_alias="C2PA_TRUST_ANCHORS_PATH")
 
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, validation_alias="MAX_IMAGE_BYTES")
-    max_video_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, validation_alias="MAX_VIDEO_BYTES")
+    max_video_bytes: int = Field(default=12 * 1024 * 1024, ge=1024, validation_alias="MAX_VIDEO_BYTES")
+    face_verification_max_inflight: int = Field(
+        default=2,
+        ge=1,
+        validation_alias="FACE_VERIFICATION_MAX_INFLIGHT",
+        description="동시에 메모리에 적재·분석할 수 있는 라이브 얼굴 인증 영상 최대 요청 수",
+    )
     min_image_edge_px: int = Field(default=160, ge=64, validation_alias="MIN_IMAGE_EDGE_PX")
     min_blur_variance: float = Field(default=8.0, ge=0, validation_alias="MIN_BLUR_VARIANCE")
     masked_face_max_blur_variance: float = Field(

@@ -22,6 +22,24 @@ MAX_ACTIVE_FRAMES = 48
 MIN_ACTIVE_FRAMES = 12
 MAX_VIDEO_SECONDS = 12.0
 MAX_DECODED_FRAMES = 1440
+MAX_FRAME_EDGE_PX = 720
+
+
+def _skip_frame(capture) -> bool:
+    grab = getattr(capture, "grab", None)
+    if callable(grab):
+        return bool(grab())
+    ok, _ = capture.read()
+    return bool(ok)
+
+
+def _downscale_frame(frame: np.ndarray) -> np.ndarray:
+    height, width = frame.shape[:2]
+    if max(height, width) <= MAX_FRAME_EDGE_PX:
+        return frame
+    scale = MAX_FRAME_EDGE_PX / max(height, width)
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
 
 
 def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int]) -> bool:
@@ -34,7 +52,7 @@ def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int]) -> boo
     y2 = (face.center_y + face.height_ratio / 2) * height
     hx1, hy1, hx2, hy2 = hand.box
     intersection = max(0, min(x2, hx2) - max(x1, hx1)) * max(0, min(y2, hy2) - max(y1, hy1))
-    return intersection > max((x2 - x1) * (y2 - y1), 1) * 0.10
+    return intersection > max((x2 - x1) * (y2 - y1), 1) * 0.20
 
 
 class ActiveLivenessAnalyzer:
@@ -58,10 +76,9 @@ class ActiveLivenessAnalyzer:
                 source_fps = float(raw_fps) if np.isfinite(raw_fps) and raw_fps > 0 else 0.0
                 if reported <= 1:
                     reported = 0
-                    # 브라우저 WebM은 프레임 수 헤더가 없을 수 있다. 저장하지 않고 한 번 세고 다시 연다.
+                    # 브라우저 WebM은 프레임 수 헤더가 없을 수 있다. 픽셀 디코딩 없이 패킷만 세고 다시 연다.
                     while reported <= MAX_DECODED_FRAMES:
-                        ok, _ = capture.read()
-                        if not ok:
+                        if not _skip_frame(capture):
                             break
                         reported += 1
                     capture.release()
@@ -76,21 +93,25 @@ class ActiveLivenessAnalyzer:
                     if index >= MAX_DECODED_FRAMES:
                         invalid_video = True
                         break
+                    source_index = index
+                    if indices is not None and source_index not in indices:
+                        if not _skip_frame(capture):
+                            break
+                        index += 1
+                        continue
                     ok, frame = capture.read()
                     if not ok:
                         break
-                    source_index = index
                     index += 1
-                    if indices is not None and source_index not in indices:
-                        continue
                     if indices is None and len(faces) >= MAX_ACTIVE_FRAMES:
                         # 헤더 없이 앞부분만 잘라 인증하지 않는다.
                         invalid_video = True
                         break
+                    frame = _downscale_frame(frame)
                     face = self.face_analyzer.observe(frame)
                     hands = self.hand_analyzer.detect(frame)
                     faces.append(face)
-                    fingerprints.append(blake2b(frame.tobytes(), digest_size=16).digest())
+                    fingerprints.append(blake2b(memoryview(np.ascontiguousarray(frame)), digest_size=16).digest())
                     readings.append([read_gesture(hand.image_points) for hand in hands])
                     sample_index = len(faces) - 1
                     presentation_times.append(capture.get(cv2.CAP_PROP_POS_MSEC))
@@ -113,7 +134,7 @@ class ActiveLivenessAnalyzer:
                     )
                     unobscured = frontal and not any(hand_overlaps_face(hand, face, frame.shape[:2]) for hand in hands)
                     clear_frontal.append(unobscured and centering_hint(face) is None)
-                    if unobscured:
+                    if unobscured and (target.head is None or sample_index < BASELINE_FRAMES):
                         candidates.append(
                             (abs(face.yaw) + abs(face.pitch) + abs(face.roll), sample_index, frame.copy())
                         )

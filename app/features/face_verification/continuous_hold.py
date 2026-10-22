@@ -16,7 +16,7 @@ def find_hold(matches: Sequence[bool], timestamps: Sequence[float], seconds: flo
     if len(timestamps) < 2 or len(matches) != len(timestamps):
         return HoldWindow()
     intervals = np.diff(timestamps)
-    if not np.isfinite(intervals).all() or (intervals <= 0).any() or (intervals > 0.35).any():
+    if not np.isfinite(intervals).all() or (intervals <= 0).any() or (intervals > 0.65).any():
         return HoldWindow()
     # 균등 샘플 한 장이 대표하는 시간 셀을 포함한다. 단일 프레임은 유지로 인정하지 않는다.
     cell = float(np.median(intervals))
