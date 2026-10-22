@@ -9,6 +9,7 @@ import pytest
 from app.core.config import Settings
 from app.features.face_verification.active_liveness import ActiveLivenessAnalyzer
 from app.features.face_verification.challenge import CHALLENGE_TARGETS
+from app.features.face_verification.continuous_hold import REQUIRED_HOLD_SECONDS
 from app.features.face_verification.liveness import ChallengeSigner, InvalidChallenge
 from app.features.face_verification.protocol import decode_target, encode_target
 from app.features.face_verification.schemas import Challenge, ReasonCode, VerificationDecision
@@ -166,8 +167,8 @@ def evaluate(
 def test_basic_challenge_requires_frontal_then_continuous_pose_without_head_turn(monkeypatch):
     result = evaluate(monkeypatch, adaptive=True)
     assert result.result.passed
-    assert result.result.frontal_hold_seconds >= 3
-    assert result.result.pose_hold_seconds >= 3
+    assert result.result.frontal_hold_seconds >= REQUIRED_HOLD_SECONDS
+    assert result.result.pose_hold_seconds >= REQUIRED_HOLD_SECONDS
     assert result.result.head_returned is None
     assert not evaluate(monkeypatch, adaptive=True, interrupted_pose=True).result.passed
     assert not evaluate(monkeypatch, adaptive=True, short_video=True).result.passed
@@ -177,8 +178,8 @@ def test_basic_challenge_requires_frontal_then_continuous_pose_without_head_turn
 def test_camera_frontal_pose_remains_valid_in_verification_session(monkeypatch, options):
     result = evaluate(monkeypatch, adaptive=True, **options)
     assert result.result.passed, result.result.reason_codes
-    assert result.result.frontal_hold_seconds >= 3
-    assert result.result.pose_hold_seconds >= 3
+    assert result.result.frontal_hold_seconds >= REQUIRED_HOLD_SECONDS
+    assert result.result.pose_hold_seconds >= REQUIRED_HOLD_SECONDS
 
 
 @pytest.mark.parametrize("options", [{"center_x": 0.62}, {"center_y": 0.65}])
@@ -228,7 +229,7 @@ def test_active_video_passes_with_requested_hand_and_head_without_requiring_retu
     assert result.result.head_returned
     assert len(result.candidate_frames) >= 2
     assert all(frame[0, 0, 0] < 48 for frame in result.candidate_frames)
-    assert result.result.head_hold_seconds >= 3
+    assert result.result.head_hold_seconds >= REQUIRED_HOLD_SECONDS
 
 
 @pytest.mark.parametrize(
@@ -250,6 +251,15 @@ def test_wrong_or_incomplete_active_challenge_never_produces_match_frames(monkey
     assert not result.result.passed
     assert reason in result.result.reason_codes
     assert result.best_frame is None and result.candidate_frames == ()
+
+
+def test_liveness_failure_logs_failed_condition_counts(monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
+    result = evaluate(monkeypatch, multi_face=True)
+    assert ReasonCode.LIVENESS_FAILED in result.result.reason_codes
+    message = caplog.records[-1].getMessage()
+    assert "reasons=LIVENESS_FAILED" in message and "multi_face_frames=" in message
+    assert "multi_face_frames=0 " not in message
 
 
 def test_identity_uses_initial_frontal_frames_not_return_frames(monkeypatch):
@@ -391,8 +401,8 @@ def test_active_liveness_skips_unsampled_frames_with_grab_and_downscales_hd_fram
 def test_initial_preparation_does_not_fail_an_otherwise_valid_sequence(monkeypatch):
     result = evaluate(monkeypatch, adaptive=True, leading_unready=True)
     assert result.result.passed
-    assert result.result.frontal_hold_seconds >= 3
-    assert result.result.pose_hold_seconds >= 3
+    assert result.result.frontal_hold_seconds >= REQUIRED_HOLD_SECONDS
+    assert result.result.pose_hold_seconds >= REQUIRED_HOLD_SECONDS
 
 
 def test_brief_head_motion_is_not_a_three_second_head_hold(monkeypatch):

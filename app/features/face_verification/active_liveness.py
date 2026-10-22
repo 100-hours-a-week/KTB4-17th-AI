@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from dataclasses import replace
 from hashlib import blake2b
@@ -10,7 +11,7 @@ import cv2
 import numpy as np
 
 from .centering import MAX_FRONTAL_ANGLE, centering_hint, is_frontal
-from .continuous_hold import HOLD_SECONDS, find_hold
+from .continuous_hold import REQUIRED_HOLD_SECONDS, find_hold
 from .gesture import judge_hold, matches_gesture, read_gesture
 from .hand import HandLandmarker, HandLandmarks
 from .head import HEAD_TURN_MIN_DELTA_DEG, HeadPose, movement_delta, pose_from
@@ -18,6 +19,8 @@ from .live_face import LiveFaceAnalyzer
 from .liveness import LivenessEvaluation
 from .protocol import decode_target
 from .schemas import Challenge, FrameDiagnostic, FrameStatus, LivenessResult, ReasonCode
+
+logger = logging.getLogger(__name__)
 
 MAX_ACTIVE_FRAMES = 48
 MIN_ACTIVE_FRAMES = 12
@@ -146,8 +149,8 @@ class ActiveLivenessAnalyzer:
                         else []
                     )
                     if not frontal_captured:
-                        current = find_hold(clear_frontal, current_times, HOLD_SECONDS)
-                        if current.seconds >= HOLD_SECONDS:
+                        current = find_hold(clear_frontal, current_times, REQUIRED_HOLD_SECONDS)
+                        if current.seconds >= REQUIRED_HOLD_SECONDS:
                             candidates = [item for item in candidates if item[1] in current.indices]
                             frontal_captured = True
                 if reported and abs(index - reported) > 1:
@@ -186,8 +189,8 @@ class ActiveLivenessAnalyzer:
             for record, timestamp in zip(records, presentation_times, strict=True):
                 record.timestamp_ms = round(timestamp)
         # v2/v3는 요구 동작만 다르다. 모두 정면 → 손 → 선택 고개를 각각 3초 검증한다.
-        frontal_window = find_hold(clear_frontal, times, HOLD_SECONDS)
-        centered = frontal_window.seconds >= HOLD_SECONDS
+        frontal_window = find_hold(clear_frontal, times, REQUIRED_HOLD_SECONDS)
+        centered = frontal_window.seconds >= REQUIRED_HOLD_SECONDS
         pose_matches = [
             clear and any(matches_gesture(reading, target.gesture, target.direction) for reading in frame)
             for clear, frame in zip(clear_frontal, readings, strict=True)
@@ -195,10 +198,10 @@ class ActiveLivenessAnalyzer:
         pose_window = find_hold(
             pose_matches,
             times,
-            HOLD_SECONDS,
+            REQUIRED_HOLD_SECONDS,
             start=frontal_window.indices[-1] + 1 if centered else len(faces),
         )
-        pose_passed = pose_window.seconds >= HOLD_SECONDS
+        pose_passed = pose_window.seconds >= REQUIRED_HOLD_SECONDS
         baseline = None
         head_peak = None
         if centered:
@@ -224,15 +227,15 @@ class ActiveLivenessAnalyzer:
             head_window = find_hold(
                 head_matches,
                 times,
-                HOLD_SECONDS,
+                REQUIRED_HOLD_SECONDS,
                 start=pose_window.indices[-1] + 1 if pose_passed else len(faces),
             )
         if not centered:
             reasons.append(ReasonCode.FACE_NOT_CENTERED)
         if centered and not pose_passed:
             after = frontal_window.indices[-1] + 1
-            face_window = find_hold(clear_frontal, times, HOLD_SECONDS, start=after)
-            if face_window.seconds < HOLD_SECONDS:
+            face_window = find_hold(clear_frontal, times, REQUIRED_HOLD_SECONDS, start=after)
+            if face_window.seconds < REQUIRED_HOLD_SECONDS:
                 reasons.append(ReasonCode.FACE_NOT_CENTERED)
             else:
                 reasons.append(
@@ -240,12 +243,31 @@ class ActiveLivenessAnalyzer:
                     if sum(bool(frame) for frame in readings[after:]) < 2
                     else ReasonCode.HAND_GESTURE_MISMATCH
                 )
-        if target.head and (head_window is None or head_window.seconds < HOLD_SECONDS):
+        if target.head and (head_window is None or head_window.seconds < REQUIRED_HOLD_SECONDS):
             reasons.append(ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED)
         initial = [item for item in candidates if item[1] in frontal_window.indices]
         if len(initial) < 2:
             reasons.append(ReasonCode.FACE_COMPARISON_FAILED)
         passed = not reasons
+        if not passed:
+            # 영상·얼굴 이미지는 남기지 않고 실패 조건을 가릴 수 있는 개수만 기록한다.
+            logger.warning(
+                "liveness failed reasons=%s invalid_video=%s reported_frames=%d decoded_frames=%d source_fps=%.2f "
+                "sampled=%d valid_pose=%d multi_face_frames=%d no_face_frames=%d frontal_hold=%.2f pose_hold=%.2f "
+                "head_hold=%s",
+                ",".join(reason.value for reason in reasons),
+                invalid_video,
+                reported,
+                index,
+                source_fps,
+                len(faces),
+                valid,
+                sum(face.face_count > 1 for face in faces),
+                sum(face.face_count == 0 for face in faces),
+                frontal_window.seconds,
+                pose_window.seconds,
+                f"{head_window.seconds:.2f}" if head_window else "-",
+            )
         selected = initial if passed else []
         for rank, (_, sample, _) in enumerate(selected, 1):
             records[sample].status, records[sample].candidate_rank = FrameStatus.MATCH_CANDIDATE, rank
@@ -275,7 +297,7 @@ class ActiveLivenessAnalyzer:
                 matched_hand_frames=hold.matched_frames,
                 expected_hand_direction=target.direction,
                 head_peak_delta_deg=head_peak,
-                head_returned=(head_window is not None and head_window.seconds >= HOLD_SECONDS)
+                head_returned=(head_window is not None and head_window.seconds >= REQUIRED_HOLD_SECONDS)
                 if target.head
                 else None,
                 head_hold_seconds=round(head_window.seconds, 3) if head_window else None,
