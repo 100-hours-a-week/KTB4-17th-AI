@@ -22,6 +22,9 @@ from .schemas import Challenge, FrameDiagnostic, FrameStatus, LivenessResult, Re
 
 logger = logging.getLogger(__name__)
 
+# FE는 12°로 안내한다. 서버는 브라우저·서버 모델의 각도 차이와 샘플 시점 차이를 감안해 2°를 허용한다.
+HEAD_MATCH_MIN_DELTA_DEG = HEAD_TURN_MIN_DELTA_DEG - 2.0
+
 MAX_ACTIVE_FRAMES = 48
 MIN_ACTIVE_FRAMES = 12
 MAX_VIDEO_SECONDS = 18.0
@@ -44,6 +47,24 @@ def _downscale_frame(frame: np.ndarray) -> np.ndarray:
     scale = MAX_FRAME_EDGE_PX / max(height, width)
     size = (max(1, round(width * scale)), max(1, round(height * scale)))
     return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
+
+
+def head_blocker(face, delta: float, clear: bool) -> str | None:
+    """고개 단계 프레임이 통과하지 못한 이유. 통과하면 None.
+
+    n: 자세 측정 실패, p: 얼굴 위치·크기, a: 좌우·기울기 각도, c: 손 가림, d: 고개 움직임 부족
+    """
+    if pose_from(face) is None:
+        return "n"
+    if not face.face_in_frame or centering_hint(replace(face, yaw=0, pitch=0, roll=0)) is not None:
+        return "p"
+    if abs(face.yaw) > 35 or abs(face.roll) > 30:
+        return "a"
+    if not clear:
+        return "c"
+    if delta < HEAD_MATCH_MIN_DELTA_DEG:
+        return "d"
+    return None
 
 
 def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int]) -> bool:
@@ -204,6 +225,7 @@ class ActiveLivenessAnalyzer:
         pose_passed = pose_window.seconds >= REQUIRED_HOLD_SECONDS
         baseline = None
         head_peak = None
+        head_trace = "-"
         if centered:
             baseline = HeadPose(
                 yaw=float(np.median([faces[index].yaw for index in frontal_window.indices])),
@@ -214,21 +236,18 @@ class ActiveLivenessAnalyzer:
                 movement_delta(pose_from(face), baseline, target.head) if pose_from(face) else 0 for face in faces
             ]
             head_peak = max(deltas, default=0)
-            head_matches = [
-                pose_from(face) is not None
-                and face.face_in_frame
-                and centering_hint(replace(face, yaw=0, pitch=0, roll=0)) is None
-                and abs(face.yaw) <= 35
-                and abs(face.roll) <= 30
-                and clear
-                and delta >= HEAD_TURN_MIN_DELTA_DEG
-                for face, delta, clear in zip(faces, deltas, uncovered, strict=True)
-            ]
+            blockers = [head_blocker(*frame) for frame in zip(faces, deltas, uncovered, strict=True)]
+            head_start = pose_window.indices[-1] + 1 if pose_passed else len(faces)
             head_window = find_hold(
-                head_matches,
+                [blocker is None for blocker in blockers],
                 times,
                 REQUIRED_HOLD_SECONDS,
-                start=pose_window.indices[-1] + 1 if pose_passed else len(faces),
+                start=head_start,
+            )
+            # 고개 단계 프레임별 기준 대비 변화량. 앞 글자는 통과하지 못한 이유다.
+            head_trace = f"base={baseline.pitch:.1f}:" + ",".join(
+                f"{blocker or ''}{delta:.0f}"
+                for blocker, delta in zip(blockers[head_start:], deltas[head_start:], strict=True)
             )
         if not centered:
             reasons.append(ReasonCode.FACE_NOT_CENTERED)
@@ -254,7 +273,7 @@ class ActiveLivenessAnalyzer:
             logger.warning(
                 "liveness failed reasons=%s invalid_video=%s reported_frames=%d decoded_frames=%d source_fps=%.2f "
                 "sampled=%d valid_pose=%d multi_face_frames=%d no_face_frames=%d frontal_hold=%.2f pose_hold=%.2f "
-                "head_hold=%s",
+                "head_hold=%s head_trace=%s",
                 ",".join(reason.value for reason in reasons),
                 invalid_video,
                 reported,
@@ -267,6 +286,7 @@ class ActiveLivenessAnalyzer:
                 frontal_window.seconds,
                 pose_window.seconds,
                 f"{head_window.seconds:.2f}" if head_window else "-",
+                head_trace,
             )
         selected = initial if passed else []
         for rank, (_, sample, _) in enumerate(selected, 1):

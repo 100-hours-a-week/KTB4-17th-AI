@@ -95,6 +95,7 @@ def evaluate(
     neutral_roll=0,
     leading_unready=False,
     brief_turn=False,
+    turn_pitch=-20,
 ):
     target = next(
         item
@@ -134,7 +135,7 @@ def evaluate(
         if missing_middle and 12 <= index < 23:
             return centered_face(face_count=0)
         pitch = (
-            -20
+            turn_pitch
             if not adaptive
             and not no_turn
             and not missing_middle
@@ -260,6 +261,21 @@ def test_liveness_failure_logs_failed_condition_counts(monkeypatch, caplog):
     message = caplog.records[-1].getMessage()
     assert "reasons=LIVENESS_FAILED" in message and "multi_face_frames=" in message
     assert "multi_face_frames=0 " not in message
+
+
+def test_head_stage_tolerates_small_angle_gap_from_browser(monkeypatch):
+    # 브라우저는 12°를 안내하지만 서버 모델·샘플 오차로 10~12°로 읽혀도 통과한다.
+    assert evaluate(monkeypatch, turn_pitch=-10.5).result.passed
+    failed = evaluate(monkeypatch, turn_pitch=-9)
+    assert ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED in failed.result.reason_codes
+
+
+def test_head_failure_log_traces_each_head_frame(monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
+    evaluate(monkeypatch, turn_pitch=-9)
+    message = caplog.records[-1].getMessage()
+    assert "head_trace=base=0.0:" in message
+    assert "d9" in message
 
 
 def test_identity_uses_initial_frontal_frames_not_return_frames(monkeypatch):
