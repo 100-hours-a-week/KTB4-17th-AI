@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import tempfile
 from dataclasses import replace
 from hashlib import blake2b
@@ -18,6 +19,8 @@ from .live_face import LiveFaceAnalyzer
 from .liveness import LivenessEvaluation
 from .protocol import decode_target
 from .schemas import Challenge, FrameDiagnostic, FrameStatus, LivenessResult, ReasonCode
+
+logger = logging.getLogger(__name__)
 
 MAX_ACTIVE_FRAMES = 48
 MIN_ACTIVE_FRAMES = 12
@@ -246,6 +249,25 @@ class ActiveLivenessAnalyzer:
         if len(initial) < 2:
             reasons.append(ReasonCode.FACE_COMPARISON_FAILED)
         passed = not reasons
+        if not passed:
+            # 영상·얼굴 이미지는 남기지 않고 실패 조건을 가릴 수 있는 개수만 기록한다.
+            logger.warning(
+                "liveness failed reasons=%s invalid_video=%s reported_frames=%d decoded_frames=%d source_fps=%.2f "
+                "sampled=%d valid_pose=%d multi_face_frames=%d no_face_frames=%d frontal_hold=%.2f pose_hold=%.2f "
+                "head_hold=%s",
+                ",".join(reason.value for reason in reasons),
+                invalid_video,
+                reported,
+                index,
+                source_fps,
+                len(faces),
+                valid,
+                sum(face.face_count > 1 for face in faces),
+                sum(face.face_count == 0 for face in faces),
+                frontal_window.seconds,
+                pose_window.seconds,
+                f"{head_window.seconds:.2f}" if head_window else "-",
+            )
         selected = initial if passed else []
         for rank, (_, sample, _) in enumerate(selected, 1):
             records[sample].status, records[sample].candidate_rank = FrameStatus.MATCH_CANDIDATE, rank

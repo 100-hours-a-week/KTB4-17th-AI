@@ -252,6 +252,15 @@ def test_wrong_or_incomplete_active_challenge_never_produces_match_frames(monkey
     assert result.best_frame is None and result.candidate_frames == ()
 
 
+def test_liveness_failure_logs_failed_condition_counts(monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
+    result = evaluate(monkeypatch, multi_face=True)
+    assert ReasonCode.LIVENESS_FAILED in result.result.reason_codes
+    message = caplog.records[-1].getMessage()
+    assert "reasons=LIVENESS_FAILED" in message and "multi_face_frames=" in message
+    assert "multi_face_frames=0 " not in message
+
+
 def test_identity_uses_initial_frontal_frames_not_return_frames(monkeypatch):
     monkeypatch.setattr("app.features.face_verification.service.decode_image", lambda _: np.zeros((80, 80, 3)))
     live = evaluate(monkeypatch)
