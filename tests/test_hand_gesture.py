@@ -104,14 +104,14 @@ def test_direction_free_gestures_accept_every_orientation(expected, direction, r
     assert judge_hold([[reading]] * 8, expected, expected_direction=direction).passed
 
 
-def test_random_pool_has_all_thirty_hand_poses_and_four_head_directions():
-    assert len(set(CHALLENGE_TARGETS)) == 120
+def test_random_pool_has_all_thirty_hand_poses_and_two_vertical_head_directions():
+    assert len(set(CHALLENGE_TARGETS)) == 60
     assert {(target.gesture, target.direction) for target in CHALLENGE_TARGETS} == {
         (gesture, direction)
         for gesture in HandGesture
         for direction in (HandDirection.UP, HandDirection.DOWN, HandDirection.SIDEWAYS)
     }
-    assert {target.head for target in CHALLENGE_TARGETS} == set(HeadMovement)
+    assert {target.head for target in CHALLENGE_TARGETS} == {HeadMovement.LOOK_UP, HeadMovement.LOOK_DOWN}
 
 
 def test_random_challenge_excludes_previous_combination(monkeypatch):
@@ -126,8 +126,8 @@ def test_random_challenge_excludes_previous_combination(monkeypatch):
     second = random_challenge(previous=first)
 
     assert first != second
-    assert len(candidates_seen[0]) == 120
-    assert first not in candidates_seen[1] and len(candidates_seen[1]) == 119
+    assert len(candidates_seen[0]) == 60
+    assert first not in candidates_seen[1] and len(candidates_seen[1]) == 59
 
 
 @pytest.mark.parametrize("target", CHALLENGE_TARGETS)
@@ -140,8 +140,6 @@ def test_every_random_combination_accepts_requested_direction_and_rejects_opposi
         points[:, :2] = (points[:, :2] - [320, 360]) @ np.array([[0, 1], [-1, 0]]) + [320, 360]
     reading = read_gesture(points)
     turned = {
-        HeadMovement.TURN_LEFT: HeadPose(15, 0),
-        HeadMovement.TURN_RIGHT: HeadPose(-15, 0),
         HeadMovement.LOOK_UP: HeadPose(0, -15),
         HeadMovement.LOOK_DOWN: HeadPose(0, 15),
     }[target.head]

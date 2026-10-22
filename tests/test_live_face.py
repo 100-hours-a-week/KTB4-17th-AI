@@ -44,8 +44,8 @@ def face_matrix(pitch=0.0, yaw=0.0, roll=0.0) -> np.ndarray:
     [
         ({"pitch": -30}, "LOOK_UP"),
         ({"pitch": 25}, "LOOK_DOWN"),
-        ({"yaw": 25}, "TURN_LEFT"),
-        ({"yaw": -25}, "TURN_RIGHT"),
+        ({"yaw": 25}, None),
+        ({"yaw": -25}, None),
     ],
 )
 def test_matrix_orientation_uses_consistent_camera_axes(options, expected):
@@ -212,8 +212,9 @@ def test_single_yaw_spike_during_downward_movement_is_filtered():
     assert read_movement(preview.filtered_pose, preview.baseline) == HeadMovement.LOOK_DOWN
 
 
-def test_similar_axis_changes_are_uncertain_not_arbitrarily_left_or_right():
-    assert read_movement(HeadPose(20, 18), HeadPose(0, 0)) is None
+def test_horizontal_yaw_change_does_not_block_vertical_head_movement():
+    assert read_movement(HeadPose(20, 18), HeadPose(0, 0)) == HeadMovement.LOOK_DOWN
+    assert read_movement(HeadPose(-20, -18), HeadPose(0, 0)) == HeadMovement.LOOK_UP
 
 
 def test_camera_blocks_challenge_controls_until_center_confirmed(monkeypatch):

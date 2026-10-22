@@ -76,7 +76,7 @@ def test_slight_upward_turn_is_not_lost_to_compressed_nose_ratio():
 @pytest.mark.parametrize("nose_depth", [16, 22, 28])
 @pytest.mark.parametrize(
     ("yaw", "pitch", "expected"),
-    [(0, -20, "LOOK_UP"), (0, 20, "LOOK_DOWN"), (20, 0, "TURN_LEFT"), (-20, 0, "TURN_RIGHT")],
+    [(0, -20, "LOOK_UP"), (0, 20, "LOOK_DOWN"), (20, -20, "LOOK_UP"), (-20, 20, "LOOK_DOWN")],
 )
 def test_direction_survives_face_shape_and_roll_variations(yaw, pitch, expected, nose_depth, roll):
     center = pose_from(observe_pose(roll=roll, nose_depth=nose_depth))
@@ -125,7 +125,7 @@ def test_failed_pnp_solver_is_rejected(monkeypatch):
     assert estimate_head_pose(projected_landmarks(), (480, 640)) is None
 
 
-def test_demo_completes_slight_look_up_and_return():
+def test_demo_completes_slight_look_up_without_requiring_return():
     preview = HeadPreview(target=HeadMovement.LOOK_UP)
     center = observe_pose()
     for _ in range(CALIBRATION_FRAMES):
@@ -133,11 +133,8 @@ def test_demo_completes_slight_look_up_and_return():
     assert preview.baseline is None
     assert preview.confirm_center()
     assert preview.baseline is not None
-    for _ in range(4):
+    for _ in range(3):
         preview.update(observe_pose(pitch=-15))
-    assert preview.stage == "RETURN"
-    for _ in range(4):
-        preview.update(center)
     assert preview.stage == "DONE"
 
 
@@ -147,8 +144,7 @@ def test_demo_does_not_finish_with_unusable_face_pose():
     for _ in range(CALIBRATION_FRAMES):
         preview.update(center)
     assert preview.confirm_center()
-    for _ in range(4):
-        preview.update(observe_pose(pitch=-15))
+    preview.update(observe_pose(pitch=-15))
     preview.update(FaceObservation(face_count=1, pose_valid=False))
 
     assert preview.stage == "TURN"
