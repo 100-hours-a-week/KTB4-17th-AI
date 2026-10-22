@@ -263,10 +263,10 @@ def test_liveness_failure_logs_failed_condition_counts(monkeypatch, caplog):
     assert "multi_face_frames=0 " not in message
 
 
-def test_head_stage_tolerates_small_angle_gap_from_browser(monkeypatch):
-    # 브라우저는 12°를 안내하지만 서버 모델·샘플 오차로 10~12°로 읽혀도 통과한다.
-    assert evaluate(monkeypatch, turn_pitch=-10.5).result.passed
-    failed = evaluate(monkeypatch, turn_pitch=-9)
+def test_head_stage_requires_same_angle_as_browser(monkeypatch):
+    # 서버도 브라우저와 같은 12°를 요구한다.
+    assert evaluate(monkeypatch, turn_pitch=-12.5).result.passed
+    failed = evaluate(monkeypatch, turn_pitch=-10.5)
     assert ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED in failed.result.reason_codes
 
 
