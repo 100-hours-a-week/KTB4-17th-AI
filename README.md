@@ -143,6 +143,10 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 | GET | `/v1/simulation?user_id=…` | 내 시뮬레이션 목록. |
 | POST | `/v1/simulation/{id}/resume` | 멈춘 실행을 다시 시작. 202 `{simulation_id}`. |
 
+대사 응답은 단일 JSON 객체에서 `text`를 읽습니다. 코드펜스·주변 설명과 부가 필드는 제거하고, `message`·`content`·`utterance`도 대사가 명확히 하나면 복구합니다. 서로 다른 대사 필드, 여러 객체, 중복 키, 빈 값과 300자 초과는 그대로 저장하지 않습니다. 형식 재시도 때는 실패 조건과 300자 제한을 전달하며, 기존의 형식 재시도 1회·내용 재생성 1회·총 3회 호출 제한을 유지합니다. 복구한 대사도 기존 내용 검사를 거칩니다.
+
+재시도 후에도 실패하면 503의 `detail.reason`으로 원인을 구분합니다. 형식 검증 실패는 `invalid_json`, 공급자가 길이 제한으로 생성을 중단한 경우는 `truncated`, 빈 응답은 `empty_response`입니다. 형식 오류의 세부 사유는 `simulation speaker format failed` 경고 로그에서 확인할 수 있으며 대사 원문은 기록하지 않습니다.
+
 예전 한 호출 시뮬레이션은 `/v1/simulation_old` 입니다.
 
 연습대화 API:

@@ -23,6 +23,19 @@ class LLMError(Exception):
         self.retryable = retryable
 
 
+def _response_text(resp: Any) -> str:
+    choice = resp.choices[0] if getattr(resp, "choices", None) else None
+    finish_reason = getattr(choice, "finish_reason", None)
+    if finish_reason == "length":
+        raise LLMError("LLM output truncated", reason="truncated", retryable=True)
+    if finish_reason == "error":
+        raise LLMError("LLM upstream error mid-generation", reason="upstream_error", retryable=True)
+    text = (choice.message.content or "").strip() if choice else ""
+    if not text:
+        raise LLMError("LLM returned empty response", reason="empty_response", retryable=True)
+    return text
+
+
 async def complete_text(
     messages: list[dict[str, str]],
     *,
@@ -46,7 +59,7 @@ async def complete_text(
         {"text": "..."} 형태의 원문 JSON 문자열.
 
     Raises:
-        LLMError: timeout, busy, upstream_error, lost_ownership 등.
+        LLMError: timeout, busy, upstream_error, truncated, empty_response, lost_ownership 등.
     """
     settings = get_settings()
     attempt_timeout = timeout if timeout is not None else settings.simulation_migration_attempt_timeout_s
@@ -80,20 +93,14 @@ async def complete_text(
                 **extra,
             )
             resp = await asyncio.wait_for(call_coro, timeout=attempt_timeout)
-            choice = resp.choices[0] if resp.choices else None
-            text = (choice.message.content or "").strip() if choice else ""
-            finish_reason = getattr(choice, "finish_reason", None)
-            if finish_reason == "error":
-                raise LLMError("LLM upstream error mid-generation", reason="upstream_error", retryable=True)
-            return text
+            return _response_text(resp)
         elif callable(client):
             call_res = client(messages)
             if asyncio.iscoroutine(call_res) or asyncio.isfuture(call_res):
                 call_res = await asyncio.wait_for(call_res, timeout=attempt_timeout)
             if isinstance(call_res, str):
                 return call_res
-            choice = call_res.choices[0] if hasattr(call_res, "choices") and call_res.choices else None
-            return (choice.message.content or "").strip() if choice else ""
+            return _response_text(call_res)
         elif hasattr(client, "complete_text"):
             call_res = client.complete_text(messages)
             if asyncio.iscoroutine(call_res) or asyncio.isfuture(call_res):

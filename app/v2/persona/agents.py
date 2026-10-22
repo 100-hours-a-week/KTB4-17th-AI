@@ -1,6 +1,6 @@
 """v2 사용자 사실 추출(extract) 및 중복/모순 판정(judge) 에이전트.
 
-LLM 호출은 v1 과 같은 경로다 — persona.agents._call_json (OpenAI 호환 클라이언트, llm_model, llm_retry 재시도).
+LLM 호출은 v1 과 같은 경로다 — persona.agents._call_json (OpenAI 호환 클라이언트, llm_model_v2, llm_retry 재시도).
 """
 
 from __future__ import annotations

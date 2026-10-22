@@ -44,8 +44,8 @@ def face_matrix(pitch=0.0, yaw=0.0, roll=0.0) -> np.ndarray:
     [
         ({"pitch": -30}, "LOOK_UP"),
         ({"pitch": 25}, "LOOK_DOWN"),
-        ({"yaw": 25}, "TURN_LEFT"),
-        ({"yaw": -25}, "TURN_RIGHT"),
+        ({"yaw": 25}, None),
+        ({"yaw": -25}, None),
     ],
 )
 def test_matrix_orientation_uses_consistent_camera_axes(options, expected):
@@ -100,11 +100,11 @@ def test_no_face_and_multiple_faces_block_centering(count):
 @pytest.mark.parametrize(
     ("changes", "hint"),
     [
-        ({"center_x": 0.25}, "MOVE LEFT"),
-        ({"center_x": 0.75}, "MOVE RIGHT"),
-        ({"center_y": 0.10}, "MOVE DOWN"),
-        ({"center_y": 0.85}, "MOVE UP"),
-        ({"width_ratio": 0.10}, "COME CLOSER"),
+        ({"center_x": 0.05}, "MOVE LEFT"),
+        ({"center_x": 0.95}, "MOVE RIGHT"),
+        ({"center_y": 0.04}, "MOVE DOWN"),
+        ({"center_y": 0.96}, "MOVE UP"),
+        ({"width_ratio": 0.03}, "COME CLOSER"),
         ({"width_ratio": 0.90, "height_ratio": 0.90}, "MOVE BACK"),
         ({"face_in_frame": False}, "KEEP FULL FACE IN VIEW"),
         ({"yaw": 30}, "LOOK STRAIGHT AT CAMERA"),
@@ -132,12 +132,15 @@ def test_centering_rejects_wrong_position_distance_and_pose(changes, hint):
         ({"center_x": 0.62}, None),
         ({"center_x": 0.69}, None),
         ({"center_x": 0.31}, None),
-        ({"center_x": 0.70}, "MOVE RIGHT"),
-        ({"center_x": 0.30}, "MOVE LEFT"),
+        ({"center_x": 0.92}, None),
+        ({"center_x": 0.08}, None),
+        ({"center_x": 0.93}, "MOVE RIGHT"),
+        ({"center_x": 0.07}, "MOVE LEFT"),
         ({"center_y": 0.30}, None),
         ({"center_y": 0.70}, None),
         ({"center_y": 0.80, "height_ratio": 0.40}, None),
-        ({"center_y": 0.81, "height_ratio": 0.38}, "MOVE UP"),
+        ({"center_y": 0.95, "height_ratio": 0.38}, "MOVE UP"),
+        ({"width_ratio": 0.10, "height_ratio": 0.15}, None),
         ({"width_ratio": 0.54, "height_ratio": 0.90, "center_y": 0.50}, None),
         ({"yaw": 20, "pitch": 18, "roll": 22}, None),
         ({"yaw": 25, "pitch": 25, "roll": 25}, None),
@@ -209,13 +212,14 @@ def test_single_yaw_spike_during_downward_movement_is_filtered():
     assert read_movement(preview.filtered_pose, preview.baseline) == HeadMovement.LOOK_DOWN
 
 
-def test_similar_axis_changes_are_uncertain_not_arbitrarily_left_or_right():
-    assert read_movement(HeadPose(20, 18), HeadPose(0, 0)) is None
+def test_horizontal_yaw_change_does_not_block_vertical_head_movement():
+    assert read_movement(HeadPose(20, 18), HeadPose(0, 0)) == HeadMovement.LOOK_DOWN
+    assert read_movement(HeadPose(-20, -18), HeadPose(0, 0)) == HeadMovement.LOOK_UP
 
 
 def test_camera_blocks_challenge_controls_until_center_confirmed(monkeypatch):
     calls = {"random": 0, "hand": 0, "announcements": 0}
-    observations = iter([centered_face(center_x=0.25)] * 15 + [centered_face()] * 18)
+    observations = iter([centered_face(center_x=0.05)] * 15 + [centered_face()] * 18)
     keys = [0] * 33
     keys[0], keys[1], keys[14], keys[29], keys[30], keys[31], keys[32] = (
         32,

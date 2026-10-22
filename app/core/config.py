@@ -68,6 +68,15 @@ class Settings(BaseSettings):
         description="호출할 기본 LLM 모델명",
     )
 
+    # v2 기능(app/v2/**) 전용 메인 LLM 모델. v1 은 llm_model 을 그대로 쓴다.
+    # 코드 기본값으로 동작한다 — 환경 변수가 없어도 이 값이 쓰인다 (#116 재발 방지)
+    # 2026-10-22 v2 시뮬레이션 실측: 2.5-flash-lite 4/5 → 3.1-flash-lite 5/5, 실행당 비용 약 3배
+    llm_model_v2: str = Field(
+        default="google/gemini-3.1-flash-lite",
+        validation_alias="LLM_MODEL_V2",
+        description="v2 기능이 호출할 LLM 모델명",
+    )
+
     # response_format={"type": "json_object"} 를 붙일지. 지원 안 하는 로컬 모델이면 0 으로 끈다
     llm_json_mode: bool = Field(
         default=True,
@@ -168,7 +177,13 @@ class Settings(BaseSettings):
     c2pa_trust_anchors_path: Path | None = Field(default=None, validation_alias="C2PA_TRUST_ANCHORS_PATH")
 
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, validation_alias="MAX_IMAGE_BYTES")
-    max_video_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, validation_alias="MAX_VIDEO_BYTES")
+    max_video_bytes: int = Field(default=12 * 1024 * 1024, ge=1024, validation_alias="MAX_VIDEO_BYTES")
+    face_verification_max_inflight: int = Field(
+        default=2,
+        ge=1,
+        validation_alias="FACE_VERIFICATION_MAX_INFLIGHT",
+        description="동시에 메모리에 적재·분석할 수 있는 라이브 얼굴 인증 영상 최대 요청 수",
+    )
     min_image_edge_px: int = Field(default=160, ge=64, validation_alias="MIN_IMAGE_EDGE_PX")
     min_blur_variance: float = Field(default=8.0, ge=0, validation_alias="MIN_BLUR_VARIANCE")
     masked_face_max_blur_variance: float = Field(
@@ -219,6 +234,7 @@ class Settings(BaseSettings):
     liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
     # 신규 인증은 고개·손 챌린지를 발급한다. 이전 BE/FE 배포나 롤백 시 명시적으로 false로 전환한다.
     active_liveness_enabled: bool = Field(default=True, validation_alias="ACTIVE_LIVENESS_ENABLED")
+    # v3(정면·손 기본 + 위험 시 고개 추가)는 BE가 protocol_version 3을 받을 때까지 끈다. 끄면 v2 계획을 발급한다.
     adaptive_liveness_enabled: bool = Field(default=False, validation_alias="ADAPTIVE_LIVENESS_ENABLED")
     liveness_step_up_match_margin: float = Field(
         default=0.08, ge=0, le=0.2, validation_alias="LIVENESS_STEP_UP_MATCH_MARGIN"
@@ -282,7 +298,7 @@ class Settings(BaseSettings):
     memory_reconcile_timeout_s: float = Field(default=20.0, validation_alias="MEMORY_RECONCILE_TIMEOUT_S")
 
     # ── v2 시뮬레이션 하네스 (docs/기획_및_설계/시뮬레이션_v2_하네스_기획안_최종.md) ──
-    # 심사 모델. 비우면 생성 모델(llm_model)과 같다
+    # 심사 모델. 비우면 생성 모델(llm_model_v2)과 같다
     simulation_v2_judge_model: str | None = Field(default=None, validation_alias="SIMULATION_V2_JUDGE_MODEL")
     # tools(function calling) 를 쓸지. 기본은 json_object 경로 — 2026-10-19 로컬 실측(gemini-2.5-flash-lite)에서
     # tools 는 긴 대본 인자가 깨지는 형식 오류가 잦아 성공 6/14, json_object 는 11/14 였다

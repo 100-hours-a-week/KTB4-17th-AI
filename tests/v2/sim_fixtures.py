@@ -7,7 +7,14 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 
 from app.features.persona.schemas import PersonaResponse
-from app.v2.simulation.schemas import FactRow, LLMResult, ScriptLineV2, SimContext, ToolCall
+from app.v2.simulation.schemas import (
+    FactRow,
+    LLMResult,
+    ScriptLineV2,
+    SimContext,
+    TextResult,
+    ToolCall,
+)
 
 NOW = datetime(2026, 10, 19, 12, 0, tzinfo=UTC)
 DIM = 8
@@ -95,6 +102,31 @@ def script_call(lines: list[ScriptLineV2]) -> LLMResult:
     )
 
 
+def script_text(
+    lines: list[ScriptLineV2 | dict],
+    name_a: str = "민수",
+    name_b: str = "지은",
+) -> TextResult:
+    rows = []
+    for idx, item in enumerate(lines, 1):
+        if isinstance(item, dict):
+            speaker = item.get("speaker")
+            text = item.get("text", "")
+            refs = item.get("fact_refs") or []
+        else:
+            speaker = item.speaker
+            text = item.text
+            refs = getattr(item, "fact_refs", []) or []
+        spk = name_a if speaker == "a" else (name_b if speaker == "b" else str(speaker))
+        ref_part = f" [{', '.join(refs)}]" if refs else ""
+        rows.append(f"{idx}. {spk}: {text}{ref_part}")
+    return TextResult(
+        text="\n".join(rows),
+        prompt_tokens=100,
+        completion_tokens=200,
+    )
+
+
 def report_call(headline: str = "대화가 편한 두 사람") -> LLMResult:
     return LLMResult(
         calls=[
@@ -117,23 +149,49 @@ def report_call(headline: str = "대화가 편한 두 사람") -> LLMResult:
 class FakeLLM:
     """이름(name)별 응답 큐. 큐 항목이 Exception 이면 던진다. 호출 기록을 남긴다."""
 
-    def __init__(self, responses: dict[str, list]) -> None:
+    def __init__(self, responses: dict[str, list], names: tuple[str, str] = ("민수", "지은")) -> None:
         self.responses = {k: list(v) for k, v in responses.items()}
         self.calls: list[dict] = []
+        self.names = names
 
-    async def __call__(self, *, system, user, tools, max_tokens, timeout, name, model=None, metadata=None):
-        self.calls.append({"name": name, "user": user, "system": system, "timeout": timeout, "model": model})
-        key = name.removeprefix("simulation-v2-")
-        queue = self.responses.get(key) or self.responses.get(name)
+    async def __call__(
+        self,
+        *,
+        system: str,
+        user: str,
+        tools: list[dict] | None = None,
+        max_tokens: int,
+        timeout: float,
+        name: str,
+        model: str | None = None,
+        metadata: dict | None = None,
+    ):
+        self.calls.append(
+            {"name": name, "user": user, "system": system, "timeout": timeout, "model": model, "tools": tools}
+        )
+        raw_key = name.removeprefix("simulation-v2-")
+        is_text = raw_key.endswith("-text")
+        key = raw_key.removesuffix("-text") if is_text else raw_key
+
+        queue = self.responses.get(raw_key) or self.responses.get(key) or self.responses.get(name)
         if not queue:
             raise AssertionError(f"unexpected llm call: {name}")
         item = queue.pop(0) if len(queue) > 1 else queue[0]
         if isinstance(item, Exception):
             raise item
+        if is_text:
+            if isinstance(item, TextResult):
+                return item
+            if isinstance(item, LLMResult):
+                call = next((c for c in item.calls if c.name == "submit_script"), None)
+                if call is not None:
+                    raw_lines = call.arguments.get("lines", [])
+                    return script_text(raw_lines, name_a=self.names[0], name_b=self.names[1])
         return item
 
     def count(self, key: str) -> int:
-        return sum(1 for c in self.calls if c["name"].removeprefix("simulation-v2-") == key)
+        target = key.removesuffix("-text")
+        return sum(1 for c in self.calls if c["name"].removeprefix("simulation-v2-").removesuffix("-text") == target)
 
 
 def judge_pass() -> LLMResult:

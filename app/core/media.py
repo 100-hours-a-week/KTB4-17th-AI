@@ -52,6 +52,8 @@ async def read_video(file: UploadFile, limit: int) -> bytes:
 
 
 async def read_limited(file: UploadFile, limit: int) -> bytes:
+    if getattr(file, "size", None) is not None and file.size > limit:
+        raise HTTPException(413, "업로드 파일이 허용 크기를 초과했습니다.")
     data = await file.read(limit + 1)
     if len(data) > limit:
         raise HTTPException(413, "업로드 파일이 허용 크기를 초과했습니다.")

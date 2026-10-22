@@ -156,11 +156,6 @@ class HeadPreview:
         if self.stage == "TURN":
             self.consecutive = self.consecutive + 1 if read_movement(pose, self.baseline) == self.target else 0
             if self.consecutive >= MIN_TURNED_FRAMES:
-                self.stage, self.consecutive = "RETURN", 0
-        else:
-            frontal = max(abs(pose.yaw - self.baseline.yaw), abs(pose.pitch - self.baseline.pitch))
-            self.consecutive = self.consecutive + 1 if frontal <= HEAD_RETURN_MAX_DELTA_DEG else 0
-            if self.consecutive >= MIN_TURNED_FRAMES:
                 self.stage = "DONE"
 
 
@@ -238,7 +233,7 @@ def draw_head_panel(view: np.ndarray, head: HeadPreview) -> np.ndarray:
         else:
             pose = head.filtered_pose
             movement = read_movement(pose, head.baseline) if pose else None
-            delta = max(abs(pose.yaw - head.baseline.yaw), abs(pose.pitch - head.baseline.pitch)) if pose else 0
+            delta = abs(pose.pitch - head.baseline.pitch) if pose else 0
             direction = (
                 movement.value
                 if movement
@@ -333,7 +328,7 @@ def announce_target(gesture: HandGesture | None, direction: HandDirection, head:
         if not requires_hand_direction(gesture, direction):
             print(f"손 안내: {name} — 방향에 상관없이 손 모양을 유지하세요.")
             if head:
-                print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]} 후 정면으로 돌아오세요.")
+                print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]}.")
             return
         orientation = {
             HandDirection.UP: "위쪽",
@@ -343,7 +338,7 @@ def announce_target(gesture: HandGesture | None, direction: HandDirection, head:
         guide = "손목에서 손가락 마디 쪽이" if gesture == HandGesture.FIST else "편 손가락이"
         print(f"손 안내: {name} — {guide} {orientation}을 향하도록 유지하세요.")
     if head:
-        print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]} 후 정면으로 돌아오세요.")
+        print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]}.")
 
 
 def run_image(
@@ -370,6 +365,84 @@ def run_image(
     if out:
         cv2.imwrite(str(out), annotate(image, hands, target=gesture, target_direction=direction))
         print(f"saved: {out}")
+
+
+def draw_live_challenge_hud(
+    view: np.ndarray,
+    frame_width: int,
+    head: HeadPreview,
+    hands: list[HandLandmarks],
+    gesture: HandGesture | None,
+    direction: HandDirection,
+    *,
+    random_mode: bool = False,
+    recording_remaining: float | None = None,
+) -> None:
+    """카메라 화면 상단·하단에 손 인식 여부와 고개 동작 진행률(각도 게이지·단계)을 실시간 표시한다."""
+    cv2.rectangle(view, (0, 0), (frame_width, 96), (22, 22, 22), -1)
+
+    hand_matched = (
+        any(matches_gesture(read_gesture(hand.image_points), gesture, direction) for hand in hands)
+        if gesture
+        else bool(hands)
+    )
+    hand_color = (90, 230, 120) if hand_matched else ((80, 180, 255) if hands else (160, 160, 160))
+    hand_state = "MATCH [OK]" if hand_matched else ("WRONG POSE" if hands else "SHOW HAND")
+    if gesture:
+        req_dir = direction.value if requires_hand_direction(gesture, direction) else "ANY DIR"
+        hand_text = f"HAND ({pose_name(gesture, direction)} / {req_dir}): {hand_state}"
+    else:
+        hand_text = f"HAND: {hand_state}"
+    cv2.putText(view, hand_text, (12, 26), cv2.FONT_HERSHEY_SIMPLEX, 0.58, hand_color, 2, cv2.LINE_AA)
+
+    if head.target and head.baseline is not None:
+        pose = head.filtered_pose
+        current_delta = max(0.0, movement_delta(pose, head.baseline, head.target)) if pose else 0.0
+        return_delta = max(abs(pose.yaw - head.baseline.yaw), abs(pose.pitch - head.baseline.pitch)) if pose else 99.0
+        if head.stage == "TURN":
+            progress = min(1.0, current_delta / HEAD_TURN_MIN_DELTA_DEG)
+            head_color = (90, 230, 120) if progress >= 1.0 else (80, 220, 255)
+            head_text = (
+                f"HEAD [1/2 {head.target.value}]: {current_delta:.1f} / {HEAD_TURN_MIN_DELTA_DEG:.0f} deg "
+                f"({'HOLD' if progress >= 1.0 else 'MOVE MORE'})"
+            )
+        elif head.stage == "RETURN":
+            progress = max(0.0, min(1.0, 1.0 - (return_delta - HEAD_RETURN_MAX_DELTA_DEG) / 18.0))
+            head_color = (80, 220, 255)
+            head_text = (
+                f"HEAD [2/2 TURN OK! RETURN CENTER]: delta {return_delta:.1f} deg (<= {HEAD_RETURN_MAX_DELTA_DEG:.0f})"
+            )
+        else:
+            progress = 1.0
+            head_color = (90, 230, 120)
+            head_text = f"HEAD [{head.target.value}]: COMPLETED [OK]"
+
+        cv2.putText(view, head_text, (12, 54), cv2.FONT_HERSHEY_SIMPLEX, 0.54, head_color, 2, cv2.LINE_AA)
+        bar_x1, bar_y1, bar_x2, bar_y2 = 12, 64, frame_width - 12, 76
+        cv2.rectangle(view, (bar_x1, bar_y1), (bar_x2, bar_y2), (65, 65, 65), -1)
+        fill_w = round((bar_x2 - bar_x1) * progress)
+        if fill_w > 0:
+            cv2.rectangle(view, (bar_x1, bar_y1), (bar_x1 + fill_w, bar_y2), head_color, -1)
+
+        if hand_matched and head.stage == "DONE":
+            cv2.rectangle(view, (0, 96), (frame_width, 132), (35, 140, 60), -1)
+            cv2.putText(
+                view,
+                "ALL PASSED! (HAND + HEAD VERIFIED) - Press N for next",
+                (12, 120),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.58,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+
+    controls = (
+        "N: new random | R: retry | C: re-center | Q: quit" if random_mode else "R: retry | C: re-center | Q: quit"
+    )
+    if recording_remaining is not None:
+        controls += f" | REC {max(0.0, recording_remaining):.1f}s"
+    cv2.putText(view, controls, (12, 91), cv2.FONT_HERSHEY_SIMPLEX, 0.46, (210, 210, 210), 1, cv2.LINE_AA)
 
 
 def run_camera(
@@ -410,21 +483,24 @@ def run_camera(
                     writer.release()
                     writer = None
             head.update(analyzer.observe(frame))
+            detected_hands: list[HandLandmarks] = []
             if head.baseline is None:
                 view = draw_centering_guide(cv2.flip(frame, 1), head)
             else:
-                view = annotate(
-                    frame, landmarker.detect(frame), mirror=True, target=gesture, target_direction=direction
-                )
+                detected_hands = landmarker.detect(frame)
+                view = annotate(frame, detected_hands, mirror=True, target=gesture, target_direction=direction)
             view = draw_head_panel(view, head)
-            if gesture and head.baseline is not None:
-                cv2.rectangle(view, (0, 0), (frame.shape[1], 62), (25, 25, 25), -1)
-                status = f"Target: {pose_name(gesture, direction)} / {direction}"
-                cv2.putText(view, status, (10, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.65, (255, 220, 80), 1, cv2.LINE_AA)
-                controls = "N: new random | R: retry" if random_mode else "R: retry"
-                if writer:
-                    controls += f" | REC {max(0, recording_until - now):.1f}s"
-                cv2.putText(view, controls, (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+            if (gesture or head.target) and head.baseline is not None:
+                draw_live_challenge_hud(
+                    view,
+                    frame.shape[1],
+                    head,
+                    detected_hands,
+                    gesture,
+                    direction,
+                    random_mode=random_mode,
+                    recording_remaining=(recording_until - now) if writer else None,
+                )
             cv2.imshow("hand gesture + head movement", view)
             key = cv2.waitKey(1) & 0xFF
             if key == ord("q"):
