@@ -25,6 +25,7 @@ from tests.v2.sim_fixtures import (
     patch,
     report_call,
     script_call,
+    script_text,
     vec,
 )
 
@@ -48,6 +49,7 @@ def _run(llm, *, facts_a=None, facts_b=None, judge_llm=None, clock=None, deadlin
             job_id="j1",
             llm=llm,
             judge_llm=judge_llm,
+            text_llm=llm,
             on_stage=on_stage,
             deadline_s=deadline_s,
             **kwargs,
@@ -73,7 +75,11 @@ def test_path1_pass_directly():
     llm = FakeLLM({"generate": [script_call(good_script())], "judge": [judge_pass()], "report": [report_call()]})
     res = _run(llm, stages=stages)
     assert res.status == "succeeded"
-    assert [c["name"] for c in llm.calls] == ["simulation-v2-generate", "simulation-v2-judge", "simulation-v2-report"]
+    assert [c["name"] for c in llm.calls] == [
+        "simulation-v2-generate-text",
+        "simulation-v2-judge",
+        "simulation-v2-report",
+    ]
     assert res.llm_calls == 3
     assert res.report.narrative_source == "llm"
     assert stages == ["topics", "generating", "verifying", "reporting"]
@@ -107,7 +113,7 @@ def test_path3_structural_error_regenerates_with_correction():
     res = _run(llm)
     assert res.status == "succeeded"
     assert llm.count("generate") == 1 and llm.count("regenerate") == 1
-    regen = next(c for c in llm.calls if c["name"] == "simulation-v2-regenerate")
+    regen = next(c for c in llm.calls if c["name"] == "simulation-v2-regenerate-text")
     assert "이전 대본의 문제" in regen["user"] and "format" in regen["user"]
 
 
@@ -211,12 +217,12 @@ def test_no_retry_when_time_is_short():
 
     async def slow_generate(**kw):
         t[0] += 80.0  # 생성에 80초 → 남은 10초 < 25초
-        return script_call(_bad(2, **SELF_ADDRESS))
+        return script_text(_bad(2, **SELF_ADDRESS))
 
     llm = FakeLLM({"report": [report_call()]})
 
     async def router(**kw):
-        if kw["name"] == "simulation-v2-generate":
+        if kw["name"] == "simulation-v2-generate-text":
             llm.calls.append({"name": kw["name"]})
             return await slow_generate(**kw)
         return await llm(**kw)
@@ -259,7 +265,7 @@ def test_topics_used_and_trace_has_no_raw_text():
     res = _run(llm, facts_a=fa, facts_b=fb)
     assert res.status == "succeeded" and res.mode == "shared"
     assert [t.ref for t in res.topics_used] == ["A-f1", "B-f1"]
-    gen = next(c for c in llm.calls if c["name"] == "simulation-v2-generate")
+    gen = next(c for c in llm.calls if c["name"] == "simulation-v2-generate-text")
     assert "A-f1" in gen["user"] and "주말마다 산에 간다" in gen["user"]
     dumped = json.dumps([e.model_dump() for e in res.trace], ensure_ascii=False)
     for line in script:

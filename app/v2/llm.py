@@ -83,7 +83,7 @@ async def _call(
             slm.record_fallback(name, e)
     return await _complete(
         _get_client(),
-        get_settings().llm_model,
+        get_settings().llm_model_v2,
         payload,
         max_tokens,
         timeout,

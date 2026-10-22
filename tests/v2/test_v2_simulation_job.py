@@ -129,7 +129,7 @@ def test_run_success_saves_simulation_and_trace():
         script[2] = script[2].model_copy(update={"fact_refs": ["A-f1"]})
         llm = _ok_llm(script)
         async with sessions() as db:
-            await SimulationV2Service(db, llm=llm).run(job_id)
+            await SimulationV2Service(db, llm=llm, text_llm=llm).run(job_id)
 
         async with sessions() as db:
             svc = SimulationV2Service(db)
@@ -153,7 +153,7 @@ def test_run_success_saves_simulation_and_trace():
             assert [x.simulation_id for x in listed_me] == [sim.id] == [x.simulation_id for x in listed_partner]
 
         # 생성 프롬프트에 코어 성격은 들어가고 직업(민감)은 들어가지 않는다
-        gen = next(c for c in llm.calls if c["name"] == "simulation-v2-generate")
+        gen = next(c for c in llm.calls if c["name"] == "simulation-v2-generate-text")
         assert "차분함" in gen["user"] and "개발자" not in gen["user"]
 
     asyncio.run(with_db(scenario))
@@ -179,7 +179,7 @@ def test_run_failure_records_reason_and_no_simulation():
             }
         )
         async with sessions() as db:
-            await SimulationV2Service(db, llm=llm).run(job_id)
+            await SimulationV2Service(db, llm=llm, text_llm=llm).run(job_id)
         async with sessions() as db:
             job = await SimulationV2Service(db).get_job(job_id)
             assert job.status == "failed" and job.error == "speaker_mixup_unresolved"
@@ -200,7 +200,7 @@ def test_run_crash_marks_internal_error():
             await db.commit()
             job_id = job.id
         async with sessions() as db:
-            await SimulationV2Service(db, llm=boom).run(job_id)
+            await SimulationV2Service(db, llm=boom, text_llm=boom).run(job_id)
         async with sessions() as db:
             job = await SimulationV2Service(db).get_job(job_id)
             assert job.status == "failed" and job.error == "internal_error"
@@ -218,7 +218,7 @@ def test_run_ignores_non_pending_job():
             job_id = job.id
         llm = _ok_llm()
         async with sessions() as db:
-            await SimulationV2Service(db, llm=llm).run(job_id)
+            await SimulationV2Service(db, llm=llm, text_llm=llm).run(job_id)
         assert llm.calls == []
 
     asyncio.run(with_db(scenario))
@@ -250,8 +250,9 @@ def test_partner_by_session_without_facts_runs_solo_or_persona_only():
             job = await SimulationV2Service(db).start(_req(partner_user_id=None, partner_session_id="s-pb"))
             await db.commit()
             job_id = job.id
+        ok = _ok_llm()
         async with sessions() as db:
-            await SimulationV2Service(db, llm=_ok_llm()).run(job_id)
+            await SimulationV2Service(db, llm=ok, text_llm=ok).run(job_id)
         async with sessions() as db:
             job = await SimulationV2Service(db).get_job(job_id)
             assert job.status == "succeeded"
@@ -292,8 +293,9 @@ def test_post_route_runs_in_other_session_and_returns_result():
             await db.commit()
 
         async def runner(job_id):
+            ok = _ok_llm()
             async with sessions() as db:
-                await SimulationV2Service(db, llm=_ok_llm()).run(job_id)
+                await SimulationV2Service(db, llm=ok, text_llm=ok).run(job_id)
 
         async def fake_db():
             async with sessions() as db:
@@ -316,7 +318,7 @@ def test_post_route_runs_in_other_session_and_returns_result():
 
             async def failing_runner(job_id):
                 async with sessions() as db:
-                    await SimulationV2Service(db, llm=failing).run(job_id)
+                    await SimulationV2Service(db, llm=failing, text_llm=failing).run(job_id)
 
             app.dependency_overrides[api.get_runner] = lambda: failing_runner
             r = await client.post("/v2/simulation", json={"me_user_id": "u-a", "partner_user_id": "u-b"})
