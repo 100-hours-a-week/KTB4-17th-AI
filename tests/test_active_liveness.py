@@ -57,6 +57,17 @@ def test_switching_issuance_preserves_existing_tokens_in_both_directions(monkeyp
         assert legacy.verify(new.challenge_token, attempt) == new.challenges
 
 
+def test_default_issuance_is_v2_plan_with_head_movement(monkeypatch):
+    # BE는 protocol_version 1·2와 4개 코드 계획만 받는다. v3는 명시적으로 켤 때만 발급한다.
+    monkeypatch.delenv("ACTIVE_LIVENESS_ENABLED", raising=False)
+    monkeypatch.delenv("ADAPTIVE_LIVENESS_ENABLED", raising=False)
+    issued = ChallengeSigner(Settings(_env_file=None, liveness_token_secret="s" * 32)).create()
+    assert issued.protocol_version == 2 and len(issued.challenge_plan) == 3
+    for codes in issued.challenge_plan:
+        assert len(codes) == 4 and codes[0] == Challenge.LOOK_STRAIGHT
+        assert codes[3] in (Challenge.LOOK_UP, Challenge.LOOK_DOWN)
+
+
 def evaluate(
     monkeypatch,
     *,
