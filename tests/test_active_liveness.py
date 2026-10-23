@@ -18,7 +18,7 @@ from tests.test_hand_gesture import make_hand
 from tests.test_live_face import centered_face
 
 
-def test_signed_plan_is_unique_per_session_and_selects_each_attempt():
+def test_signed_plan_is_unique_per_session_and_changes_pose_each_attempt():
     signer = ChallengeSigner(
         Settings(liveness_token_secret="test-secret-" * 4, active_liveness_enabled=True, adaptive_liveness_enabled=True)
     )
@@ -30,7 +30,9 @@ def test_signed_plan_is_unique_per_session_and_selects_each_attempt():
         assert signer.verify(first.challenge_token, number) == codes
         assert decode_target(codes).head is None
         assert len(codes) == 3
-    assert all(codes == first.challenges for codes in first.challenge_plan)
+    assert first.challenges == first.challenge_plan[0]
+    gestures = [decode_target(codes).gesture for codes in first.challenge_plan]
+    assert all(before != after for before, after in zip(gestures, gestures[1:], strict=False))
 
 
 @pytest.mark.parametrize("attempt", [0, -1, 4, 5, True, 1.2, "1"])
@@ -55,7 +57,7 @@ def test_switching_issuance_preserves_existing_tokens_in_both_directions(monkeyp
     assert old.protocol_version == 1 and new.protocol_version == 2
     for attempt in range(1, 4):
         assert active.verify(old.challenge_token, attempt) == [Challenge.LOOK_STRAIGHT]
-        assert legacy.verify(new.challenge_token, attempt) == new.challenges
+        assert legacy.verify(new.challenge_token, attempt) == new.challenge_plan[attempt - 1]
 
 
 def test_default_issuance_is_v2_plan_with_head_movement(monkeypatch):
@@ -67,6 +69,9 @@ def test_default_issuance_is_v2_plan_with_head_movement(monkeypatch):
     for codes in issued.challenge_plan:
         assert len(codes) == 4 and codes[0] == Challenge.LOOK_STRAIGHT
         assert codes[3] in (Challenge.LOOK_UP, Challenge.LOOK_DOWN)
+    # 한 번 실패하면 다음 시도는 다른 손 모양으로 바뀐다.
+    gestures = [decode_target(codes).gesture for codes in issued.challenge_plan]
+    assert all(before != after for before, after in zip(gestures, gestures[1:], strict=False))
 
 
 def evaluate(

@@ -114,7 +114,7 @@ def test_random_pool_has_all_thirty_hand_poses_and_two_vertical_head_directions(
     assert {target.head for target in CHALLENGE_TARGETS} == {HeadMovement.LOOK_UP, HeadMovement.LOOK_DOWN}
 
 
-def test_random_challenge_excludes_previous_combination(monkeypatch):
+def test_random_challenge_excludes_previous_hand_shape(monkeypatch):
     candidates_seen = []
 
     def choose(candidates):
@@ -125,9 +125,10 @@ def test_random_challenge_excludes_previous_combination(monkeypatch):
     first = random_challenge()
     second = random_challenge(previous=first)
 
-    assert first != second
+    assert first.gesture != second.gesture
     assert len(candidates_seen[0]) == 60
-    assert first not in candidates_seen[1] and len(candidates_seen[1]) == 59
+    assert all(target.gesture != first.gesture for target in candidates_seen[1])
+    assert len(candidates_seen[1]) == 54
 
 
 @pytest.mark.parametrize("target", CHALLENGE_TARGETS)
