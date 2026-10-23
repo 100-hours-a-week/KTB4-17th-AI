@@ -50,13 +50,45 @@ def _downscale_frame(frame: np.ndarray) -> np.ndarray:
     return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
 
 
+def _open_video(path: str):
+    """회전 정보대로 프레임을 돌려 꺼내는 캡처를 연다.
+
+    휴대폰은 세로 영상을 가로 그림 + 회전 정보(90·270도 등)로 저장하기도 한다. 브라우저는 돌려서 보여 주지만
+    OpenCV 4.11은 기본값으로 돌리지 않아, 서버가 누운 얼굴을 보고 기울기(KEEP HEAD LEVEL)로 탈락시켰다.
+    """
+    capture = cv2.VideoCapture(path)
+    set_property = getattr(capture, "set", None)
+    if callable(set_property):
+        set_property(cv2.CAP_PROP_ORIENTATION_AUTO, 1)
+    return capture
+
+
+# 정면·위치 탈락(p)의 세부 사유. i: 얼굴 일부가 화면 밖, c: 너무 작음, b: 너무 큼, m: 안내 영역 밖,
+# a: 좌우·상하 각도, r: 기울기(회전된 영상이면 여기서 걸린다)
+_POSITION_CODES = {
+    "KEEP FULL FACE IN VIEW": "pi",
+    "COME CLOSER": "pc",
+    "MOVE BACK": "pb",
+    "MOVE LEFT": "pm",
+    "MOVE RIGHT": "pm",
+    "MOVE UP": "pm",
+    "MOVE DOWN": "pm",
+    "LOOK STRAIGHT AT CAMERA": "pa",
+    "KEEP HEAD LEVEL": "pr",
+}
+
+
+def _position_code(hint: str) -> str:
+    return _POSITION_CODES.get(hint, "p")
+
+
 def _count_frames(path: str) -> tuple[int, float | None]:
     """헤더를 믿지 않고 실제 프레임 수와 마지막 프레임 표시 시각(초)을 센다.
 
     Chrome WebM은 프레임 수 헤더가 없고, Safari MP4는 헤더 값이 실제와 몇 장씩 다를 수 있다.
     표시 시각이 늘지 않는 영상은 길이를 모른다(None).
     """
-    capture = cv2.VideoCapture(path)
+    capture = _open_video(path)
     count, last_ms, increasing = 0, -np.inf, True
     try:
         while count <= MAX_DECODED_FRAMES and capture.grab():
@@ -72,12 +104,16 @@ def _count_frames(path: str) -> tuple[int, float | None]:
 def head_blocker(face, delta: float, clear: bool) -> str | None:
     """고개 단계 프레임이 통과하지 못한 이유. 통과하면 None.
 
-    n: 자세 측정 실패, p: 얼굴 위치·크기, a: 좌우·기울기 각도, c: 손 가림, d: 고개 움직임 부족
+    n: 자세 측정 실패, p<i·c·b·m>: 얼굴 위치·크기(세부 사유는 _POSITION_CODES), a: 좌우·기울기 각도, c: 손 가림,
+    d: 고개 움직임 부족
     """
     if pose_from(face) is None:
         return "n"
-    if not face.face_in_frame or centering_hint(replace(face, yaw=0, pitch=0, roll=0)) is not None:
-        return "p"
+    if not face.face_in_frame:
+        return "pi"
+    hint = centering_hint(replace(face, yaw=0, pitch=0, roll=0))
+    if hint is not None:
+        return _position_code(hint)
     if abs(face.yaw) > 35 or abs(face.roll) > 30:
         return "a"
     if not clear:
@@ -90,12 +126,14 @@ def head_blocker(face, delta: float, clear: bool) -> str | None:
 def frame_blocker(face, uncovered: bool, readings=None, target=None) -> str:
     """정면·손 포즈 단계 프레임이 통과하지 못한 이유. 통과하면 "ok".
 
-    n: 자세 측정 실패, p: 얼굴 위치·크기·각도, c: 손 가림, h: 손 미검출, g<읽은 손>: 손 모양·방향 불일치
+    n: 자세 측정 실패, p<i·c·b·m·a·r>: 얼굴 위치·크기·각도(세부 사유는 _POSITION_CODES), c: 손 가림,
+    h: 손 미검출, g<읽은 손>: 손 모양·방향 불일치
     """
     if pose_from(face) is None:
         return "n"
-    if centering_hint(face) is not None:
-        return "p"
+    hint = centering_hint(face)
+    if hint is not None:
+        return _position_code(hint)
     if not uncovered:
         return "c"
     if target is None:
@@ -136,6 +174,7 @@ class ActiveLivenessAnalyzer:
         center_uncovered, clear_pose = [], []
         invalid_video = False
         source_fps, reported = 0.0, 0
+        rotation, frame_size = 0, "-"
         frontal_captured = False
         with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
             handle.write(video)
@@ -143,8 +182,10 @@ class ActiveLivenessAnalyzer:
             # 실제 프레임 수로 영상 전체에 고르게 샘플링한다. 헤더 수를 쓰면 WebM은 시간 계산이 깨지고,
             # Safari처럼 헤더가 몇 장 틀리면 끝부분(마지막 고개 단계)이 빠지거나 영상 전체가 무효가 된다.
             decoded, media_seconds = _count_frames(handle.name)
-            capture = cv2.VideoCapture(handle.name)
+            capture = _open_video(handle.name)
             try:
+                raw_rotation = capture.get(cv2.CAP_PROP_ORIENTATION_META)
+                rotation = int(raw_rotation) if np.isfinite(raw_rotation) else 0
                 raw_count, raw_fps = capture.get(cv2.CAP_PROP_FRAME_COUNT), capture.get(cv2.CAP_PROP_FPS)
                 reported = int(raw_count) if np.isfinite(raw_count) and raw_count > 0 else 0
                 source_fps = float(raw_fps) if np.isfinite(raw_fps) and raw_fps > 0 else 0.0
@@ -164,6 +205,8 @@ class ActiveLivenessAnalyzer:
                     if not ok:
                         break
                     index += 1
+                    if frame_size == "-":
+                        frame_size = f"{frame.shape[1]}x{frame.shape[0]}"
                     frame = _downscale_frame(frame)
                     face = self.face_analyzer.observe(frame)
                     hands = self.hand_analyzer.detect(frame)
@@ -323,13 +366,15 @@ class ActiveLivenessAnalyzer:
             # 영상·얼굴 이미지는 남기지 않고 실패 조건을 가릴 수 있는 개수만 기록한다.
             logger.warning(
                 "liveness failed reasons=%s invalid_video=%s reported_frames=%d decoded_frames=%d source_fps=%.2f "
-                "sampled=%d valid_pose=%d multi_face_frames=%d no_face_frames=%d frontal_hold=%.2f pose_hold=%.2f "
+                "rotation=%d frame=%s sampled=%d valid_pose=%d multi_face_frames=%d no_face_frames=%d frontal_hold=%.2f pose_hold=%.2f "
                 "head_hold=%s stage_trace=%s head_trace=%s",
                 ",".join(reason.value for reason in reasons),
                 invalid_video,
                 reported,
                 index,
                 source_fps,
+                rotation,
+                frame_size,
                 len(faces),
                 valid,
                 sum(face.face_count > 1 for face in faces),
