@@ -208,6 +208,9 @@ class Settings(BaseSettings):
     max_abs_yaw_deg: float = Field(default=20.0, gt=0, validation_alias="MAX_ABS_YAW_DEG")
     max_abs_pitch_deg: float = Field(default=18.0, gt=0, validation_alias="MAX_ABS_PITCH_DEG")
     max_abs_roll_deg: float = Field(default=22.0, gt=0, validation_alias="MAX_ABS_ROLL_DEG")
+    # 대표사진 양쪽 눈의 MediaPipe eyeBlink 점수가 모두 이 값 이상이면 눈 감은 사진으로 보고 탈락시킨다.
+    # 실측: 눈 감고 웃는 사진 0.50~0.53, 눈 뜬 셀카 0.01. 원래 눈이 가는 사람의 정상 사진이 걸리지 않게 보수적으로 둔다.
+    max_eye_blink_score: float = Field(default=0.45, ge=0, le=1, validation_alias="MAX_EYE_BLINK_SCORE")
 
     synthetic_risk_threshold: float = Field(default=0.70, gt=0, lt=1, validation_alias="SYNTHETIC_RISK_THRESHOLD")
     pixel_art_min_axis_ratio: float = Field(

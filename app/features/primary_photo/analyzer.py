@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -17,6 +19,8 @@ from .head_pose import estimate_head_pose
 from .schemas import Pose, Quality, ReasonCode
 
 MAX_DETECTION_EDGE_PX = 1024
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -48,6 +52,46 @@ class PhotoAnalysis:
     reasons: list[ReasonCode]
 
 
+class EyeClosureEstimator:
+    """MediaPipe Face Landmarker 표정 점수(eyeBlinkLeft·Right)로 눈 감김 정도를 잰다.
+
+    LBF 눈 랜드마크로 잰 EAR은 감은 눈을 따라가지 못해(실측: 감은 눈 0.361 > 뜬 눈 0.331) 쓰지 않는다.
+    """
+
+    def __init__(self, model_path: Path) -> None:
+        self.model_path = model_path
+        self._model = None
+        self._lock = threading.Lock()
+
+    def blink_scores(self, image: np.ndarray) -> tuple[float, float] | None:
+        """가장 큰 얼굴의 (왼쪽, 오른쪽) 눈 감김 점수. 얼굴을 못 찾으면 None."""
+        import mediapipe as mp
+
+        with self._lock:
+            if self._model is None:
+                options = mp.tasks.vision.FaceLandmarkerOptions(
+                    base_options=mp.tasks.BaseOptions(
+                        model_asset_path=str(self.model_path), delegate=mp.tasks.BaseOptions.Delegate.CPU
+                    ),
+                    running_mode=mp.tasks.vision.RunningMode.IMAGE,
+                    num_faces=4,
+                    output_face_blendshapes=True,
+                )
+                self._model = mp.tasks.vision.FaceLandmarker.create_from_options(options)
+            rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            result = self._model.detect(mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb))
+        if not result.face_landmarks or not result.face_blendshapes:
+            return None
+
+        def width(points) -> float:
+            xs = [point.x for point in points]
+            return max(xs) - min(xs)
+
+        largest = max(range(len(result.face_landmarks)), key=lambda index: width(result.face_landmarks[index]))
+        scores = {shape.category_name: shape.score for shape in result.face_blendshapes[largest]}
+        return float(scores.get("eyeBlinkLeft", 0.0)), float(scores.get("eyeBlinkRight", 0.0))
+
+
 class FaceAnalyzer:
     """YuNet과 OpenCV LBF는 상태를 가지므로 잠금으로 직렬화해 재사용한다."""
 
@@ -61,6 +105,8 @@ class FaceAnalyzer:
         self._facemark.loadModel(str(settings.lbf_model_path))
         self._closeup_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         self._lock = threading.Lock()
+        landmarker = settings.face_landmarker_model_path
+        self._eyes = EyeClosureEstimator(landmarker) if landmarker.exists() else None
 
     def observe(
         self,
@@ -228,6 +274,22 @@ class FaceAnalyzer:
         gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         return float(cv2.Laplacian(gray, cv2.CV_64F).var())
 
+    def _eyes_closed(self, image: np.ndarray) -> bool:
+        """양쪽 눈이 모두 감긴 사진인가. 눈 감은 사진은 인증 영상(눈 뜬 얼굴)과 유사도가 크게 떨어진다."""
+        eyes = getattr(self, "_eyes", None)
+        scores = eyes.blink_scores(image) if eyes is not None else None
+        if scores is None:
+            return False
+        closed = min(scores) >= self.settings.max_eye_blink_score
+        logger.info(
+            "primary photo eye blink left=%.2f right=%.2f threshold=%.2f closed=%s",
+            scores[0],
+            scores[1],
+            self.settings.max_eye_blink_score,
+            closed,
+        )
+        return closed
+
     def analyze(self, image: np.ndarray) -> PhotoAnalysis:
         height, width = image.shape[:2]
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -255,6 +317,9 @@ class FaceAnalyzer:
                 or abs(observation.pitch) > self.settings.max_abs_pitch_deg
                 or abs(observation.roll) > self.settings.max_abs_roll_deg
             ):
+                reasons.append(ReasonCode.NON_FRONTAL_FACE)
+            elif self._eyes_closed(image):
+                # BE는 정해진 사유 코드만 허용하므로 눈 감은 사진도 NON_FRONTAL_FACE로 돌려준다.
                 reasons.append(ReasonCode.NON_FRONTAL_FACE)
 
         pose = None

@@ -42,3 +42,35 @@ def test_random_texture_is_not_classified_as_pixel_art():
 
     assert result.decision is SyntheticDecision.CLEAR
     assert result.signals == []
+
+
+def test_every_check_logs_scores_without_the_image(caplog):
+    caplog.set_level("INFO", logger="app.features.synthetic_detection.service")
+    small = np.zeros((32, 32, 3), dtype=np.uint8)
+    small[::2, ::2] = [255, 190, 30]
+    small[1::2, 1::2] = [40, 180, 255]
+    pixel_art = np.asarray(Image.fromarray(small).resize((512, 384), Image.Resampling.NEAREST))
+
+    detector().inspect(image_bytes(pixel_art), "image/jpeg")
+
+    message = caplog.records[-1].getMessage()
+    assert message.startswith("synthetic check decision=SYNTHETIC_RISK probability=0.010 threshold=0.700 ")
+    assert "signals=PIXEL_ART_OR_ILLUSTRATION provenance=none size=512x384 " in message
+    assert "axis_ratio=" in message and "edge_density=" in message
+
+
+def test_clear_and_confirmed_checks_are_logged(caplog):
+    caplog.set_level("INFO", logger="app.features.synthetic_detection.service")
+    texture = np.random.default_rng(11).integers(0, 256, (300, 400, 3), dtype=np.uint8)
+    service = detector()
+
+    service.inspect(image_bytes(texture), "image/jpeg")
+    assert "decision=CLEAR probability=0.010 threshold=0.700 signals=- provenance=none size=400x300" in (
+        caplog.records[-1].getMessage()
+    )
+
+    service.provenance.inspect = lambda *_args: "confirmed-ai"
+    service.inspect(image_bytes(texture), "image/jpeg")
+    assert "decision=CONFIRMED_SYNTHETIC probability=- threshold=0.700 signals=TRUSTED_AI_PROVENANCE" in (
+        caplog.records[-1].getMessage()
+    )
