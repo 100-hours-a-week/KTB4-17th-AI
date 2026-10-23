@@ -33,8 +33,10 @@ CHALLENGE_TARGETS = tuple(
 
 
 def random_challenge(previous: ChallengeTarget | None = None) -> ChallengeTarget:
-    """시작/다음 시도 때 한 번 뽑는다. 바로 전 시도와 완전히 같은 조합은 제외한다."""
-    return secrets.choice(tuple(target for target in CHALLENGE_TARGETS if target != previous))
+    """시작/다음 시도 때 한 번 뽑는다. 실패 후 다시 할 때 포즈가 바뀌도록 바로 전 시도와 같은 손 모양은 제외한다."""
+    if previous is None:
+        return secrets.choice(CHALLENGE_TARGETS)
+    return secrets.choice(tuple(target for target in CHALLENGE_TARGETS if target.gesture != previous.gesture))
 
 
 @dataclass(frozen=True)
