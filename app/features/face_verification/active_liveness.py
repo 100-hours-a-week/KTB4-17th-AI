@@ -27,6 +27,10 @@ MIN_ACTIVE_FRAMES = 12
 MAX_VIDEO_SECONDS = 18.0
 MAX_DECODED_FRAMES = 2160
 MAX_FRAME_EDGE_PX = 720
+# 손·고개 단계에서는 얼굴 가운데(눈·코·입) 영역만 가림으로 본다. 휴대폰은 얼굴이 화면을 크게 차지해
+# 손을 얼굴 옆에 두면 손 박스가 얼굴 박스 가장자리(뺨)와 겹치기 쉽다.
+FACE_CENTER_WIDTH_RATIO = 0.6
+FACE_CENTER_HEIGHT_RATIO = 0.7
 
 
 def _skip_frame(capture) -> bool:
@@ -44,6 +48,25 @@ def _downscale_frame(frame: np.ndarray) -> np.ndarray:
     scale = MAX_FRAME_EDGE_PX / max(height, width)
     size = (max(1, round(width * scale)), max(1, round(height * scale)))
     return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
+
+
+def _count_frames(path: str) -> tuple[int, float | None]:
+    """헤더를 믿지 않고 실제 프레임 수와 마지막 프레임 표시 시각(초)을 센다.
+
+    Chrome WebM은 프레임 수 헤더가 없고, Safari MP4는 헤더 값이 실제와 몇 장씩 다를 수 있다.
+    표시 시각이 늘지 않는 영상은 길이를 모른다(None).
+    """
+    capture = cv2.VideoCapture(path)
+    count, last_ms, increasing = 0, -np.inf, True
+    try:
+        while count <= MAX_DECODED_FRAMES and capture.grab():
+            media_ms = capture.get(cv2.CAP_PROP_POS_MSEC)
+            increasing = increasing and bool(np.isfinite(media_ms)) and media_ms > last_ms
+            last_ms = media_ms
+            count += 1
+    finally:
+        capture.release()
+    return count, last_ms / 1000 if increasing and count >= 2 else None
 
 
 def head_blocker(face, delta: float, clear: bool) -> str | None:
@@ -84,14 +107,17 @@ def frame_blocker(face, uncovered: bool, readings=None, target=None) -> str:
     return "g" + readings[0].label
 
 
-def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int]) -> bool:
+def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int], *, center_only: bool = False) -> bool:
+    """손 박스가 얼굴 박스를 20%보다 많이 덮는가. center_only면 얼굴 가운데 영역만 본다."""
     if face.center_x is None or face.center_y is None or face.width_ratio is None or face.height_ratio is None:
         return True
     height, width = shape
-    x1 = (face.center_x - face.width_ratio / 2) * width
-    x2 = (face.center_x + face.width_ratio / 2) * width
-    y1 = (face.center_y - face.height_ratio / 2) * height
-    y2 = (face.center_y + face.height_ratio / 2) * height
+    face_width = face.width_ratio * (FACE_CENTER_WIDTH_RATIO if center_only else 1)
+    face_height = face.height_ratio * (FACE_CENTER_HEIGHT_RATIO if center_only else 1)
+    x1 = (face.center_x - face_width / 2) * width
+    x2 = (face.center_x + face_width / 2) * width
+    y1 = (face.center_y - face_height / 2) * height
+    y2 = (face.center_y + face_height / 2) * height
     hx1, hy1, hx2, hy2 = hand.box
     intersection = max(0, min(x2, hx2) - max(x1, hx1)) * max(0, min(y2, hy2) - max(y1, hy1))
     return intersection > max((x2 - x1) * (y2 - y1), 1) * 0.20
@@ -106,33 +132,30 @@ class ActiveLivenessAnalyzer:
         target = decode_target(challenges)
         faces, readings, records, candidates = [], [], [], []
         fingerprints, clear_frontal, presentation_times, uncovered = [], [], [], []
+        # 손·고개 단계용. 동일인 비교 사진을 고르는 정면 단계는 얼굴 박스 전체 기준(clear_frontal)을 유지한다.
+        center_uncovered, clear_pose = [], []
         invalid_video = False
         source_fps, reported = 0.0, 0
         frontal_captured = False
-        next_sample_time = 0.0
         with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
             handle.write(video)
             handle.flush()
+            # 실제 프레임 수로 영상 전체에 고르게 샘플링한다. 헤더 수를 쓰면 WebM은 시간 계산이 깨지고,
+            # Safari처럼 헤더가 몇 장 틀리면 끝부분(마지막 고개 단계)이 빠지거나 영상 전체가 무효가 된다.
+            decoded, media_seconds = _count_frames(handle.name)
             capture = cv2.VideoCapture(handle.name)
             try:
                 raw_count, raw_fps = capture.get(cv2.CAP_PROP_FRAME_COUNT), capture.get(cv2.CAP_PROP_FPS)
                 reported = int(raw_count) if np.isfinite(raw_count) and raw_count > 0 else 0
                 source_fps = float(raw_fps) if np.isfinite(raw_fps) and raw_fps > 0 else 0.0
-                if reported > MAX_DECODED_FRAMES or (source_fps and reported / source_fps > MAX_VIDEO_SECONDS):
+                duration = media_seconds if media_seconds is not None else decoded / source_fps if source_fps else 0.0
+                if decoded > MAX_DECODED_FRAMES or duration > MAX_VIDEO_SECONDS:
                     invalid_video = True
-                indices = (
-                    set(np.linspace(0, reported - 1, min(MAX_ACTIVE_FRAMES, reported), dtype=int)) if reported else None
-                )
+                indices = set(np.linspace(0, decoded - 1, min(MAX_ACTIVE_FRAMES, decoded), dtype=int))
                 index = 0
                 while not invalid_video and capture.isOpened():
-                    if index >= MAX_DECODED_FRAMES:
-                        invalid_video = True
-                        break
                     source_index = index
-                    sample_time = source_index / source_fps if source_fps else capture.get(cv2.CAP_PROP_POS_MSEC) / 1000
-                    if (indices is not None and source_index not in indices) or (
-                        indices is None and sample_time + 1e-9 < next_sample_time
-                    ):
+                    if source_index not in indices:
                         if not _skip_frame(capture):
                             break
                         index += 1
@@ -141,11 +164,6 @@ class ActiveLivenessAnalyzer:
                     if not ok:
                         break
                     index += 1
-                    if indices is None and (len(faces) >= MAX_ACTIVE_FRAMES or sample_time > MAX_VIDEO_SECONDS):
-                        # 헤더 없이 앞부분만 잘라 인증하지 않는다.
-                        invalid_video = True
-                        break
-                    next_sample_time = sample_time + MAX_VIDEO_SECONDS / (MAX_ACTIVE_FRAMES - 1)
                     frame = _downscale_frame(frame)
                     face = self.face_analyzer.observe(frame)
                     hands = self.hand_analyzer.detect(frame)
@@ -174,6 +192,10 @@ class ActiveLivenessAnalyzer:
                     uncovered.append(not any(hand_overlaps_face(hand, face, frame.shape[:2]) for hand in hands))
                     unobscured = frontal and uncovered[-1]
                     clear_frontal.append(unobscured and centering_hint(face) is None)
+                    center_uncovered.append(
+                        not any(hand_overlaps_face(hand, face, frame.shape[:2], center_only=True) for hand in hands)
+                    )
+                    clear_pose.append(frontal and center_uncovered[-1] and centering_hint(face) is None)
                     # 정면 구간 확보 전에는 최근 후보 세 장만 보관한다. 이후 픽셀 복사를 멈춘다.
                     if not frontal_captured and clear_frontal[-1]:
                         if len(candidates) == 3:
@@ -188,10 +210,11 @@ class ActiveLivenessAnalyzer:
                     )
                     if not frontal_captured:
                         current = find_hold(clear_frontal, current_times, REQUIRED_HOLD_SECONDS)
-                        if current.seconds >= REQUIRED_HOLD_SECONDS:
+                        if current.reaches(REQUIRED_HOLD_SECONDS):
                             candidates = [item for item in candidates if item[1] in current.indices]
                             frontal_captured = True
-                if reported and abs(index - reported) > 1:
+                if index != decoded:
+                    # 두 번째 순회가 중간에 끊기면 앞부분만으로 인증하지 않는다.
                     invalid_video = True
             finally:
                 capture.release()
@@ -228,10 +251,10 @@ class ActiveLivenessAnalyzer:
                 record.timestamp_ms = round(timestamp)
         # v2/v3는 요구 동작만 다르다. 모두 정면 → 손 → 선택 고개를 각각 3초 검증한다.
         frontal_window = find_hold(clear_frontal, times, REQUIRED_HOLD_SECONDS)
-        centered = frontal_window.seconds >= REQUIRED_HOLD_SECONDS
+        centered = frontal_window.reaches(REQUIRED_HOLD_SECONDS)
         pose_matches = [
             clear and any(matches_gesture(reading, target.gesture, target.direction) for reading in frame)
-            for clear, frame in zip(clear_frontal, readings, strict=True)
+            for clear, frame in zip(clear_pose, readings, strict=True)
         ]
         pose_window = find_hold(
             pose_matches,
@@ -239,13 +262,16 @@ class ActiveLivenessAnalyzer:
             REQUIRED_HOLD_SECONDS,
             start=frontal_window.indices[-1] + 1 if centered else len(faces),
         )
-        pose_passed = pose_window.seconds >= REQUIRED_HOLD_SECONDS
+        pose_passed = pose_window.reaches(REQUIRED_HOLD_SECONDS)
         # 실패 로그용 프레임별 탈락 사유. 정면을 못 채웠으면 정면 단계, 아니면 손 포즈 단계를 남긴다.
         stage_start = frontal_window.indices[-1] + 1 if centered else 0
         stage_trace = ("pose:" if centered else "frontal:") + ",".join(
             frame_blocker(face, clear, frame, target if centered else None)
             for face, clear, frame in zip(
-                faces[stage_start:], uncovered[stage_start:], readings[stage_start:], strict=True
+                faces[stage_start:],
+                (center_uncovered if centered else uncovered)[stage_start:],
+                readings[stage_start:],
+                strict=True,
             )
         )
         baseline = None
@@ -261,7 +287,7 @@ class ActiveLivenessAnalyzer:
                 movement_delta(pose_from(face), baseline, target.head) if pose_from(face) else 0 for face in faces
             ]
             head_peak = max(deltas, default=0)
-            blockers = [head_blocker(*frame) for frame in zip(faces, deltas, uncovered, strict=True)]
+            blockers = [head_blocker(*frame) for frame in zip(faces, deltas, center_uncovered, strict=True)]
             head_start = pose_window.indices[-1] + 1 if pose_passed else len(faces)
             head_window = find_hold(
                 [blocker is None for blocker in blockers],
@@ -278,8 +304,8 @@ class ActiveLivenessAnalyzer:
             reasons.append(ReasonCode.FACE_NOT_CENTERED)
         if centered and not pose_passed:
             after = frontal_window.indices[-1] + 1
-            face_window = find_hold(clear_frontal, times, REQUIRED_HOLD_SECONDS, start=after)
-            if face_window.seconds < REQUIRED_HOLD_SECONDS:
+            face_window = find_hold(clear_pose, times, REQUIRED_HOLD_SECONDS, start=after)
+            if not face_window.reaches(REQUIRED_HOLD_SECONDS):
                 reasons.append(ReasonCode.FACE_NOT_CENTERED)
             else:
                 reasons.append(
@@ -287,7 +313,7 @@ class ActiveLivenessAnalyzer:
                     if sum(bool(frame) for frame in readings[after:]) < 2
                     else ReasonCode.HAND_GESTURE_MISMATCH
                 )
-        if target.head and (head_window is None or head_window.seconds < REQUIRED_HOLD_SECONDS):
+        if target.head and (head_window is None or not head_window.reaches(REQUIRED_HOLD_SECONDS)):
             reasons.append(ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED)
         initial = [item for item in candidates if item[1] in frontal_window.indices]
         if len(initial) < 2:
@@ -331,7 +357,7 @@ class ActiveLivenessAnalyzer:
                 required_valid_face_frames=MIN_ACTIVE_FRAMES,
                 required_frontal_face_frames=max(2, len(frontal_window.indices)),
                 candidate_frame_count=len(candidate_frames),
-                source_frame_count=reported or index,
+                source_frame_count=decoded,
                 source_fps=source_fps or None,
                 sampling_strategy="uniform_max_48_adaptive_v3" if adaptive else "uniform_max_48_active_v2",
                 max_abs_yaw_deg=MAX_FRONTAL_ANGLE,
@@ -343,7 +369,7 @@ class ActiveLivenessAnalyzer:
                 matched_hand_frames=hold.matched_frames,
                 expected_hand_direction=target.direction,
                 head_peak_delta_deg=head_peak,
-                head_returned=(head_window is not None and head_window.seconds >= REQUIRED_HOLD_SECONDS)
+                head_returned=(head_window is not None and head_window.reaches(REQUIRED_HOLD_SECONDS))
                 if target.head
                 else None,
                 head_hold_seconds=round(head_window.seconds, 3) if head_window else None,

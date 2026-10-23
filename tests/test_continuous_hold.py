@@ -1,3 +1,4 @@
+import numpy as np
 import pytest
 
 from app.features.face_verification.active_liveness import MAX_ACTIVE_FRAMES, MAX_VIDEO_SECONDS
@@ -44,3 +45,22 @@ def test_hold_well_short_of_three_seconds_still_fails():
     times = [i * 0.38 for i in range(40)]
     matches = [5.0 <= t <= 7.2 for t in times]
     assert find_hold(matches, times, REQUIRED_HOLD_SECONDS).seconds < REQUIRED_HOLD_SECONDS
+
+
+@pytest.mark.parametrize("phase", [0.0, 0.1, 0.19, 0.3])
+@pytest.mark.parametrize("missed", [3, 4, 5])
+def test_one_missed_sample_inside_browser_three_second_hold_still_passes(phase, missed):
+    # 브라우저가 3초를 채워도 서버 모델은 그중 한 장을 다르게 읽을 수 있다. 짧은 미검출 간격도 유지 시간이다.
+    cell = MAX_VIDEO_SECONDS / (MAX_ACTIVE_FRAMES - 1)
+    times = [phase + i * cell for i in range(40)]
+    inside = [i for i, t in enumerate(times) if 5.0 <= t <= 8.0]
+    matches = [5.0 <= t <= 8.0 and i != inside[missed] for i, t in enumerate(times)]
+    assert find_hold(matches, times, REQUIRED_HOLD_SECONDS).reaches(REQUIRED_HOLD_SECONDS)
+
+
+def test_hold_summing_to_required_seconds_with_float_error_reaches_it():
+    # 1/15초 격자 시간에서 2.6초는 부동소수 합으로 2.5999999999999996이 된다.
+    times = [index / 15 for index in np.linspace(0, 261, 48, dtype=int)]  # 15fps 17.5초 영상의 균등 샘플
+    window = find_hold([0.2 <= t <= 3.2 for t in times], times, REQUIRED_HOLD_SECONDS)
+    assert window.seconds < REQUIRED_HOLD_SECONDS
+    assert window.reaches(REQUIRED_HOLD_SECONDS)
