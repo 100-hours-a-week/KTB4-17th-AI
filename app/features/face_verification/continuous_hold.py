@@ -1,4 +1,4 @@
-"""시간 기반 유지 판정. 짧은 미검출은 시간을 더하지 않고 기다린다."""
+"""시간 기반 유지 판정. 짧은 미검출은 끊지 않고 유지 시간에 포함한다."""
 
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -12,12 +12,17 @@ SAMPLE_TOLERANCE_SECONDS = 0.4
 REQUIRED_HOLD_SECONDS = HOLD_SECONDS - SAMPLE_TOLERANCE_SECONDS
 MAX_SAMPLE_GAP_SECONDS = 0.75
 DETECTION_GRACE_SECONDS = 0.8
+# 샘플 시각 합은 부동소수 오차로 기준을 아주 조금 밑돌 수 있다 (예: 2.5999999999999996).
+HOLD_EPSILON_SECONDS = 1e-9
 
 
 @dataclass(frozen=True)
 class HoldWindow:
     indices: tuple[int, ...] = ()
     seconds: float = 0.0
+
+    def reaches(self, seconds: float) -> bool:
+        return len(self.indices) >= 2 and self.seconds + HOLD_EPSILON_SECONDS >= seconds
 
 
 def find_hold(matches: Sequence[bool], timestamps: Sequence[float], seconds: float, *, start: int = 0) -> HoldWindow:
@@ -40,7 +45,7 @@ def find_hold(matches: Sequence[bool], timestamps: Sequence[float], seconds: flo
             run, elapsed, last_match = [], 0.0, None
         if (
             last_match is not None
-            and timestamps[index] - timestamps[last_match] > DETECTION_GRACE_SECONDS + 1e-9
+            and timestamps[index] - timestamps[last_match] > DETECTION_GRACE_SECONDS + HOLD_EPSILON_SECONDS
             and (not matches[index] or last_match != index - 1)
         ):
             run, elapsed, last_match = [], 0.0, None
@@ -48,13 +53,14 @@ def find_hold(matches: Sequence[bool], timestamps: Sequence[float], seconds: flo
             continue
         if last_match is None:
             elapsed = cell
-        elif last_match == index - 1:
+        else:
+            # 서버 모델이 한두 장을 브라우저와 다르게 읽어도, 유예 시간 안에 복구하면 그 사이도 유지 시간이다.
+            # 미검출 한 장마다 샘플 두 칸(최대 약 0.75초)을 빼면 브라우저 3초 유지가 2.6초 기준을 못 넘는다.
             elapsed += timestamps[index] - timestamps[last_match]
-        # 미검출 구간과 복구 프레임 사이의 시간은 유지 시간에 포함하지 않는다.
         run.append(index)
         last_match = index
         if len(run) >= 2 and elapsed > longest.seconds:
             longest = HoldWindow(tuple(run), elapsed)
-        if len(run) >= 2 and elapsed + 1e-9 >= seconds:
+        if longest.reaches(seconds):
             return longest
     return longest

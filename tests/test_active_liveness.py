@@ -88,7 +88,9 @@ def evaluate(
     no_metadata=False,
     oversized=False,
     overlap=False,
+    pose_overlap=None,
     underreported=False,
+    overreported=False,
     unstable_center=False,
     center_x=0.5,
     center_y=0.48,
@@ -111,6 +113,8 @@ def evaluate(
     if direction == "DOWN" and not wrong_hand:
         points[:, 1] = 720 - points[:, 1]
 
+    frames = 2200 if oversized else 160
+
     class Capture:
         def __init__(self, path):
             self.index = 0
@@ -118,17 +122,24 @@ def evaluate(
         def get(self, prop):
             if prop == cv2.CAP_PROP_FPS:
                 return 36 if short_video else 12
-            return 10000 if oversized else (0 if no_metadata else (24 if underreported else 160))
+            header = 24 if underreported else 200 if overreported else 160
+            return 10000 if oversized else (0 if no_metadata else header)
 
         def isOpened(self):
-            return self.index < 160
+            return self.index < frames
 
         def read(self):
-            if self.index >= 160:
+            if self.index >= frames:
                 return False, None
             frame = np.full((80, 80, 3), self.index, dtype=np.uint8)
             self.index += 1
             return True, frame
+
+        def grab(self):
+            if self.index >= frames:
+                return False
+            self.index += 1
+            return True
 
         def release(self):
             pass
@@ -162,6 +173,8 @@ def evaluate(
         if interrupted_pose and 50 <= int(frame[0, 0, 0]) < 135:
             return []
         box = np.array([25, 20, 55, 60]) if overlap else np.array([62, 5, 79, 60])
+        if pose_overlap is not None and int(frame[0, 0, 0]) >= 40:
+            box = np.array(pose_overlap)
         return [SimpleNamespace(image_points=points, box=box)]
 
     monkeypatch.setattr("app.features.face_verification.active_liveness.cv2.VideoCapture", Capture)
@@ -249,7 +262,6 @@ def test_active_video_passes_with_requested_hand_and_head_without_requiring_retu
         ({"missing_middle": True}, ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED),
         ({"oversized": True}, ReasonCode.LIVENESS_FAILED),
         ({"overlap": True}, ReasonCode.FACE_COMPARISON_FAILED),
-        ({"underreported": True}, ReasonCode.LIVENESS_FAILED),
     ],
 )
 def test_wrong_or_incomplete_active_challenge_never_produces_match_frames(monkeypatch, options, reason):
@@ -423,10 +435,122 @@ def test_active_liveness_skips_unsampled_frames_with_grab_and_downscales_hd_fram
     )
 
     assert evaluation.result.passed
-    # 헤더 없는 영상도 한 번만 순회하며 분석 프레임만 읽는다.
+    # 프레임 수를 한 번 센 뒤 한 번 더 순회하며 분석 프레임만 읽는다.
     assert stats["read"] <= 48
-    assert stats["grab"] + stats["read"] == 96
+    assert stats["grab"] + stats["read"] == 2 * 96
     assert all(max(shape) == 720 for shape in stats["observed_shapes"])
+
+
+@pytest.mark.parametrize("reported_fps", [29.75, 1000.0])
+def test_webm_without_frame_count_is_sampled_by_presentation_time(monkeypatch, reported_fps):
+    # Chrome MediaRecorder WebM은 프레임 수 헤더가 없고 OpenCV fps가 실제 15fps와 다르게 읽힌다(29.75·1000).
+    target = next(
+        item
+        for item in CHALLENGE_TARGETS
+        if item.gesture == "TWO" and item.direction == "DOWN" and item.head == "LOOK_UP"
+    )
+    points = make_hand("01100")
+    points[:, 1] = 720 - points[:, 1]
+
+    class WebmCapture:
+        def __init__(self, _path):
+            self.index = 0
+
+        def get(self, prop):
+            if prop == cv2.CAP_PROP_FPS:
+                return reported_fps
+            if prop == cv2.CAP_PROP_FRAME_COUNT:
+                return -9.223372036854776e18
+            return max(self.index - 1, 0) * 1000.0 / 15  # 마지막으로 꺼낸 프레임의 표시 시각
+
+        def isOpened(self):
+            return self.index < 150
+
+        def grab(self):
+            if self.index >= 150:
+                return False
+            self.index += 1
+            return True
+
+        def retrieve(self):
+            return True, np.full((80, 80, 3), self.index - 1, dtype=np.uint8)
+
+        def read(self):
+            return self.retrieve() if self.grab() else (False, None)
+
+        def release(self):
+            pass
+
+    def detect(_frame):
+        return [SimpleNamespace(image_points=points, box=np.array([62, 5, 79, 60]))]
+
+    monkeypatch.setattr("app.features.face_verification.active_liveness.cv2.VideoCapture", WebmCapture)
+    result = (
+        ActiveLivenessAnalyzer(SimpleNamespace(observe=lambda _: centered_face()), SimpleNamespace(detect=detect))
+        .evaluate(b"video", ".webm", encode_target(target)[:3])
+        .result
+    )
+
+    assert result.passed, result.reason_codes
+    # 실제 150장을 세어 10초 영상 전체에서 48장을 고르게 본다.
+    assert result.sampled_frames == 48
+
+
+def test_hand_beside_face_on_phone_may_overlap_cheek_during_pose_and_head(monkeypatch):
+    # 얼굴 박스(80px 기준 x 28~52) 가장자리를 24% 덮지만 눈·코·입이 있는 가운데는 거의 덮지 않는 손.
+    result = evaluate(monkeypatch, pose_overlap=[46, 20, 66, 58]).result
+    assert result.passed, result.reason_codes
+
+
+def test_hand_covering_face_center_during_pose_still_fails(monkeypatch):
+    result = evaluate(monkeypatch, pose_overlap=[30, 25, 50, 55]).result
+    assert not result.passed
+
+
+@pytest.mark.parametrize("header", ["underreported", "overreported"])
+def test_wrong_frame_count_header_is_judged_on_actual_frames(monkeypatch, header):
+    # Safari MP4처럼 헤더 프레임 수가 실제와 달라도 영상 전체를 고르게 보고 판정한다.
+    result = evaluate(monkeypatch, **{header: True}).result
+    assert result.passed, result.reason_codes
+    assert result.source_frame_count == 160
+
+
+def test_video_longer_than_limit_by_presentation_time_is_rejected(monkeypatch):
+    class LongCapture:
+        def __init__(self, _path):
+            self.index = 0
+
+        def get(self, prop):
+            if prop == cv2.CAP_PROP_FPS:
+                return 1000.0  # 헤더 없는 WebM의 엉터리 fps. 길이는 표시 시각으로 잰다.
+            if prop == cv2.CAP_PROP_FRAME_COUNT:
+                return 0
+            return max(self.index - 1, 0) * 1000.0 / 15
+
+        def isOpened(self):
+            return self.index < 300
+
+        def grab(self):
+            if self.index >= 300:
+                return False
+            self.index += 1
+            return True
+
+        def read(self):
+            if not self.grab():
+                return False, None
+            return True, np.zeros((80, 80, 3), dtype=np.uint8)
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr("app.features.face_verification.active_liveness.cv2.VideoCapture", LongCapture)
+    target = next(item for item in CHALLENGE_TARGETS if item.gesture == "TWO" and item.head == "LOOK_UP")
+    result = ActiveLivenessAnalyzer(
+        SimpleNamespace(observe=lambda _: centered_face()), SimpleNamespace(detect=lambda _: [])
+    ).evaluate(b"video", ".webm", encode_target(target))
+    assert ReasonCode.LIVENESS_FAILED in result.result.reason_codes
+    assert result.result.sampled_frames == 0
 
 
 def test_initial_preparation_does_not_fail_an_otherwise_valid_sequence(monkeypatch):
