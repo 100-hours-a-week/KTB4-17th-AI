@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from app.core.config import Settings
-from app.features.primary_photo.analyzer import FaceAnalyzer, FaceObservation
+from app.features.primary_photo.analyzer import EyeClosureEstimator, FaceAnalyzer, FaceObservation
 from app.features.primary_photo.schemas import ReasonCode
 
 
@@ -280,3 +280,62 @@ def test_low_light_retry_enhances_detector_input(edge):
     assert observation.face_count == 1
     assert observation.low_light_enhanced
     assert detector_means[1] >= 40
+
+
+class FakeEyes:
+    def __init__(self, scores):
+        self.scores = scores
+
+    def blink_scores(self, _image):
+        return self.scores
+
+
+def frontal_single_face(analyzer):
+    analyzer.observe = lambda _image, **_kwargs: FaceObservation(
+        face_count=1, detected_face_count=1, face_area_ratio=0.2
+    )
+
+
+@pytest.mark.parametrize(
+    ("scores", "rejected"),
+    [
+        ((0.53, 0.50), True),  # 눈 감고 웃는 사진 실측값
+        ((0.01, 0.01), False),  # 눈 뜬 셀카 실측값
+        ((0.80, 0.10), False),  # 한쪽 눈 윙크
+        (None, False),  # 측정 모델이 얼굴을 못 찾음
+    ],
+)
+def test_photo_with_both_eyes_closed_is_rejected_as_non_frontal(scores, rejected):
+    # BE가 허용하는 기존 사유 코드(NON_FRONTAL_FACE)로 돌려준다.
+    analyzer = analyzer_without_models()
+    frontal_single_face(analyzer)
+    analyzer._eyes = FakeEyes(scores)
+
+    result = analyzer.analyze(np.full((200, 200, 3), 128, dtype=np.uint8))
+
+    assert (ReasonCode.NON_FRONTAL_FACE in result.reasons) is rejected
+
+
+def test_eye_check_is_skipped_without_the_landmark_model():
+    analyzer = analyzer_without_models()
+    frontal_single_face(analyzer)
+
+    result = analyzer.analyze(np.full((200, 200, 3), 128, dtype=np.uint8))
+
+    assert result.reasons == []
+
+
+def test_eye_closure_threshold_is_configurable():
+    analyzer = analyzer_without_models()
+    analyzer.settings = Settings(min_image_edge_px=64, min_blur_variance=0, max_eye_blink_score=0.6)
+    frontal_single_face(analyzer)
+    analyzer._eyes = FakeEyes((0.53, 0.50))
+
+    assert analyzer.analyze(np.full((200, 200, 3), 128, dtype=np.uint8)).reasons == []
+
+
+def test_eye_closure_estimator_finds_no_face_in_blank_image():
+    path = Settings().face_landmarker_model_path
+    if not path.exists():
+        pytest.skip("face_landmarker.task 없음")
+    assert EyeClosureEstimator(path).blink_scores(np.full((240, 320, 3), 128, dtype=np.uint8)) is None
