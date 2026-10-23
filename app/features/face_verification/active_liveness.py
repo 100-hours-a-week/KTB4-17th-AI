@@ -46,6 +46,25 @@ def _downscale_frame(frame: np.ndarray) -> np.ndarray:
     return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
 
 
+def _count_frames(path: str) -> tuple[int, float | None]:
+    """헤더를 믿지 않고 실제 프레임 수와 마지막 프레임 표시 시각(초)을 센다.
+
+    Chrome WebM은 프레임 수 헤더가 없고, Safari MP4는 헤더 값이 실제와 몇 장씩 다를 수 있다.
+    표시 시각이 늘지 않는 영상은 길이를 모른다(None).
+    """
+    capture = cv2.VideoCapture(path)
+    count, last_ms, increasing = 0, -np.inf, True
+    try:
+        while count <= MAX_DECODED_FRAMES and capture.grab():
+            media_ms = capture.get(cv2.CAP_PROP_POS_MSEC)
+            increasing = increasing and bool(np.isfinite(media_ms)) and media_ms > last_ms
+            last_ms = media_ms
+            count += 1
+    finally:
+        capture.release()
+    return count, last_ms / 1000 if increasing and count >= 2 else None
+
+
 def head_blocker(face, delta: float, clear: bool) -> str | None:
     """고개 단계 프레임이 통과하지 못한 이유. 통과하면 None.
 
@@ -109,56 +128,33 @@ class ActiveLivenessAnalyzer:
         invalid_video = False
         source_fps, reported = 0.0, 0
         frontal_captured = False
-        next_sample_time = 0.0
         with tempfile.NamedTemporaryFile(suffix=suffix) as handle:
             handle.write(video)
             handle.flush()
+            # 실제 프레임 수로 영상 전체에 고르게 샘플링한다. 헤더 수를 쓰면 WebM은 시간 계산이 깨지고,
+            # Safari처럼 헤더가 몇 장 틀리면 끝부분(마지막 고개 단계)이 빠지거나 영상 전체가 무효가 된다.
+            decoded, media_seconds = _count_frames(handle.name)
             capture = cv2.VideoCapture(handle.name)
             try:
                 raw_count, raw_fps = capture.get(cv2.CAP_PROP_FRAME_COUNT), capture.get(cv2.CAP_PROP_FPS)
                 reported = int(raw_count) if np.isfinite(raw_count) and raw_count > 0 else 0
                 source_fps = float(raw_fps) if np.isfinite(raw_fps) and raw_fps > 0 else 0.0
-                if reported > MAX_DECODED_FRAMES or (source_fps and reported / source_fps > MAX_VIDEO_SECONDS):
+                duration = media_seconds if media_seconds is not None else decoded / source_fps if source_fps else 0.0
+                if decoded > MAX_DECODED_FRAMES or duration > MAX_VIDEO_SECONDS:
                     invalid_video = True
-                indices = (
-                    set(np.linspace(0, reported - 1, min(MAX_ACTIVE_FRAMES, reported), dtype=int)) if reported else None
-                )
+                indices = set(np.linspace(0, decoded - 1, min(MAX_ACTIVE_FRAMES, decoded), dtype=int))
                 index = 0
-                media_clock, last_media_ms = True, -np.inf
                 while not invalid_video and capture.isOpened():
-                    if index >= MAX_DECODED_FRAMES:
-                        invalid_video = True
-                        break
                     source_index = index
-                    if indices is not None:
-                        if source_index not in indices:
-                            if not _skip_frame(capture):
-                                break
-                            index += 1
-                            continue
-                        ok, frame = capture.read()
-                    else:
-                        # 헤더 없는 WebM은 OpenCV fps가 실제와 다르게 읽혀(15fps를 29.75·1000 등) 프레임 번호로
-                        # 시간을 재면 샘플 간격이 벌어지거나 한 장만 남는다. 프레임을 꺼내 표시 시각으로 잰다.
-                        if not capture.grab():
+                    if source_index not in indices:
+                        if not _skip_frame(capture):
                             break
-                        media_ms = capture.get(cv2.CAP_PROP_POS_MSEC)
-                        media_clock = media_clock and np.isfinite(media_ms) and media_ms > last_media_ms
-                        last_media_ms = media_ms
-                        sample_time = media_ms / 1000 if media_clock or not source_fps else source_index / source_fps
-                        if sample_time + 1e-9 < next_sample_time:
-                            index += 1
-                            continue
-                        ok, frame = capture.retrieve()
+                        index += 1
+                        continue
+                    ok, frame = capture.read()
                     if not ok:
                         break
                     index += 1
-                    if indices is None:
-                        if len(faces) >= MAX_ACTIVE_FRAMES or sample_time > MAX_VIDEO_SECONDS:
-                            # 헤더 없이 앞부분만 잘라 인증하지 않는다.
-                            invalid_video = True
-                            break
-                        next_sample_time = sample_time + MAX_VIDEO_SECONDS / (MAX_ACTIVE_FRAMES - 1)
                     frame = _downscale_frame(frame)
                     face = self.face_analyzer.observe(frame)
                     hands = self.hand_analyzer.detect(frame)
@@ -204,7 +200,8 @@ class ActiveLivenessAnalyzer:
                         if current.reaches(REQUIRED_HOLD_SECONDS):
                             candidates = [item for item in candidates if item[1] in current.indices]
                             frontal_captured = True
-                if reported and abs(index - reported) > 1:
+                if index != decoded:
+                    # 두 번째 순회가 중간에 끊기면 앞부분만으로 인증하지 않는다.
                     invalid_video = True
             finally:
                 capture.release()
@@ -344,7 +341,7 @@ class ActiveLivenessAnalyzer:
                 required_valid_face_frames=MIN_ACTIVE_FRAMES,
                 required_frontal_face_frames=max(2, len(frontal_window.indices)),
                 candidate_frame_count=len(candidate_frames),
-                source_frame_count=reported or index,
+                source_frame_count=decoded,
                 source_fps=source_fps or None,
                 sampling_strategy="uniform_max_48_adaptive_v3" if adaptive else "uniform_max_48_active_v2",
                 max_abs_yaw_deg=MAX_FRONTAL_ANGLE,
