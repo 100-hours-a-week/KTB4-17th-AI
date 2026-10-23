@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import struct
 from types import SimpleNamespace
 
 import cv2
@@ -7,7 +8,7 @@ import numpy as np
 import pytest
 
 from app.core.config import Settings
-from app.features.face_verification.active_liveness import ActiveLivenessAnalyzer
+from app.features.face_verification.active_liveness import ActiveLivenessAnalyzer, _open_video, frame_blocker
 from app.features.face_verification.challenge import CHALLENGE_TARGETS
 from app.features.face_verification.continuous_hold import REQUIRED_HOLD_SECONDS
 from app.features.face_verification.liveness import ChallengeSigner, InvalidChallenge
@@ -122,6 +123,8 @@ def evaluate(
         def get(self, prop):
             if prop == cv2.CAP_PROP_FPS:
                 return 36 if short_video else 12
+            if prop == cv2.CAP_PROP_ORIENTATION_META:
+                return 0
             header = 24 if underreported else 200 if overreported else 160
             return 10000 if oversized else (0 if no_metadata else header)
 
@@ -269,6 +272,58 @@ def test_wrong_or_incomplete_active_challenge_never_produces_match_frames(monkey
     assert not result.result.passed
     assert reason in result.result.reason_codes
     assert result.best_frame is None and result.candidate_frames == ()
+
+
+def _rotated_mp4(path, angle: int) -> None:
+    """가로 640x480 MP4를 쓰고 tkhd 표시 행렬만 바꿔 휴대폰처럼 회전 정보를 붙인다."""
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 15, (640, 480))
+    for index in range(10):
+        writer.write(np.full((480, 640, 3), index * 20, dtype=np.uint8))
+    writer.release()
+    data = bytearray(path.read_bytes())
+    one = 0x00010000
+    matrix = {90: (0, one, 0, -one & 0xFFFFFFFF, 0, 0, 0, 0, 0x40000000)}[angle]
+    tkhd = data.find(b"tkhd") - 4
+    version = data[tkhd + 8]
+    offset = tkhd + 8 + 4 + (32 if version == 1 else 20) + 16
+    data[offset : offset + 36] = struct.pack(">9I", *matrix)
+    path.write_bytes(bytes(data))
+
+
+def test_phone_portrait_video_with_rotation_metadata_is_read_upright(tmp_path):
+    # 휴대폰은 세로 영상을 가로 그림 + 회전 정보로 저장하기도 한다. 돌리지 않으면 얼굴이 누워 기울기로 탈락한다.
+    path = tmp_path / "portrait.mp4"
+    _rotated_mp4(path, 90)
+    capture = _open_video(str(path))
+    try:
+        ok, frame = capture.read()
+        assert capture.get(cv2.CAP_PROP_ORIENTATION_META) == 90
+    finally:
+        capture.release()
+    assert ok and frame.shape[:2] == (640, 480)
+
+
+@pytest.mark.parametrize(
+    ("changes", "code"),
+    [
+        ({"face_in_frame": False}, "pi"),
+        ({"width_ratio": 0.03}, "pc"),
+        ({"width_ratio": 0.90, "height_ratio": 0.90}, "pb"),
+        ({"center_x": 0.05}, "pm"),
+        ({"pitch": 30}, "pa"),
+        ({"roll": 90}, "pr"),
+    ],
+)
+def test_position_blocker_names_the_reason(changes, code):
+    assert frame_blocker(centered_face(**changes), True) == code
+
+
+def test_failure_log_records_rotation_and_frame_size(monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
+    evaluate(monkeypatch, off_center=True)
+    message = caplog.records[-1].getMessage()
+    assert "rotation=0 frame=80x80" in message
+    assert "stage_trace=frontal:pm" in message
 
 
 def test_liveness_failure_logs_failed_condition_counts(monkeypatch, caplog):
