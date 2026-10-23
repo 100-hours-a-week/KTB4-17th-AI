@@ -123,8 +123,7 @@ def test_matcher_downscales_high_res_detection_and_caches_reference_feature():
     matcher.recognizer_path = Settings().sface_model_path
     matcher.threshold = 0.42
     matcher._lock = threading.Lock()
-    matcher._cached_ref_key = None
-    matcher._cached_ref_feature = None
+    matcher._cached_ref_features = {}
 
     det_sizes = []
     detect_calls = []

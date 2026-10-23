@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import struct
 from types import SimpleNamespace
 
 import cv2
@@ -7,7 +8,7 @@ import numpy as np
 import pytest
 
 from app.core.config import Settings
-from app.features.face_verification.active_liveness import ActiveLivenessAnalyzer
+from app.features.face_verification.active_liveness import ActiveLivenessAnalyzer, _open_video, frame_blocker
 from app.features.face_verification.challenge import CHALLENGE_TARGETS
 from app.features.face_verification.continuous_hold import REQUIRED_HOLD_SECONDS
 from app.features.face_verification.liveness import ChallengeSigner, InvalidChallenge
@@ -122,6 +123,8 @@ def evaluate(
         def get(self, prop):
             if prop == cv2.CAP_PROP_FPS:
                 return 36 if short_video else 12
+            if prop == cv2.CAP_PROP_ORIENTATION_META:
+                return 0
             header = 24 if underreported else 200 if overreported else 160
             return 10000 if oversized else (0 if no_metadata else header)
 
@@ -271,6 +274,58 @@ def test_wrong_or_incomplete_active_challenge_never_produces_match_frames(monkey
     assert result.best_frame is None and result.candidate_frames == ()
 
 
+def _rotated_mp4(path, angle: int) -> None:
+    """가로 640x480 MP4를 쓰고 tkhd 표시 행렬만 바꿔 휴대폰처럼 회전 정보를 붙인다."""
+    writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), 15, (640, 480))
+    for index in range(10):
+        writer.write(np.full((480, 640, 3), index * 20, dtype=np.uint8))
+    writer.release()
+    data = bytearray(path.read_bytes())
+    one = 0x00010000
+    matrix = {90: (0, one, 0, -one & 0xFFFFFFFF, 0, 0, 0, 0, 0x40000000)}[angle]
+    tkhd = data.find(b"tkhd") - 4
+    version = data[tkhd + 8]
+    offset = tkhd + 8 + 4 + (32 if version == 1 else 20) + 16
+    data[offset : offset + 36] = struct.pack(">9I", *matrix)
+    path.write_bytes(bytes(data))
+
+
+def test_phone_portrait_video_with_rotation_metadata_is_read_upright(tmp_path):
+    # 휴대폰은 세로 영상을 가로 그림 + 회전 정보로 저장하기도 한다. 돌리지 않으면 얼굴이 누워 기울기로 탈락한다.
+    path = tmp_path / "portrait.mp4"
+    _rotated_mp4(path, 90)
+    capture = _open_video(str(path))
+    try:
+        ok, frame = capture.read()
+        assert capture.get(cv2.CAP_PROP_ORIENTATION_META) == 90
+    finally:
+        capture.release()
+    assert ok and frame.shape[:2] == (640, 480)
+
+
+@pytest.mark.parametrize(
+    ("changes", "code"),
+    [
+        ({"face_in_frame": False}, "pi"),
+        ({"width_ratio": 0.03}, "pc"),
+        ({"width_ratio": 0.90, "height_ratio": 0.90}, "pb"),
+        ({"center_x": 0.05}, "pm"),
+        ({"pitch": 30}, "pa"),
+        ({"roll": 90}, "pr"),
+    ],
+)
+def test_position_blocker_names_the_reason(changes, code):
+    assert frame_blocker(centered_face(**changes), True) == code
+
+
+def test_failure_log_records_rotation_and_frame_size(monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
+    evaluate(monkeypatch, off_center=True)
+    message = caplog.records[-1].getMessage()
+    assert "rotation=0 frame=80x80" in message
+    assert "stage_trace=frontal:pm" in message
+
+
 def test_liveness_failure_logs_failed_condition_counts(monkeypatch, caplog):
     caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
     result = evaluate(monkeypatch, multi_face=True)
@@ -342,6 +397,53 @@ def test_initial_identity_mismatch_is_rejected(monkeypatch, score):
     live = evaluate(monkeypatch)
     service = FaceVerificationService(
         SimpleNamespace(threshold=0.42, compare=lambda *args: (False, score)),
+        SimpleNamespace(verify=lambda *args: []),
+        SimpleNamespace(evaluate=lambda *args: live),
+    )
+    response = service.complete("token", b"photo", b"video", "video/webm")
+    assert response.decision == VerificationDecision.NOT_VERIFIED
+    assert response.reason_codes == [ReasonCode.FACE_MISMATCH]
+
+
+def _marked_photo() -> np.ndarray:
+    """왼쪽 위에만 표시가 있어 좌우 반전 여부를 알 수 있는 대표 사진."""
+    photo = np.zeros((80, 80, 3), dtype=np.uint8)
+    photo[0, 0] = 255
+    return photo
+
+
+@pytest.mark.parametrize(
+    ("mirrored_matches", "aggregation"), [(True, "median_initial_frontal_mirrored"), (False, "median_initial_frontal")]
+)
+def test_selfie_saved_mirrored_is_compared_in_both_orientations(monkeypatch, caplog, mirrored_matches, aggregation):
+    # 아이폰은 셀카를 거울 방향으로 저장한다. 원본·반전 중 유사도 중앙값이 높은 방향으로 판정한다.
+    caplog.set_level("INFO", logger="app.features.face_verification.service")
+    monkeypatch.setattr("app.features.face_verification.service.decode_image", lambda _: _marked_photo())
+    live = evaluate(monkeypatch)
+
+    def compare(reference, _frame):
+        flipped = reference[0, -1, 0] == 255
+        return (True, 0.9) if flipped == mirrored_matches else (False, 0.1)
+
+    service = FaceVerificationService(
+        SimpleNamespace(threshold=0.42, compare=compare),
+        SimpleNamespace(verify=lambda *args: []),
+        SimpleNamespace(evaluate=lambda *args: live),
+    )
+    response = service.complete("token", b"photo", b"video", "video/webm")
+    assert response.decision == VerificationDecision.VERIFIED
+    assert response.similarity == 0.9
+    assert response.match.aggregation == aggregation
+    message = caplog.records[-1].getMessage()
+    assert "face match decision=VERIFIED" in message
+    assert f"orientation={'mirrored' if mirrored_matches else 'original'}" in message
+
+
+def test_mismatch_in_both_orientations_is_still_rejected(monkeypatch):
+    monkeypatch.setattr("app.features.face_verification.service.decode_image", lambda _: _marked_photo())
+    live = evaluate(monkeypatch)
+    service = FaceVerificationService(
+        SimpleNamespace(threshold=0.42, compare=lambda *args: (False, 0.2)),
         SimpleNamespace(verify=lambda *args: []),
         SimpleNamespace(evaluate=lambda *args: live),
     )
@@ -571,7 +673,8 @@ def test_two_failed_identity_candidates_still_require_retry(monkeypatch):
     from app.features.face_verification.matcher import FaceNotFound
 
     live = evaluate(monkeypatch, adaptive=True)
-    remaining = iter([False, False, True])
+    # 원본·반전 대표 사진 모두 후보 3장 중 2장의 특징을 못 뽑는다.
+    remaining = iter([False, False, True] * 2)
     monkeypatch.setattr("app.features.face_verification.service.decode_image", lambda _: np.zeros((80, 80, 3)))
 
     def compare(*args):
