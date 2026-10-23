@@ -130,6 +130,15 @@ def evaluate(
             self.index += 1
             return True, frame
 
+        def grab(self):
+            if self.index >= 160:
+                return False
+            self.index += 1
+            return True
+
+        def retrieve(self):
+            return True, np.full((80, 80, 3), self.index - 1, dtype=np.uint8)
+
         def release(self):
             pass
 
@@ -376,7 +385,7 @@ def test_active_liveness_skips_unsampled_frames_with_grab_and_downscales_hd_fram
     )
     points = make_hand("01100")
     points[:, 1] = 720 - points[:, 1]
-    stats = {"grab": 0, "read": 0, "observed_shapes": []}
+    stats = {"grab": 0, "read": 0, "retrieve": 0, "observed_shapes": []}
 
     class GrabCapture:
         def __init__(self, _path):
@@ -407,6 +416,10 @@ def test_active_liveness_skips_unsampled_frames_with_grab_and_downscales_hd_fram
             self.index += 1
             return True, frame
 
+        def retrieve(self):
+            stats["retrieve"] += 1
+            return True, np.full((1080, 1920, 3), self.index - 1, dtype=np.uint8)
+
         def release(self):
             pass
 
@@ -424,9 +437,64 @@ def test_active_liveness_skips_unsampled_frames_with_grab_and_downscales_hd_fram
 
     assert evaluation.result.passed
     # 헤더 없는 영상도 한 번만 순회하며 분석 프레임만 읽는다.
-    assert stats["read"] <= 48
+    assert stats["read"] + stats["retrieve"] <= 48
     assert stats["grab"] + stats["read"] == 96
     assert all(max(shape) == 720 for shape in stats["observed_shapes"])
+
+
+@pytest.mark.parametrize("reported_fps", [29.75, 1000.0])
+def test_webm_without_frame_count_is_sampled_by_presentation_time(monkeypatch, reported_fps):
+    # Chrome MediaRecorder WebM은 프레임 수 헤더가 없고 OpenCV fps가 실제 15fps와 다르게 읽힌다(29.75·1000).
+    target = next(
+        item
+        for item in CHALLENGE_TARGETS
+        if item.gesture == "TWO" and item.direction == "DOWN" and item.head == "LOOK_UP"
+    )
+    points = make_hand("01100")
+    points[:, 1] = 720 - points[:, 1]
+
+    class WebmCapture:
+        def __init__(self, _path):
+            self.index = 0
+
+        def get(self, prop):
+            if prop == cv2.CAP_PROP_FPS:
+                return reported_fps
+            if prop == cv2.CAP_PROP_FRAME_COUNT:
+                return -9.223372036854776e18
+            return max(self.index - 1, 0) * 1000.0 / 15  # 마지막으로 꺼낸 프레임의 표시 시각
+
+        def isOpened(self):
+            return self.index < 150
+
+        def grab(self):
+            if self.index >= 150:
+                return False
+            self.index += 1
+            return True
+
+        def retrieve(self):
+            return True, np.full((80, 80, 3), self.index - 1, dtype=np.uint8)
+
+        def read(self):
+            return self.retrieve() if self.grab() else (False, None)
+
+        def release(self):
+            pass
+
+    def detect(_frame):
+        return [SimpleNamespace(image_points=points, box=np.array([62, 5, 79, 60]))]
+
+    monkeypatch.setattr("app.features.face_verification.active_liveness.cv2.VideoCapture", WebmCapture)
+    result = (
+        ActiveLivenessAnalyzer(SimpleNamespace(observe=lambda _: centered_face()), SimpleNamespace(detect=detect))
+        .evaluate(b"video", ".webm", encode_target(target)[:3])
+        .result
+    )
+
+    assert result.passed, result.reason_codes
+    # 10초 영상을 0.38초 간격으로 고르게 본다.
+    assert result.sampled_frames >= 24
 
 
 def test_initial_preparation_does_not_fail_an_otherwise_valid_sequence(monkeypatch):

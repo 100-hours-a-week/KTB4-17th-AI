@@ -124,28 +124,41 @@ class ActiveLivenessAnalyzer:
                     set(np.linspace(0, reported - 1, min(MAX_ACTIVE_FRAMES, reported), dtype=int)) if reported else None
                 )
                 index = 0
+                media_clock, last_media_ms = True, -np.inf
                 while not invalid_video and capture.isOpened():
                     if index >= MAX_DECODED_FRAMES:
                         invalid_video = True
                         break
                     source_index = index
-                    sample_time = source_index / source_fps if source_fps else capture.get(cv2.CAP_PROP_POS_MSEC) / 1000
-                    if (indices is not None and source_index not in indices) or (
-                        indices is None and sample_time + 1e-9 < next_sample_time
-                    ):
-                        if not _skip_frame(capture):
+                    if indices is not None:
+                        if source_index not in indices:
+                            if not _skip_frame(capture):
+                                break
+                            index += 1
+                            continue
+                        ok, frame = capture.read()
+                    else:
+                        # 헤더 없는 WebM은 OpenCV fps가 실제와 다르게 읽혀(15fps를 29.75·1000 등) 프레임 번호로
+                        # 시간을 재면 샘플 간격이 벌어지거나 한 장만 남는다. 프레임을 꺼내 표시 시각으로 잰다.
+                        if not capture.grab():
                             break
-                        index += 1
-                        continue
-                    ok, frame = capture.read()
+                        media_ms = capture.get(cv2.CAP_PROP_POS_MSEC)
+                        media_clock = media_clock and np.isfinite(media_ms) and media_ms > last_media_ms
+                        last_media_ms = media_ms
+                        sample_time = media_ms / 1000 if media_clock or not source_fps else source_index / source_fps
+                        if sample_time + 1e-9 < next_sample_time:
+                            index += 1
+                            continue
+                        ok, frame = capture.retrieve()
                     if not ok:
                         break
                     index += 1
-                    if indices is None and (len(faces) >= MAX_ACTIVE_FRAMES or sample_time > MAX_VIDEO_SECONDS):
-                        # 헤더 없이 앞부분만 잘라 인증하지 않는다.
-                        invalid_video = True
-                        break
-                    next_sample_time = sample_time + MAX_VIDEO_SECONDS / (MAX_ACTIVE_FRAMES - 1)
+                    if indices is None:
+                        if len(faces) >= MAX_ACTIVE_FRAMES or sample_time > MAX_VIDEO_SECONDS:
+                            # 헤더 없이 앞부분만 잘라 인증하지 않는다.
+                            invalid_video = True
+                            break
+                        next_sample_time = sample_time + MAX_VIDEO_SECONDS / (MAX_ACTIVE_FRAMES - 1)
                     frame = _downscale_frame(frame)
                     face = self.face_analyzer.observe(frame)
                     hands = self.hand_analyzer.detect(frame)
@@ -188,7 +201,7 @@ class ActiveLivenessAnalyzer:
                     )
                     if not frontal_captured:
                         current = find_hold(clear_frontal, current_times, REQUIRED_HOLD_SECONDS)
-                        if current.seconds >= REQUIRED_HOLD_SECONDS:
+                        if current.reaches(REQUIRED_HOLD_SECONDS):
                             candidates = [item for item in candidates if item[1] in current.indices]
                             frontal_captured = True
                 if reported and abs(index - reported) > 1:
@@ -228,7 +241,7 @@ class ActiveLivenessAnalyzer:
                 record.timestamp_ms = round(timestamp)
         # v2/v3는 요구 동작만 다르다. 모두 정면 → 손 → 선택 고개를 각각 3초 검증한다.
         frontal_window = find_hold(clear_frontal, times, REQUIRED_HOLD_SECONDS)
-        centered = frontal_window.seconds >= REQUIRED_HOLD_SECONDS
+        centered = frontal_window.reaches(REQUIRED_HOLD_SECONDS)
         pose_matches = [
             clear and any(matches_gesture(reading, target.gesture, target.direction) for reading in frame)
             for clear, frame in zip(clear_frontal, readings, strict=True)
@@ -239,7 +252,7 @@ class ActiveLivenessAnalyzer:
             REQUIRED_HOLD_SECONDS,
             start=frontal_window.indices[-1] + 1 if centered else len(faces),
         )
-        pose_passed = pose_window.seconds >= REQUIRED_HOLD_SECONDS
+        pose_passed = pose_window.reaches(REQUIRED_HOLD_SECONDS)
         # 실패 로그용 프레임별 탈락 사유. 정면을 못 채웠으면 정면 단계, 아니면 손 포즈 단계를 남긴다.
         stage_start = frontal_window.indices[-1] + 1 if centered else 0
         stage_trace = ("pose:" if centered else "frontal:") + ",".join(
@@ -279,7 +292,7 @@ class ActiveLivenessAnalyzer:
         if centered and not pose_passed:
             after = frontal_window.indices[-1] + 1
             face_window = find_hold(clear_frontal, times, REQUIRED_HOLD_SECONDS, start=after)
-            if face_window.seconds < REQUIRED_HOLD_SECONDS:
+            if not face_window.reaches(REQUIRED_HOLD_SECONDS):
                 reasons.append(ReasonCode.FACE_NOT_CENTERED)
             else:
                 reasons.append(
@@ -287,7 +300,7 @@ class ActiveLivenessAnalyzer:
                     if sum(bool(frame) for frame in readings[after:]) < 2
                     else ReasonCode.HAND_GESTURE_MISMATCH
                 )
-        if target.head and (head_window is None or head_window.seconds < REQUIRED_HOLD_SECONDS):
+        if target.head and (head_window is None or not head_window.reaches(REQUIRED_HOLD_SECONDS)):
             reasons.append(ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED)
         initial = [item for item in candidates if item[1] in frontal_window.indices]
         if len(initial) < 2:
@@ -343,7 +356,7 @@ class ActiveLivenessAnalyzer:
                 matched_hand_frames=hold.matched_frames,
                 expected_hand_direction=target.direction,
                 head_peak_delta_deg=head_peak,
-                head_returned=(head_window is not None and head_window.seconds >= REQUIRED_HOLD_SECONDS)
+                head_returned=(head_window is not None and head_window.reaches(REQUIRED_HOLD_SECONDS))
                 if target.head
                 else None,
                 head_hold_seconds=round(head_window.seconds, 3) if head_window else None,
