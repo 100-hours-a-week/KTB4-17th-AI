@@ -88,6 +88,7 @@ def evaluate(
     no_metadata=False,
     oversized=False,
     overlap=False,
+    pose_overlap=None,
     underreported=False,
     overreported=False,
     unstable_center=False,
@@ -172,6 +173,8 @@ def evaluate(
         if interrupted_pose and 50 <= int(frame[0, 0, 0]) < 135:
             return []
         box = np.array([25, 20, 55, 60]) if overlap else np.array([62, 5, 79, 60])
+        if pose_overlap is not None and int(frame[0, 0, 0]) >= 40:
+            box = np.array(pose_overlap)
         return [SimpleNamespace(image_points=points, box=box)]
 
     monkeypatch.setattr("app.features.face_verification.active_liveness.cv2.VideoCapture", Capture)
@@ -491,6 +494,17 @@ def test_webm_without_frame_count_is_sampled_by_presentation_time(monkeypatch, r
     assert result.passed, result.reason_codes
     # 실제 150장을 세어 10초 영상 전체에서 48장을 고르게 본다.
     assert result.sampled_frames == 48
+
+
+def test_hand_beside_face_on_phone_may_overlap_cheek_during_pose_and_head(monkeypatch):
+    # 얼굴 박스(80px 기준 x 28~52) 가장자리를 24% 덮지만 눈·코·입이 있는 가운데는 거의 덮지 않는 손.
+    result = evaluate(monkeypatch, pose_overlap=[46, 20, 66, 58]).result
+    assert result.passed, result.reason_codes
+
+
+def test_hand_covering_face_center_during_pose_still_fails(monkeypatch):
+    result = evaluate(monkeypatch, pose_overlap=[30, 25, 50, 55]).result
+    assert not result.passed
 
 
 @pytest.mark.parametrize("header", ["underreported", "overreported"])

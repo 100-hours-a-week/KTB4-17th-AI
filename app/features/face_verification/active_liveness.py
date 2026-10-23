@@ -27,6 +27,10 @@ MIN_ACTIVE_FRAMES = 12
 MAX_VIDEO_SECONDS = 18.0
 MAX_DECODED_FRAMES = 2160
 MAX_FRAME_EDGE_PX = 720
+# 손·고개 단계에서는 얼굴 가운데(눈·코·입) 영역만 가림으로 본다. 휴대폰은 얼굴이 화면을 크게 차지해
+# 손을 얼굴 옆에 두면 손 박스가 얼굴 박스 가장자리(뺨)와 겹치기 쉽다.
+FACE_CENTER_WIDTH_RATIO = 0.6
+FACE_CENTER_HEIGHT_RATIO = 0.7
 
 
 def _skip_frame(capture) -> bool:
@@ -103,14 +107,17 @@ def frame_blocker(face, uncovered: bool, readings=None, target=None) -> str:
     return "g" + readings[0].label
 
 
-def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int]) -> bool:
+def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int], *, center_only: bool = False) -> bool:
+    """손 박스가 얼굴 박스를 20%보다 많이 덮는가. center_only면 얼굴 가운데 영역만 본다."""
     if face.center_x is None or face.center_y is None or face.width_ratio is None or face.height_ratio is None:
         return True
     height, width = shape
-    x1 = (face.center_x - face.width_ratio / 2) * width
-    x2 = (face.center_x + face.width_ratio / 2) * width
-    y1 = (face.center_y - face.height_ratio / 2) * height
-    y2 = (face.center_y + face.height_ratio / 2) * height
+    face_width = face.width_ratio * (FACE_CENTER_WIDTH_RATIO if center_only else 1)
+    face_height = face.height_ratio * (FACE_CENTER_HEIGHT_RATIO if center_only else 1)
+    x1 = (face.center_x - face_width / 2) * width
+    x2 = (face.center_x + face_width / 2) * width
+    y1 = (face.center_y - face_height / 2) * height
+    y2 = (face.center_y + face_height / 2) * height
     hx1, hy1, hx2, hy2 = hand.box
     intersection = max(0, min(x2, hx2) - max(x1, hx1)) * max(0, min(y2, hy2) - max(y1, hy1))
     return intersection > max((x2 - x1) * (y2 - y1), 1) * 0.20
@@ -125,6 +132,8 @@ class ActiveLivenessAnalyzer:
         target = decode_target(challenges)
         faces, readings, records, candidates = [], [], [], []
         fingerprints, clear_frontal, presentation_times, uncovered = [], [], [], []
+        # 손·고개 단계용. 동일인 비교 사진을 고르는 정면 단계는 얼굴 박스 전체 기준(clear_frontal)을 유지한다.
+        center_uncovered, clear_pose = [], []
         invalid_video = False
         source_fps, reported = 0.0, 0
         frontal_captured = False
@@ -183,6 +192,10 @@ class ActiveLivenessAnalyzer:
                     uncovered.append(not any(hand_overlaps_face(hand, face, frame.shape[:2]) for hand in hands))
                     unobscured = frontal and uncovered[-1]
                     clear_frontal.append(unobscured and centering_hint(face) is None)
+                    center_uncovered.append(
+                        not any(hand_overlaps_face(hand, face, frame.shape[:2], center_only=True) for hand in hands)
+                    )
+                    clear_pose.append(frontal and center_uncovered[-1] and centering_hint(face) is None)
                     # 정면 구간 확보 전에는 최근 후보 세 장만 보관한다. 이후 픽셀 복사를 멈춘다.
                     if not frontal_captured and clear_frontal[-1]:
                         if len(candidates) == 3:
@@ -241,7 +254,7 @@ class ActiveLivenessAnalyzer:
         centered = frontal_window.reaches(REQUIRED_HOLD_SECONDS)
         pose_matches = [
             clear and any(matches_gesture(reading, target.gesture, target.direction) for reading in frame)
-            for clear, frame in zip(clear_frontal, readings, strict=True)
+            for clear, frame in zip(clear_pose, readings, strict=True)
         ]
         pose_window = find_hold(
             pose_matches,
@@ -255,7 +268,10 @@ class ActiveLivenessAnalyzer:
         stage_trace = ("pose:" if centered else "frontal:") + ",".join(
             frame_blocker(face, clear, frame, target if centered else None)
             for face, clear, frame in zip(
-                faces[stage_start:], uncovered[stage_start:], readings[stage_start:], strict=True
+                faces[stage_start:],
+                (center_uncovered if centered else uncovered)[stage_start:],
+                readings[stage_start:],
+                strict=True,
             )
         )
         baseline = None
@@ -271,7 +287,7 @@ class ActiveLivenessAnalyzer:
                 movement_delta(pose_from(face), baseline, target.head) if pose_from(face) else 0 for face in faces
             ]
             head_peak = max(deltas, default=0)
-            blockers = [head_blocker(*frame) for frame in zip(faces, deltas, uncovered, strict=True)]
+            blockers = [head_blocker(*frame) for frame in zip(faces, deltas, center_uncovered, strict=True)]
             head_start = pose_window.indices[-1] + 1 if pose_passed else len(faces)
             head_window = find_hold(
                 [blocker is None for blocker in blockers],
@@ -288,7 +304,7 @@ class ActiveLivenessAnalyzer:
             reasons.append(ReasonCode.FACE_NOT_CENTERED)
         if centered and not pose_passed:
             after = frontal_window.indices[-1] + 1
-            face_window = find_hold(clear_frontal, times, REQUIRED_HOLD_SECONDS, start=after)
+            face_window = find_hold(clear_pose, times, REQUIRED_HOLD_SECONDS, start=after)
             if not face_window.reaches(REQUIRED_HOLD_SECONDS):
                 reasons.append(ReasonCode.FACE_NOT_CENTERED)
             else:
