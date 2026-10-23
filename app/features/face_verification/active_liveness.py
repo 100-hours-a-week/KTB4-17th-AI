@@ -46,6 +46,44 @@ def _downscale_frame(frame: np.ndarray) -> np.ndarray:
     return cv2.resize(frame, size, interpolation=cv2.INTER_AREA)
 
 
+def head_blocker(face, delta: float, clear: bool) -> str | None:
+    """고개 단계 프레임이 통과하지 못한 이유. 통과하면 None.
+
+    n: 자세 측정 실패, p: 얼굴 위치·크기, a: 좌우·기울기 각도, c: 손 가림, d: 고개 움직임 부족
+    """
+    if pose_from(face) is None:
+        return "n"
+    if not face.face_in_frame or centering_hint(replace(face, yaw=0, pitch=0, roll=0)) is not None:
+        return "p"
+    if abs(face.yaw) > 35 or abs(face.roll) > 30:
+        return "a"
+    if not clear:
+        return "c"
+    if delta < HEAD_TURN_MIN_DELTA_DEG:
+        return "d"
+    return None
+
+
+def frame_blocker(face, uncovered: bool, readings=None, target=None) -> str:
+    """정면·손 포즈 단계 프레임이 통과하지 못한 이유. 통과하면 "ok".
+
+    n: 자세 측정 실패, p: 얼굴 위치·크기·각도, c: 손 가림, h: 손 미검출, g<읽은 손>: 손 모양·방향 불일치
+    """
+    if pose_from(face) is None:
+        return "n"
+    if centering_hint(face) is not None:
+        return "p"
+    if not uncovered:
+        return "c"
+    if target is None:
+        return "ok"
+    if not readings:
+        return "h"
+    if any(matches_gesture(reading, target.gesture, target.direction) for reading in readings):
+        return "ok"
+    return "g" + readings[0].label
+
+
 def hand_overlaps_face(hand: HandLandmarks, face, shape: tuple[int, int]) -> bool:
     if face.center_x is None or face.center_y is None or face.width_ratio is None or face.height_ratio is None:
         return True
@@ -202,8 +240,17 @@ class ActiveLivenessAnalyzer:
             start=frontal_window.indices[-1] + 1 if centered else len(faces),
         )
         pose_passed = pose_window.seconds >= REQUIRED_HOLD_SECONDS
+        # 실패 로그용 프레임별 탈락 사유. 정면을 못 채웠으면 정면 단계, 아니면 손 포즈 단계를 남긴다.
+        stage_start = frontal_window.indices[-1] + 1 if centered else 0
+        stage_trace = ("pose:" if centered else "frontal:") + ",".join(
+            frame_blocker(face, clear, frame, target if centered else None)
+            for face, clear, frame in zip(
+                faces[stage_start:], uncovered[stage_start:], readings[stage_start:], strict=True
+            )
+        )
         baseline = None
         head_peak = None
+        head_trace = "-"
         if centered:
             baseline = HeadPose(
                 yaw=float(np.median([faces[index].yaw for index in frontal_window.indices])),
@@ -214,21 +261,18 @@ class ActiveLivenessAnalyzer:
                 movement_delta(pose_from(face), baseline, target.head) if pose_from(face) else 0 for face in faces
             ]
             head_peak = max(deltas, default=0)
-            head_matches = [
-                pose_from(face) is not None
-                and face.face_in_frame
-                and centering_hint(replace(face, yaw=0, pitch=0, roll=0)) is None
-                and abs(face.yaw) <= 35
-                and abs(face.roll) <= 30
-                and clear
-                and delta >= HEAD_TURN_MIN_DELTA_DEG
-                for face, delta, clear in zip(faces, deltas, uncovered, strict=True)
-            ]
+            blockers = [head_blocker(*frame) for frame in zip(faces, deltas, uncovered, strict=True)]
+            head_start = pose_window.indices[-1] + 1 if pose_passed else len(faces)
             head_window = find_hold(
-                head_matches,
+                [blocker is None for blocker in blockers],
                 times,
                 REQUIRED_HOLD_SECONDS,
-                start=pose_window.indices[-1] + 1 if pose_passed else len(faces),
+                start=head_start,
+            )
+            # 고개 단계 프레임별 기준 대비 변화량. 앞 글자는 통과하지 못한 이유다.
+            head_trace = f"base={baseline.pitch:.1f}:" + ",".join(
+                f"{blocker or ''}{delta:.0f}"
+                for blocker, delta in zip(blockers[head_start:], deltas[head_start:], strict=True)
             )
         if not centered:
             reasons.append(ReasonCode.FACE_NOT_CENTERED)
@@ -254,7 +298,7 @@ class ActiveLivenessAnalyzer:
             logger.warning(
                 "liveness failed reasons=%s invalid_video=%s reported_frames=%d decoded_frames=%d source_fps=%.2f "
                 "sampled=%d valid_pose=%d multi_face_frames=%d no_face_frames=%d frontal_hold=%.2f pose_hold=%.2f "
-                "head_hold=%s",
+                "head_hold=%s stage_trace=%s head_trace=%s",
                 ",".join(reason.value for reason in reasons),
                 invalid_video,
                 reported,
@@ -267,6 +311,8 @@ class ActiveLivenessAnalyzer:
                 frontal_window.seconds,
                 pose_window.seconds,
                 f"{head_window.seconds:.2f}" if head_window else "-",
+                stage_trace,
+                head_trace,
             )
         selected = initial if passed else []
         for rank, (_, sample, _) in enumerate(selected, 1):

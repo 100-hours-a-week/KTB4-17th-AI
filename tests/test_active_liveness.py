@@ -95,6 +95,7 @@ def evaluate(
     neutral_roll=0,
     leading_unready=False,
     brief_turn=False,
+    turn_pitch=-20,
 ):
     target = next(
         item
@@ -134,7 +135,7 @@ def evaluate(
         if missing_middle and 12 <= index < 23:
             return centered_face(face_count=0)
         pitch = (
-            -20
+            turn_pitch
             if not adaptive
             and not no_turn
             and not missing_middle
@@ -260,6 +261,31 @@ def test_liveness_failure_logs_failed_condition_counts(monkeypatch, caplog):
     message = caplog.records[-1].getMessage()
     assert "reasons=LIVENESS_FAILED" in message and "multi_face_frames=" in message
     assert "multi_face_frames=0 " not in message
+
+
+def test_head_stage_requires_same_angle_as_browser(monkeypatch):
+    # 서버도 브라우저와 같은 12°를 요구한다.
+    assert evaluate(monkeypatch, turn_pitch=-12.5).result.passed
+    failed = evaluate(monkeypatch, turn_pitch=-10.5)
+    assert ReasonCode.HEAD_MOVEMENT_NOT_COMPLETED in failed.result.reason_codes
+
+
+def test_head_failure_log_traces_each_head_frame(monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
+    evaluate(monkeypatch, turn_pitch=-9)
+    message = caplog.records[-1].getMessage()
+    assert "head_trace=base=0.0:" in message
+    assert "d9" in message
+
+
+def test_pose_failure_log_traces_each_pose_frame(monkeypatch, caplog):
+    caplog.set_level("WARNING", logger="app.features.face_verification.active_liveness")
+    evaluate(monkeypatch, wrong_hand=True)
+    message = caplog.records[-1].getMessage()
+    assert "stage_trace=pose:" in message
+    assert "gONE" in message
+    evaluate(monkeypatch, overlap=True)
+    assert "stage_trace=frontal:c" in caplog.records[-1].getMessage()
 
 
 def test_identity_uses_initial_frontal_frames_not_return_frames(monkeypatch):
