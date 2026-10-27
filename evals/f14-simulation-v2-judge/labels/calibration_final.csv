@@ -1,0 +1,13 @@
+﻿case_id,F-01,F-02,F-03,F-04,F-05,F-06,출처
+14-v2-006-judge1,FAIL,FAIL,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+14-v2-107-judge2,FAIL,NA,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+14-v2-104-judge2,PASS,NA,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+14-v2-113-judge1,PASS,NA,PASS,PASS,PASS,NA,Claude+Codex·Grok 일치
+14-v2-100-judge1,PASS,PASS,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+14-v2-004-judge2,PASS,NA,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+14-v2-114-judge1,PASS,NA,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+14-v2-020-judge1,PASS,FAIL,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+14-v2-003-judge1,PASS,NA,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+14-v2-109-judge1,PASS,FAIL,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+g14-n09,FAIL,NA,PASS,NA,PASS,NA,Claude+Codex·Grok 일치
+g14-n10,PASS,NA,PASS,NA,PASS,PASS,Claude+Codex·Grok 일치

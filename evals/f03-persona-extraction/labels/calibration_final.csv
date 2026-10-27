@@ -1,0 +1,13 @@
+﻿case_id,F-01,F-02,F-03,F-04,F-05,F-06,F-07,출처
+03-ob-01,PASS,FAIL,PASS,PASS,PASS,PASS,PASS,Codex·Grok 일치+사용자+사용자 규칙
+03-ob-04,PASS,FAIL,PASS,PASS,PASS,PASS,NA,Claude+Codex·Grok 일치+사용자 규칙
+03-ob-05,PASS,FAIL,FAIL,PASS,PASS,FAIL,NA,Claude+Codex·Grok 일치+사용자 규칙
+03-ob-06,PASS,FAIL,PASS,PASS,PASS,FAIL,PASS,Codex·Grok 일치+사용자 규칙
+03-ob-07,PASS,FAIL,FAIL,PASS,FAIL,PASS,NA,Claude+Codex·Grok 일치+사용자 규칙
+03-ob-08,PASS,FAIL,FAIL,PASS,PASS,FAIL,NA,Claude+Codex·Grok 일치+사용자 규칙
+03-ob-09,PASS,FAIL,PASS,PASS,PASS,FAIL,NA,Claude+Codex·Grok 일치+사용자 규칙
+03-ob-16,PASS,FAIL,PASS,PASS,PASS,PASS,NA,Claude+Codex·Grok 일치+사용자 규칙
+03-ob-17,PASS,FAIL,PASS,PASS,PASS,FAIL,NA,Claude+Codex·Grok 일치+사용자 규칙
+03-ob-18,PASS,FAIL,FAIL,PASS,PASS,FAIL,NA,Claude+Codex·Grok 일치+사용자 규칙
+03-ob-26,PASS,FAIL,PASS,PASS,FAIL,FAIL,NA,Claude+Codex·Grok 일치+사용자+사용자 규칙
+g03-n10,PASS,PASS,PASS,PASS,PASS,FAIL,NA,Claude+Codex·Grok 일치+사용자 규칙
