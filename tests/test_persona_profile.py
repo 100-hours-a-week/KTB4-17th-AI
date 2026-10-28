@@ -51,8 +51,8 @@ def test_describe_includes_conversation_style_block():
         persona_id="p1",
         scores={},
         conversation_style=ConversationStyle(
-            speech_level="반말",
             frequent_phrases=["오 대박", "아 그니까"],
+            endings=["~해"],
             laughter="ㅋㅋ를 자주",
             summary="리액션 큰 편",
         ),
@@ -61,7 +61,8 @@ def test_describe_includes_conversation_style_block():
     text = describe("민수", p)
 
     assert "대화 스타일" in text
-    assert '"오 대박"' in text and "반말" in text and "ㅋㅋ를 자주" in text and "리액션 큰 편" in text
+    assert '"오 대박"' in text and '"~해"' in text and "ㅋㅋ를 자주" in text and "리액션 큰 편" in text
+    assert "- 말투:" not in text
 
 
 def test_describe_without_style_has_no_style_block():

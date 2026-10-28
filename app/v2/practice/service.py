@@ -1,8 +1,8 @@
-"""v2 연습대화 서비스 — v1 PracticeService 를 복제하고 메모리·말 놓기 흐름을 합쳤다.
+"""v2 연습대화 서비스 — v1 PracticeService 를 복제하고 메모리 흐름을 합쳤다.
 
   start(req)               상대(저장된 페르소나) 고르고 세션을 연다. LLM 없음
   stream_opening(session)  상대가 먼저 인사 (SSE)
-  stream_reply(session, m) 말 놓기 답 판정 → 내 메시지 저장 → 상대 답변 스트리밍 → 답변 저장 (SSE)
+  stream_reply(session, m) 내 메시지 저장 → 상대 답변 스트리밍 → 답변 저장 (SSE)
   stream_retry(session)    답을 못 받은 내 마지막 메시지에 답변만 다시
 
 v1 코드를 고쳐도 v2 동작이 같이 바뀌지 않도록 v1 서비스·프롬프트를 쓰지 않는다.
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
@@ -42,7 +41,6 @@ from app.features.practice.schemas import (
     StartEvent,
 )
 from app.v2.persona.embedder import EmbedderProtocol, get_embedder
-from app.v2.persona.repository import PersonaMemoryRepository
 
 from .agents import (
     FALLBACK_REPLY,
@@ -52,17 +50,6 @@ from .agents import (
     without_identity_confession,
 )
 from .memory import MemoryContext, grounding_texts, load_memory_context, render_memory_section
-from .models import V2PracticeSpeechState
-from .speech import (
-    ASK_AFTER_TURNS,
-    MODE_ASKED,
-    MODE_CASUAL,
-    MODE_DECLINED,
-    MODE_FORMAL,
-    asks_permission,
-    classify_permission,
-    speech_addon,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -107,7 +94,6 @@ class V2PracticeService:
         self.agent = PartnerAgent()
         self.embedder = embedder or get_embedder()  # 모델은 첫 호출 때 로드된다
         self._memory = MemoryContext()  # _system 이 채우고 _guardrail_context 가 읽는다 (요청마다 새 인스턴스)
-        self._ask_pending = False  # 이번 답변에서 말 놓기를 제안하도록 지시했는지 — 저장 때 asked 로 넘길지 정한다
 
     # PersonaRef 로 저장된 페르소나를 불러온다. 없으면 PersonaNotFound
     async def _load(self, who: str, ref: PersonaRef) -> LoadedPersona:
@@ -201,7 +187,7 @@ class V2PracticeService:
 
     # ── 프롬프트 ──────────────────────────────────────────
 
-    # 상대(+나) 프로필 → 기본 시스템 프롬프트, 그 뒤에 가드레일·메모리·말투 지시를 붙인다
+    # 상대(+나) 프로필 → 기본 시스템 프롬프트, 그 뒤에 가드레일·메모리 지시를 붙인다
     async def _system(self, session: PracticeSession) -> str:
         self._memory = await self._load_memory(session)  # _guardrail_context 가 읽으므로 먼저 채운다
         partner = await self._load("partner", PersonaRef(persona_id=session.partner_persona_id))
@@ -231,7 +217,7 @@ class V2PracticeService:
             )
         if not self._memory.is_empty:
             system += "\n" + render_memory_section(session.my_nickname, self._memory)
-        return system + "\n" + await self._speech_section(session)
+        return system
 
     # 가드레일 문맥. 메모리에서 꺼낸 사실도 "사용자가 말한 것"으로 인정해 근거 검사에서 걸리지 않게 한다
     def _guardrail_context(self, session: PracticeSession, partner, me) -> GuardrailContext:
@@ -265,61 +251,10 @@ class V2PracticeService:
             msgs.insert(0, {"role": "user", "content": OPENING_INSTRUCTION})
         return msgs
 
-    # ── 말 놓기 제안 ──────────────────────────────────────
-
-    async def _speech_state(self, session: PracticeSession) -> V2PracticeSpeechState:
-        state = await self.db.get(V2PracticeSpeechState, session.id)
-        if state is None:
-            state = V2PracticeSpeechState(session_id=session.id, mode=MODE_FORMAL)
-            self.db.add(state)
-            await self.db.flush()
-        return state
-
-    async def _user_declined(self, session: PracticeSession) -> bool:
-        if not session.user_id:
-            return False
-        core = await PersonaMemoryRepository(self.db).get_core(session.user_id)
-        return core is not None and core.casual_speech_declined_at is not None
-
-    # 이번 답변에서 말투 고정/허락/제안 중 무엇을 지시할지 정해 프롬프트 조각으로 만든다
-    async def _speech_section(self, session: PracticeSession) -> str:
-        state = await self._speech_state(session)
-        mode = state.mode
-        if mode != MODE_CASUAL and await self._user_declined(session):
-            mode = MODE_DECLINED  # 다른 세션에서 거절한 사용자 — 이 세션에서도 묻지 않는다
-        user_turns = sum(1 for m in session.messages if m.role == "user")
-        self._ask_pending = (
-            mode == MODE_FORMAL
-            and user_turns >= ASK_AFTER_TURNS
-            and bool(session.messages)
-            and session.messages[-1].role == "user"
-        )
-        return speech_addon(me=session.my_nickname, mode=mode, ask_now=self._ask_pending)
-
-    # 제안한 뒤 처음 오는 사용자 답을 판정해 casual/declined 로 확정한다. 거절은 사용자 단위로도 남긴다
-    async def _resolve_pending_question(self, session: PracticeSession, message: str) -> None:
-        state = await self._speech_state(session)
-        if state.mode != MODE_ASKED:
-            return
-        allow = await classify_permission(message)
-        now = datetime.now(UTC)
-        state.mode = MODE_CASUAL if allow else MODE_DECLINED
-        state.answered_at = now
-        if not allow and session.user_id:
-            core = await PersonaMemoryRepository(self.db).get_or_create_core(session.user_id)
-            core.casual_speech_declined_at = now
-        await self.db.flush()  # 내 메시지 저장 커밋과 함께 반영된다
-
     # ── 저장 ──────────────────────────────────────────────
 
     # 메시지를 저장·커밋하되 (session_id, index) 유니크 위반(flush/commit 어느 쪽이든)이면 롤백하고 ConcurrentRequest 로 바꾼다.
-    # 말 놓기를 제안하라고 지시한 답변이 실제로 제안을 담았을 때만 asked 로 넘긴다. 아니면 다음 턴에 다시 시도한다
     async def _save_message(self, session: PracticeSession, role: str, content: str, source: str | None = None) -> None:
-        if role == "persona" and self._ask_pending and source == "llm" and asks_permission(content):
-            state = await self._speech_state(session)
-            state.mode = MODE_ASKED
-            state.asked_at = datetime.now(UTC)
-            self._ask_pending = False
         try:
             await self.repo.add_message(session, role, content, source)
             await self.db.commit()
@@ -339,12 +274,11 @@ class V2PracticeService:
         async for ev in self._respond(session, opening=True):
             yield ev
 
-    # 말 놓기 답을 먼저 판정하고, 내 메시지를 커밋한 뒤 상대 답변을 스트리밍한다.
+    # 내 메시지를 커밋한 뒤 상대 답변을 스트리밍한다.
     # 답변이 도중에 끊겨도 내 메시지는 남는다 — 새로고침해도 보이고, /retry 로 답변만 다시 받는다
     async def stream_reply(self, session: PracticeSession, message: str) -> AsyncIterator[Event]:
         if session.status != "active":
             raise SessionEnded(session.id)
-        await self._resolve_pending_question(session, message)
         await self._save_message(session, "user", message)
         async for ev in self._respond(session, opening=False):
             yield ev
