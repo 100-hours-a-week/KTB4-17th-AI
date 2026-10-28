@@ -59,7 +59,6 @@ STYLE_RUBRIC = f"""\
 # 점수 키(disclosure, positivity, openness, assurances)는 대화에서 명확히 드러나 측정 가능한 항목만 포함하세요. 측정할 수 없는 항목은 키를 아예 넣지 마세요.
 {{
   "style": {{
-    "speech_level": "존댓말 | 반말 | 혼용",
     "frequent_phrases": ["..."],
     "endings": ["~..."],
     "interjections": ["..."],
