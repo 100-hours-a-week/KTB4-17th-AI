@@ -1,0 +1,13 @@
+﻿case_id,F-01,F-02,출처
+02-ob-02-a3,FAIL,PASS,Codex·Grok 일치
+02-ob-03-a0,PASS,PASS,Codex·Grok 일치
+02-ob-08-a1,FAIL,PASS,Codex·Grok 일치+사용자
+02-ob-10-a1,PASS,PASS,Codex·Grok 일치
+02-ob-14-a2,PASS,PASS,Codex·Grok 일치
+02-ob-16-a1,PASS,FAIL,Codex·Grok 일치
+02-ob-17-a2,PASS,PASS,Codex·Grok 일치
+02-ob-22-a1,PASS,FAIL,Codex·Grok 일치
+02-ob-23-a2,FAIL,FAIL,Codex·Grok 일치
+02-ob-25-a1,PASS,FAIL,Codex·Grok 일치
+g02-n09,PASS,PASS,Codex·Grok 일치
+g02-n10,PASS,PASS,Codex·Grok 일치

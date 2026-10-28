@@ -1,0 +1,10 @@
+{"id": "cm-01", "conv_id": "ce-01", "case_type": "대표", "label": "주말 약속 뒤 미지근", "end_type": "GENTLE", "target_after_1": "그럼 친구로라도 지내요", "target_after_2": "ㅋㅋ 그래요 뭐", "source": "synthetic", "splitGroup": "ce-주말 약속 뒤 미지근"}
+{"id": "cm-02", "conv_id": "ce-02", "case_type": "대표", "label": "연락 빈도 차이", "end_type": "DIRECT", "target_after_1": "한 번만 더 기회 주면 안 돼요?", "target_after_2": "이유라도 말해줘요", "source": "synthetic", "splitGroup": "ce-연락 빈도 차이"}
+{"id": "cm-03", "conv_id": "ce-03", "case_type": "대표", "label": "취향 차이", "end_type": "CASUAL", "target_after_1": "한 번만 더 기회 주면 안 돼요?", "target_after_2": "알겠어요 잘 지내요", "source": "synthetic", "splitGroup": "ce-취향 차이"}
+{"id": "cm-04", "conv_id": "ce-04", "case_type": "대표", "label": "첫 만남 후", "end_type": "GENTLE", "target_after_1": "그럼 친구로라도 지내요", "target_after_2": "이유라도 말해줘요", "source": "synthetic", "splitGroup": "ce-첫 만남 후"}
+{"id": "cm-05", "conv_id": "ce-05", "case_type": "대표", "label": "대화 소강", "end_type": "DIRECT", "target_after_1": "아 그렇군요.. 알겠어요", "target_after_2": "정말 마지막으로 한 번만 만나요", "source": "synthetic", "splitGroup": "ce-대화 소강"}
+{"id": "cm-06", "conv_id": "ce-06", "case_type": "대표", "label": "가치관 차이", "end_type": "CASUAL", "target_after_1": "왜요? 제가 뭐 잘못했어요?", "target_after_2": "ㅋㅋ 그래요 뭐", "source": "synthetic", "splitGroup": "ce-가치관 차이"}
+{"id": "cm-07", "conv_id": "ce-07", "case_type": "경계", "label": "한 줄뿐", "end_type": "GENTLE", "target_after_1": "와 진짜 어이없네요", "target_after_2": "이유라도 말해줘요", "source": "synthetic", "splitGroup": "ce-한 줄뿐"}
+{"id": "cm-08", "conv_id": "ce-08", "case_type": "경계", "label": "상대가 화남", "end_type": "DIRECT", "target_after_1": "그럼 친구로라도 지내요", "target_after_2": "이유라도 말해줘요", "source": "synthetic", "splitGroup": "ce-상대가 화남"}
+{"id": "cm-09", "conv_id": "ce-09", "case_type": "경계", "label": "상대가 매달림", "end_type": "CASUAL", "target_after_1": "와 진짜 어이없네요", "target_after_2": "알겠어요 잘 지내요", "source": "synthetic", "splitGroup": "ce-상대가 매달림"}
+{"id": "cm-10", "conv_id": "ce-10", "case_type": "경계", "label": "약속 언급 있음", "end_type": "GENTLE", "target_after_1": "그럼 친구로라도 지내요", "target_after_2": "정말 마지막으로 한 번만 만나요", "source": "synthetic", "splitGroup": "ce-약속 언급 있음"}

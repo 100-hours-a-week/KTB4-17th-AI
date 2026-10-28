@@ -1,0 +1,13 @@
+﻿case_id,F-01,F-02,F-03,출처
+15-v2-001-repair1,PASS,PASS,PASS,Codex·Grok 일치
+15-v2-001-repair2,PASS,PASS,FAIL,Codex·Grok 일치
+15-v2-006-repair1,PASS,FAIL,PASS,Codex·Grok 일치
+15-v2-022-repair1,PASS,PASS,PASS,Codex·Grok 일치
+15-v2-029-repair1,PASS,PASS,PASS,Codex·Grok 일치
+15-v2-029-repair2,PASS,PASS,PASS,Codex·Grok 일치
+15-v2-105-repair1,PASS,FAIL,FAIL,Codex·Grok 일치
+15-v2-107-repair1,PASS,FAIL,PASS,Codex·Grok 일치
+15-v2-113-repair1,PASS,PASS,PASS,Claude+Codex·Grok 일치
+15-v2-115-repair1,PASS,PASS,PASS,Codex·Grok 일치
+g15-n09,PASS,PASS,PASS,Codex·Grok 일치
+g15-n10,PASS,PASS,PASS,Codex·Grok 일치
