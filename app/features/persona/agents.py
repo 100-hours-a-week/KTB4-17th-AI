@@ -670,9 +670,16 @@ def tagging_messages(question: str, answer: str) -> list[dict]:
     return [{"role": "user", "content": f"질문: {question}\n답변: {answer}"}]
 
 
-def parse_tags(raw: dict) -> Tags:
-    """모델 JSON → Tags. 모델이 없는 차원명을 지어냈을 수 있으므로 걸러낸다."""
+def parse_tags(raw: dict, *, strict: bool = False) -> Tags:
+    """모델 JSON → Tags. 평가는 보정 전 계약을 검사하고, 운영은 미등록 차원을 걸러낸다."""
     valid = set(ALL_DIMENSIONS)
+    if strict:
+        if not isinstance(raw, dict) or set(raw) != {"primary", "secondary", "off_topic"}:
+            raise ValueError("tagging output must contain exactly primary, secondary and off_topic")
+        tags = Tags.model_validate(raw, strict=True)
+        if any(d not in valid for d in (*tags.primary, *tags.secondary)):
+            raise ValueError("tagging output contains an unknown dimension")
+        return tags
     return Tags(
         primary=[d for d in raw.get("primary", []) if d in valid],
         secondary=[d for d in raw.get("secondary", []) if d in valid],
@@ -689,10 +696,12 @@ class TaggingAgent:
         *,
         timeout: float | None = None,
         trace_metadata: LangfuseMetadata | None = None,
+        strict: bool = False,
     ) -> Tags | None:
         """실패 시 None. service가 topic.covers를 대신 쓴다.
 
         timeout 을 안 주면 온보딩 중 답변 태깅용(onboarding_tag_timeout_s).
+        strict=True 는 평가용: 필드 누락·타입 오류·미등록 차원을 보정하지 않고 실패로 센다.
 
         태깅 실패로 커버리지가 영영 안 차면 같은 주제를 맴돌게 되므로
         여기서 예외를 올리지 않는다.
@@ -715,7 +724,13 @@ class TaggingAgent:
                 )
                 return None
 
-            return parse_tags(raw)
+            try:
+                return parse_tags(raw, strict=strict)
+            except ValueError as exc:
+                if not strict:
+                    raise
+                logger.warning("tagging output rejected by strict evaluation: %s", exc)
+                return None
 
 
 # ══ 추출 ════════════════════════════════════════════════
