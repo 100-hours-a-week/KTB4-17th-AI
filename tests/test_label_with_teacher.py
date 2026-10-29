@@ -17,6 +17,7 @@ from scripts.generate_synthetic_onboarding import (
 from scripts.label_with_teacher import (
     GOLD_DIR,
     Completion,
+    TeacherClient,
     aggregate_tags,
     check_tag_sample,
     gold_items,
@@ -149,3 +150,18 @@ def test_resume_skips_done_items_and_retries_failures(tmp_path):
     assert len([c for c in again.calls if c[0] == TAG_PROMPT]) == 2 * (len(tags) - 3)
     ids = [json.loads(x)["id"] for x in (out / "tagging.jsonl").read_text().splitlines()]
     assert sorted(ids) == sorted(t.id for t in tags)
+
+
+def test_self_hosted_teacher_turns_off_template_reasoning_by_default():
+    client = TeacherClient(
+        base_url="http://localhost:8000/v1", api_key="", model="qwen3.8-27b", reasoning=False, providers=None
+    )
+    assert client.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_openrouter_teacher_keeps_provider_routing():
+    client = TeacherClient(
+        base_url="https://openrouter.ai/api/v1", api_key="k", model="qwen/qwen3.8-27b", reasoning=False, providers=None
+    )
+    assert client.extra_body["provider"]["data_collection"] == "deny"
+    assert "chat_template_kwargs" not in client.extra_body
