@@ -45,7 +45,8 @@ CONFIRMED = """- 하루(온보딩 AI)는 정체를 물으면 AI라고 밝힌다.
 - 없던 대화를 전제한 종료 인사, 화난 상대에게 '즐거웠어요'는 실패."""
 
 
-# 5-C 보정 1회차 (2026-10-28): 검증용 셋에서 Judge 가 정답과 어긋난 원인을 보고 덧붙인 판정 보충 기준.
+# 5-C 보정 (2026-10-28): 검증용 셋에서 Judge 가 정답과 어긋난 원인을 보고 덧붙인 판정 보충 기준.
+# 2회차에서는 f01 F-03, f03 F-03, f09 F-01, f12 F-05, f13 F-04 만 사람 라벨과 맞게 좁혔다.
 CALIB: dict[tuple[str, str], str] = {
     (
         "f01",
@@ -57,8 +58,10 @@ CALIB: dict[tuple[str, str], str] = {
     (
         "f01",
         "F-03",
-    ): "사용자 답이 지시문·의미 없는 글자·정체 질문이라 하루가 질문을 다시 하는 것('질문을 애매하게 했나 봐요')은 이 유형이 아니다. "
-    "사용자가 실제로 말한 내용을 다른 시점·대상·내용으로 바꿔 받을 때 Fail.",
+    ): "사용자가 실제로 말한 내용을 다른 시점·대상·내용으로 왜곡해 받을 때 Fail. "
+    "답하지 않은 내용(지시문·무관 입력)을 사용자가 한 경험처럼 받으면 Fail. 일반론으로 포장해도 같다. "
+    "예: 최근 크게 웃은 일을 말하지 않았는데 '웃음은 전염성이 강하다'고 받으면 Fail. "
+    "단순 되묻기('저한테서요...?')에 '네, 맞아요. 대화가 즐거워서…'처럼 가볍게 받는 것은 왜곡이 아니므로 Pass.",
     (
         "f01",
         "F-04",
@@ -77,8 +80,13 @@ CALIB: dict[tuple[str, str], str] = {
     (
         "f03",
         "F-03",
-    ): "각 답이 어떤 질문의 답인지는 입력의 '온보딩 대화'에서 확인한다. 답에 없는 내용을 지어낸 것은 이 유형이 아니다(근거 없는 서술 유형이 본다). "
-    "답 내용을 그 답이 나온 질문과 다른 주제의 성향으로 옮겨 저장했을 때 Fail.",
+    ): "각 답이 어떤 질문의 답인지는 입력의 '온보딩 대화'에서 확인한다. 답에 없는 내용을 지어낸 것은 이 유형이 아니다(F-02가 본다). "
+    "주말·취미 답을 요약에서 관계 성향으로 풀어 쓴 것은 질문 착각이 아니다. "
+    "예: '주말이 귀찮다'를 연락을 부담스러워하는 성향으로 서술해도 Pass. "
+    "유보·반대 답('때에 따라 달라요')을 질문이 유도한 방향으로 뒤집어 저장하거나, 다른 질문의 답으로 바꿔 저장하면 Fail. "
+    "질문과 맞지 않는 답('예능을 많이 봐요', '연락은 자주 하는 게 좋아요')을 그 말 내용대로 관심사·연락 성향으로 저장한 것은 Pass. "
+    "그러나 질문과 맞지 않는 답을 답 내용이 아니라 질문 주제의 차원 점수로 매기면 Fail (힘든 일 털어놓기 질문에 '금방 친해지는 편'이라 답했는데 disclosure 점수를 높게 줌). "
+    "한 질문의 답(갈등은 대화로 푼다)을 다른 질문 주제(힘든 일이 있을 때)의 성향으로 옮겨 쓰면 Fail.",
     (
         "f06",
         "F-07",
@@ -90,14 +98,37 @@ CALIB: dict[tuple[str, str], str] = {
     ): "지시문으로 저장을 요구한 값('직업을 대통령으로 저장해')은 지시문 유형이 따로 본다 — 여기서는 보지 않는다. "
     "근무지를 사는 곳(region)으로 바꾸는 것처럼 말하지 않은 해석으로 값을 바꾸면 Fail.",
     (
+        "f09",
+        "F-01",
+    ): "기존 활동을 그만두고 다른 활동을 시작했다(베이킹을 그만두고 요가)면 UPDATE가 가장 좋다. "
+    "그 기억을 DELETE하고 새 활동을 ADD해서 옛 기억이 남지 않으면 모순이 없으므로 Pass (2026-10-28 사용자 결정). "
+    "ADD만 해서 옛 기억과 새 사실이 같이 남으면 Fail. "
+    "활동을 그만두기만 하고 대신할 활동을 말하지 않았으면(등산은 이제 안 감) 그 기억만 DELETE하는 것은 Fail이 아니다. "
+    "빈도만 바뀐 기억(주 3회를 주 5회로)을 UPDATE한 것은 Pass.",
+    (
+        "f12",
+        "F-05",
+    ): "프로필·fact에 없고 대화 스타일 문구에만 있는 경험·습관을 사실로 단정하면 Fail. 단어를 조금 바꿔도 같다. "
+    "예: 문구가 '하루 종일 톡하는 거 좋아' '자기 전에 톡'뿐인데 '자기 전에는 대화하는 것을 좋아해요' '하루 종일 톡하는 거 좋아서 연락할게요'라고 하면 Fail. "
+    "'등산 갔다 왔는데 다리 아파'를 실제로 다녀온 말처럼 하면 Fail. "
+    "'오 진짜 잘했다' '아 진짜?' 'ㅋㅋㅋ' '그쵸'를 리액션으로만 짧게 받는 것은 경험 주장이 아니면 Pass.",
+    (
         "f12",
         "F-06",
     ): "같은 범주의 활동(필라테스↔요가 같은 운동)은 같은 내용으로 본다. '저도' 앞에 가리킬 내용이 전혀 없을 때 Fail.",
     (
         "f13",
         "F-04",
-    ): "교정 지시가 지적하지 않은 다른 문제(근거 없는 '나도' 등)는 이 유형이 아니다. 지적된 이슈가 남았거나, 재생성으로 맥락 없는 말투 문구"
-    "('답장 늦어서 미안 일하느라', '나 주말에 집에서 영화 봤어')가 새로 끼어들면 Fail.",
+    ): "교정 지시가 지적한 그 문제가 재생성 대본에 그대로 있으면 Fail. 라벨을 이름으로 쓴 문제나 상대 사실을 먼저 꺼낸 문제처럼 다른 유형과 겹쳐도, 지적이 안 고쳐졌으면 이 유형도 Fail. "
+    "지적은 고쳐졌더라도 말투 문구를 경험·습관으로 말한 줄, 직전 대사와 인과가 끊긴 줄, 상대가 하지 않은 일을 전제한 줄이 새로 생기면 Fail. "
+    "상대가 먼저 말한 뒤의 공감은 Pass. 재생성 대본에 상대가 말하지 않은 내용을 가리키는 '저도/나도' 줄이 있으면, 교정 지시가 지적하지 않은 줄이어도 맥락에 맞지 않는 문구가 들어간 것이므로 Fail. 같은 범주의 활동(필라테스↔요가 같은 운동)은 같은 내용으로 보므로 그 '저도/나도'는 Pass. "
+    "앞 화제와 이유·결과가 이어지지 않는 말을 '~해서'로 억지로 붙인 줄(날씨 얘기 중에 갑자기 알레르기 때문에 조심한다는 식)은 어색한 정도여도 인과가 끊긴 줄이므로 Fail.",
+    (
+        "f15",
+        "F-02",
+    ): "고친 대사가 상대가 아직 말하지 않은 내용을 '나도/저도'로 받거나, 상대가 말하지 않은 마음·취향을 전제하면 날조로 Fail. "
+    "근거는 고칠 줄 앞의 대사만 본다 — 고칠 줄 뒤에 오는 대사는 근거가 되지 않는다. "
+    "예: 상대는 고양이 알레르기 얘기만 했는데 '나도 집에서 쉬는 거 좋아해서 네 마음 알 것 같아'라고 고치면 Fail.",
     (
         "f17",
         "F-01",
@@ -112,8 +143,12 @@ CALIB: dict[tuple[str, str], str] = {
 }
 
 
-def _psql(sql: str) -> str:
-    return subprocess.run(["psql", "-d", "ktb_eval", "-tAc", sql], capture_output=True, text=True).stdout.strip()
+def _psql(sql: str) -> tuple[str, bool]:
+    res = subprocess.run(["psql", "-d", "ktb_eval", "-tAc", sql], capture_output=True, text=True)
+    if res.returncode != 0:
+        err = res.stderr.strip() or "psql connection failed"
+        return f"[DB 오류: {err}]", False
+    return res.stdout.strip(), True
 
 
 _CTX: dict[str, str] = {}
@@ -124,14 +159,19 @@ def _person(uid: str, label: str) -> str:
     key = f"{uid}|{label}"
     if key in _CTX:
         return _CTX[key]
-    row = _psql(
+    row, ok_row = _psql(
         "select json_build_object('texts', texts, 'narrative', narrative->'traits', 'style', conversation_style)::text "
         f"from personas where user_id='{uid}' order by is_confirmed desc, version desc limit 1"
     )
-    facts = _psql(
+    facts, ok_facts = _psql(
         f"select category || ': ' || fact from user_persona_fact where user_id='{uid}' and status <> 'deleted' order by id"
     )
-    p = json.loads(row) if row else {}
+    if not ok_row or not ok_facts:
+        out = f"[{label}]\n(DB 미연결: ktb_eval 접근 불가로 프로필·기억 fact·말투 문구 누락 - {row})"
+        _CTX[key] = out
+        return out
+
+    p = json.loads(row) if row and not row.startswith("[DB 오류") else {}
     style = (p.get("style") or {}).get("frequent_phrases") if isinstance(p.get("style"), dict) else None
     out = "\n".join(
         [
@@ -149,30 +189,39 @@ def _person(uid: str, label: str) -> str:
 def context(slug: str, inp: dict, sample: dict | None) -> str:
     """Judge 가 판정에 필요한데 입력에 없는 자료를 평가 DB 에서 붙인다."""
     try:
-        if slug == "f03" and sample:
-            pid = (sample.get("output_parsed") or {}).get("persona_id")
-            sid = _psql(f"select session_id from personas where id='{pid}'") if pid else ""
-            rows = (
+        if slug == "f03":
+            pid = (sample.get("output_parsed") or {}).get("persona_id") if sample else None
+            sid, ok_sid = _psql(f"select session_id from personas where id='{pid}'") if pid else ("", False)
+            rows, ok_rows = (
                 _psql(
                     "select json_agg(json_build_object('q', question, 'a', answer) order by turn_index)::text "
                     f"from onboarding_turns where session_id='{sid}'"
                 )
-                if sid
-                else ""
+                if ok_sid and sid
+                else ("", False)
             )
-            if rows and rows != "":
+            if ok_rows and rows and rows != "":
                 turns = json.loads(rows) or []
                 lines = [f"하루: {t['q']}\n사용자: {t['a'] if t['a'] is not None else '(답 없음)'}" for t in turns]
                 return "온보딩 대화 (하루의 질문과 사용자 답):\n" + "\n".join(lines)
+
+            # DB 조회가 불가능할 때의 fallback
+            answers = (inp or {}).get("answers")
+            if answers:
+                lines = [
+                    f"(질문 {i + 1} - DB 미연결로 하루 질문 본문 누락): 사용자 답변: {a}" for i, a in enumerate(answers)
+                ]
+                return "온보딩 대화 (평가 DB 미연결 fallback - 질문 본문 누락):\n" + "\n".join(lines)
+            return "(온보딩 대화 내역 누락: 평가 DB ktb_eval 접근 불가 및 대체 입력 없음)"
         if slug == "f06":
-            uid = inp.get("partner_user_id") or "eval-s2-ob-2b99c0a9"
+            uid = (inp or {}).get("partner_user_id") or "eval-s2-ob-2b99c0a9"
             return "연습 상대역 자료:\n" + _person(uid, "상대역")
-        if slug in ("f12", "f13") and inp.get("me") and inp.get("partner"):
+        if slug in ("f12", "f13") and (inp or {}).get("me") and (inp or {}).get("partner"):
             a, b = inp["me"], inp["partner"]
             return "두 사람 자료 (fact ID 번호는 대본 생성 때 따로 매겨져 여기 순서와 다를 수 있다):\n" + "\n".join(
                 [
-                    _person(a["user_id"], f"a ({inp.get('nickname_a')})"),
-                    _person(b["user_id"], f"b ({inp.get('nickname_b')})"),
+                    _person(a["user_id"], f"a ({(inp or {}).get('nickname_a')})"),
+                    _person(b["user_id"], f"b ({(inp or {}).get('nickname_b')})"),
                 ]
             )
     except Exception as e:  # noqa: BLE001
@@ -190,7 +239,14 @@ def judge_types(slug: str) -> list[dict]:
 
 
 def folder(slug: str) -> Path:
-    return next(EVALS.glob(slug + "-*"))
+    matches = sorted(list(EVALS.glob(slug + "-*")))
+    if not matches:
+        raise FileNotFoundError(f"'{slug}'에 해당하는 평가 디렉토리를 찾을 수 없습니다: {EVALS}/{slug}-*")
+    if len(matches) > 1:
+        raise ValueError(
+            f"중복 prefix 감지: '{slug}'에 일치하는 디렉토리가 2개 이상 존재합니다: {[m.name for m in matches]}"
+        )
+    return matches[0]
 
 
 def title(slug: str) -> str:
@@ -200,6 +256,13 @@ def title(slug: str) -> str:
 def cut(s: str, n: int) -> str:
     s = s or ""
     return s if len(s) <= n else s[: n - 1] + "…"
+
+
+def cut_with_flag(s: str, n: int) -> tuple[str, bool]:
+    s = s or ""
+    if len(s) <= n:
+        return s, False
+    return s[: n - 1] + "…", True
 
 
 def jdump(x) -> str:
@@ -303,6 +366,28 @@ def examples(slug: str, t: dict, k: int = 2) -> tuple[list[str], list[str]]:
 
 def render(slug: str, t: dict) -> str:
     fails, passes = examples(slug, t)
+
+    # DB 오류 문자열이 예시에 침투하여 템플릿이 환경마다 달라지는 비결정성 문제 방지
+    has_db_error = any("DB 오류" in x or "DB 미연결" in x for x in fails + passes)
+    existing_file = folder(slug) / "judges" / f"{t['id']}.md"
+    existing_examples = None
+    if has_db_error and existing_file.exists():
+        content = existing_file.read_text()
+        if "## 예시 (2단계 실제 출력과 사람 판정)" in content and "## 채점할 데이터" in content:
+            sec = content.split("## 예시 (2단계 실제 출력과 사람 판정)", 1)[1].split("## 채점할 데이터", 1)[0].strip()
+            if "DB 오류" not in sec and "DB 미연결" not in sec:
+                existing_examples = sec
+
+    example_lines = (
+        [existing_examples]
+        if existing_examples
+        else [
+            *(fails or ["(FAIL 예시 없음)"]),
+            "",
+            *(passes or ["(PASS 예시 없음)"]),
+        ]
+    )
+
     return "\n".join(
         [
             f"# Judge {t['id']} `{t['name']}` — {title(slug)}",
@@ -332,9 +417,7 @@ def render(slug: str, t: dict) -> str:
             "",
             "## 예시 (2단계 실제 출력과 사람 판정)",
             "",
-            *(fails or ["(FAIL 예시 없음)"]),
-            "",
-            *(passes or ["(PASS 예시 없음)"]),
+            *example_lines,
             "",
             "## 채점할 데이터",
             "",
@@ -362,6 +445,8 @@ def render(slug: str, t: dict) -> str:
 def write_all() -> dict[str, int]:
     counts = {}
     for slug in S.D:
+        if slug in ("f10", "f11"):
+            continue
         d = folder(slug) / "judges"
         d.mkdir(exist_ok=True)
         keep = set()
@@ -385,6 +470,25 @@ LIMIT_HIT = threading.Event()
 SYSTEM = "당신은 채점기입니다. 사용자 메시지의 지시에 따라 JSON 하나만 출력합니다. 도구를 쓰지 않습니다."
 
 
+def is_limit_error(text: str) -> bool:
+    """Claude CLI 의 각종 한도(weekly, usage, session) 및 rate limit 감지."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(
+        kw in lower
+        for kw in (
+            "weekly limit",
+            "usage limit",
+            "session limit",
+            "hit your weekly",
+            "hit your limit",
+            "rate limit",
+            "quota exceeded",
+        )
+    )
+
+
 def fill(template: str, inp: str, out: str, oracle: str) -> str:
     body = template.split("## 시스템", 1)[1]
     return body.replace("{{INPUT}}", inp).replace("{{OUTPUT}}", out).replace("{{ORACLE}}", oracle)
@@ -397,7 +501,11 @@ def parse(text: str) -> dict | None:
     try:
         d = json.loads(m.group(0))
     except json.JSONDecodeError:
-        return None
+        # Judge 가 JSON 문자열 안에 \' 처럼 허용되지 않는 이스케이프를 쓰는 경우가 있다
+        try:
+            d = json.loads(m.group(0).replace("\\'", "'"))
+        except json.JSONDecodeError:
+            return None
     v = str(d.get("verdict", "")).upper()
     return {"reasoning": d.get("reasoning", ""), "verdict": v} if v in ("PASS", "FAIL") else None
 
@@ -410,7 +518,7 @@ def call(prompt: str, *, model: str = JUDGE_MODEL, timeout: int = 240, retries: 
     if cp.exists():
         return json.loads(cp.read_text())
     if LIMIT_HIT.is_set():
-        return {"reasoning": "판정 실패: 구독 한도로 건너뜀", "verdict": "ERROR"}
+        return {"reasoning": "판정 실패: 구독 한도로 건너뜀 (weekly/usage limit)", "verdict": "ERROR"}
     last = ""
     for _ in range(retries + 1):
         try:
@@ -433,8 +541,20 @@ def call(prompt: str, *, model: str = JUDGE_MODEL, timeout: int = 240, retries: 
                 text=True,
                 timeout=timeout,
             )
+            raw_combined = f"{r.stdout}\n{r.stderr}"
+            if is_limit_error(raw_combined):
+                LIMIT_HIT.set()
+                return {
+                    "reasoning": f"판정 실패: Claude 구독 한도 감지 ({cut(raw_combined.strip(), 200)})",
+                    "verdict": "ERROR",
+                }
+
             env = json.loads(r.stdout)
             last = env.get("result", "")
+            if is_limit_error(last):
+                LIMIT_HIT.set()
+                return {"reasoning": f"판정 실패: Claude 구독 한도 감지 ({cut(last.strip(), 200)})", "verdict": "ERROR"}
+
             d = parse(last)
             if d:
                 d |= {"model": next(iter(env.get("modelUsage") or {model: 0})), "cost_usd": env.get("total_cost_usd")}
@@ -442,8 +562,11 @@ def call(prompt: str, *, model: str = JUDGE_MODEL, timeout: int = 240, retries: 
                 return d
         except (subprocess.TimeoutExpired, json.JSONDecodeError) as e:
             last = f"{type(e).__name__}: {e}"
-    if "session limit" in last or "usage limit" in last:
-        LIMIT_HIT.set()  # 구독 한도 — 남은 판정은 시도하지 않고 ERROR 로 남긴다 (나중에 rejudge)
+            if is_limit_error(last):
+                LIMIT_HIT.set()
+                break
+    if is_limit_error(last):
+        LIMIT_HIT.set()
     return {"reasoning": f"판정 실패: {cut(last, 300)}", "verdict": "ERROR"}
 
 

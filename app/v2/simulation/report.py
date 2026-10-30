@@ -117,9 +117,9 @@ async def write_report(
         [
             "# 궁합 규칙\n" + _rules_section(),
             "# 두 사람의 프로필 (데이터, 각 블록은 그 사람만의 것)\n"
-            + describe(f"{ctx.name_a}", ctx.persona_a)
+            + describe(f"{ctx.name_a}", ctx.persona_a, facts=[f.text for f in plan.facts_a])
             + "\n\n"
-            + describe(f"{ctx.name_b}", ctx.persona_b),
+            + describe(f"{ctx.name_b}", ctx.persona_b, facts=[f.text for f in plan.facts_b]),
             "# 계산된 점수 (다시 매기지 말 것)\n" + _scores_section(ctx.area_scores, ctx.dim_scores),
             "# 대화 소재 (데이터)\n" + _topics_text(plan, ctx.name_a, ctx.name_b),
             "# 대화록\n" + _transcript_text(script, ctx.name_a, ctx.name_b),
@@ -157,7 +157,15 @@ async def write_report(
             events.append(event)
             continue
         candidate.highlights = [h for h in candidate.highlights if 0 <= h.turn_index < n_lines]
-        if _report_perspective_swap(_narrative_text(candidate), ctx.persona_a, ctx.persona_b, ctx.name_a, ctx.name_b):
+        if _report_perspective_swap(
+            _narrative_text(candidate),
+            ctx.persona_a,
+            ctx.persona_b,
+            ctx.name_a,
+            ctx.name_b,
+            facts_a=plan.facts_a,
+            facts_b=plan.facts_b,
+        ):
             logger.warning("simulation v2 report attempt %d: perspective swap", calls)
             event.note = "report_perspective_swap"
             event.ms = int((clock() - started) * 1000)

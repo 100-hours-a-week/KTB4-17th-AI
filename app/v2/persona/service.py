@@ -12,13 +12,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.db import SessionLocal
+from app.features.persona.models import OnboardingSession, OnboardingTurn
 from app.features.practice.models import PracticeMessage
 
 from .agents import PersonaMemoryExtractor, PersonaMemoryReconcileJudge
 from .embedder import EmbedderProtocol, get_embedder
 from .graph import create_memory_graph
 from .models import MemoryUpdateJob, UserPersonaCore, UserPersonaFact
-from .pairs import build_pairs_from_practice_messages
+from .pairs import build_pairs_from_onboarding_turns, build_pairs_from_practice_messages
 from .repository import PersonaMemoryRepository
 from .trigger import should_trigger_memory_update
 
@@ -131,6 +132,89 @@ async def run_user_memory_update(user_id: str, reason: str = "turn_count") -> bo
                 await db.commit()
             logger.exception("v2 memory update failed for user=%s", user_id)
             return False
+
+
+async def run_onboarding_memory_update(user_id: str, session_id: str | None = None) -> bool:
+    """온보딩 확정(confirm) 후 백그라운드에서 온보딩 문답을 v2 메모리(코어/Fact)에 추출·임베딩·저장한다."""
+    if not user_id:
+        return False
+    try:
+        async with SessionLocal() as db:
+            job = await try_create_memory_job(db, user_id, "onboarding")
+            if job is None:
+                return False
+            job.status = "running"
+            job.started_at = datetime.now(UTC)
+            await db.commit()
+
+            try:
+                # 이미 onboarding Fact 로 처리된 세션은 제외해 중복 호출을 멱등하게 처리한다
+                processed_sessions_stmt = (
+                    select(OnboardingTurn.session_id)
+                    .join(
+                        UserPersonaFact,
+                        (UserPersonaFact.source_message_id == OnboardingTurn.id)
+                        & (UserPersonaFact.user_id == user_id)
+                        & (UserPersonaFact.source_type == "onboarding"),
+                    )
+                    .distinct()
+                )
+                processed_session_ids = set((await db.execute(processed_sessions_stmt)).scalars())
+
+                stmt = (
+                    select(OnboardingTurn)
+                    .join(OnboardingSession, OnboardingSession.id == OnboardingTurn.session_id)
+                    .where(OnboardingSession.user_id == user_id)
+                    .order_by(OnboardingTurn.id.asc())
+                )
+                if session_id is not None:
+                    stmt = stmt.where(OnboardingSession.id == session_id)
+                if processed_session_ids:
+                    stmt = stmt.where(OnboardingTurn.session_id.not_in(processed_session_ids))
+
+                turns = list((await db.execute(stmt)).scalars())
+                pairs = build_pairs_from_onboarding_turns(turns)
+                if not pairs:
+                    job.status = "succeeded"
+                    job.finished_at = datetime.now(UTC)
+                    await db.commit()
+                    return True
+
+                repo = PersonaMemoryRepository(db)
+                core = await repo.get_or_create_core(user_id)
+                graph = create_memory_graph(
+                    repo=repo,
+                    embedder=get_embedder(),
+                    extractor=PersonaMemoryExtractor(),
+                    judge=PersonaMemoryReconcileJudge(),
+                )
+                await graph.ainvoke(
+                    {
+                        "user_id": user_id,
+                        "current_date": datetime.now(UTC).strftime("%Y-%m-%d"),
+                        "source_type": "onboarding",
+                        "dialogue_pairs": pairs,
+                        "latest_message_id": max(p["message_id"] for p in pairs),
+                        "existing_core": dict(core.profile or {}),
+                    }
+                )
+                job.status = "succeeded"
+                job.finished_at = datetime.now(UTC)
+                await db.commit()
+                return True
+            except Exception as exc:
+                await db.rollback()
+                job_row = await db.get(MemoryUpdateJob, job.id)
+                if job_row is not None:
+                    job_row.status = "failed"
+                    job_row.error = str(exc)[:500]
+                    job_row.finished_at = datetime.now(UTC)
+                    await db.commit()
+                logger.exception("v2 onboarding memory update failed for user=%s", user_id)
+                return False
+    except Exception:  # noqa: BLE001
+        logger.exception("v2 onboarding memory trigger failed for user=%s", user_id)
+        return False
 
 
 async def sweep_idle_users_for_memory_update(db: AsyncSession) -> list[str]:

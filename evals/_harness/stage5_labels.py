@@ -12,10 +12,12 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import re
 import subprocess
 import sys
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -24,15 +26,33 @@ import stage3_types as S  # noqa: E402
 import stage5_judges as J  # noqa: E402
 
 EVALS = Path(__file__).resolve().parents[1]
+EXCLUDED_SLUGS = {"f10", "f11"}
+
+
+def compute_prompt_hash(slug: str, tid: str) -> str | None:
+    """Judge 유형 프롬프트 템플릿의 SHA-256 해시 앞 16자리 계산."""
+    if slug in EXCLUDED_SLUGS:
+        return None
+    try:
+        p = J.folder(slug) / "judges" / f"{tid}.md"
+        if p.exists():
+            return hashlib.sha256(p.read_bytes()).hexdigest()[:16]
+    except Exception:
+        return None
+    return None
 
 
 def latest_result(slug: str, split: str = "calibration") -> dict | None:
+    if slug in EXCLUDED_SLUGS:
+        return None
     ps = sorted((J.folder(slug) / "results").glob(f"*_{split}.json"))
-    ps = [p for p in ps if "smoke" not in p.name]
+    ps = [p for p in ps if not any(x in p.name.lower() for x in ("smoke", "dryrun", "dry_run", "plan", "test"))]
     return json.loads(ps[-1].read_text()) if ps else None
 
 
 def goldset(slug: str) -> dict[str, dict]:
+    if slug in EXCLUDED_SLUGS:
+        return {}
     return {
         c["id"]: c for c in (json.loads(x) for x in (J.folder(slug) / "goldset.jsonl").read_text().splitlines() if x)
     }
@@ -47,6 +67,8 @@ def type_ids(slug: str) -> list[str]:
 
 def sheet() -> None:
     for slug in S.D:
+        if slug in EXCLUDED_SLUGS:
+            continue
         res = latest_result(slug)
         if not res:
             print(slug, "실행 결과 없음")
@@ -107,6 +129,8 @@ CODEX_INSTR = """당신은 소개팅 앱 AI 기능의 출력을 채점하는 사
 def codex(only: str = "", engine: str = "codex") -> None:
     jobs = []
     for slug in S.D:
+        if slug in EXCLUDED_SLUGS:
+            continue
         if only and slug not in only.split(","):
             continue
         p = J.folder(slug) / "labels" / "calibration_template.csv"
@@ -190,6 +214,8 @@ def agree() -> None:
     lab = Path(__file__).parent / "runs" / "labels"
     user = {k: v for k, v in src_map(lab / "calibration_user_all.csv").items() if v in ("FAIL", "PASS")}
     for slug in S.D:
+        if slug in EXCLUDED_SLUGS:
+            continue
         d = J.folder(slug) / "labels"
         a, b = read_labels(d / "calibration_codex.csv"), read_labels(d / "calibration_grok.csv")
         gold = read_labels(d / "calibration_final.csv")
@@ -226,47 +252,227 @@ def agree() -> None:
         print(slug, "불일치", len(dis))
 
 
-def calib() -> None:
+def calib_metric_status(
+    tp: int,
+    fn: int,
+    tn: int,
+    fp: int,
+    unvalidated_count: int = 0,
+    unvalidated_reasons: list[str] | None = None,
+    is_quarantine: bool = False,
+    has_provenance: bool = True,
+    provenance_match: bool = True,
+) -> tuple[float | None, float | None, str]:
+    """한쪽 클래스 0, 표본 부재, 결측/오류, provenance 불일치/부재 시 통과로 왜곡되지 않도록 정직한 지표 및 상태 반환."""
+    has_fail = (tp + fn) > 0
+    has_pass = (tn + fp) > 0
+
+    tpr = (tp / (tp + fn)) if has_fail else None
+    tnr = (tn / (tn + fp)) if has_pass else None
+
+    # 1. 참조 라벨 불일치 격리 (f09 F-01 등)
+    if is_quarantine:
+        return tpr, tnr, "⚠️ QUARANTINE_LABEL_CONFLICT"
+
+    # 2. 표본 0 검증 (한쪽 클래스라도 0건이면 검증 미완료)
+    if not has_fail and not has_pass:
+        return None, None, "⚠️ 표본 0 (미검증)"
+    if not has_fail:
+        return None, tnr, "⚠️ FAIL 표본 0 (재현력 미검증)"
+    if not has_pass:
+        return tpr, None, "⚠️ PASS 표본 0 (오탐 미검증)"
+
+    # 3. Provenance 검증 (과거 결과 / 불일치)
+    if not has_provenance:
+        return tpr, tnr, "⚠️ UNKNOWN/NOT_VALIDATED (역사적 관측치: 프롬프트 provenance 부재)"
+    if not provenance_match:
+        return tpr, tnr, "⚠️ UNKNOWN/NOT_VALIDATED (프롬프트 provenance 불일치)"
+
+    # 4. 유효 정답 케이스 중 미채점/오류/누락 건수 존재 시
+    if unvalidated_count > 0:
+        reasons_str = ", ".join(unvalidated_reasons or ["미채점 표본 존재"])
+        return tpr, tnr, f"⚠️ UNKNOWN/NOT_VALIDATED ({reasons_str})"
+
+    # 5. 모든 정답 케이스가 완전 채점되고 provenance가 일치하며 양쪽 클래스 표본이 존재하는 경우
+    if tpr >= 0.85 and tnr >= 0.85:
+        return tpr, tnr, "✅ 통과"
+    return tpr, tnr, "⚠️ 보정 필요"
+
+
+def calib(write_eval_md: bool = False) -> dict[str, str]:
+    """Judge 보정 지표 집계. 새 Sonnet 재판정 전까지 기존 EVAL.md 는 자동 덮어쓰지 않음."""
+    reports = {}
     for slug in S.D:
+        if slug in EXCLUDED_SLUGS:
+            continue
         d = J.folder(slug) / "labels"
         gold = read_labels(d / "calibration_final.csv")
         res = latest_result(slug)
         if not gold or not res:
             continue
+
+        res_rows = {r["case_id"]: r for r in res.get("rows", [])}
+        prov = res.get("rejudge_provenance")
+
         lines = [
-            "| 실패 유형 | 채점 | 사람 FAIL | 사람 PASS | TPR | TNR | 판정 |",
-            "| --- | --- | --- | --- | --- | --- | --- |",
+            "| 실패 유형 | 채점 | 정답 유효(필요) | 채점 가능 | 사람 FAIL | 사람 PASS | TPR (관측) | TNR (관측) | 판정 상태 |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
         ]
+
+        unvalidated_details_by_tid: dict[str, list[tuple[str, str]]] = {}
+        valid_counts: dict[str, int] = {}
+        evaluable_counts: dict[str, int] = {}
+
         for t in S.D[slug]["types"]:
             tid = t["id"]
-            tp = fn = tn = fp = 0
-            for r in res["rows"]:
-                h = gold.get(r["case_id"], {}).get(tid, "NA")
-                m = r["verdict"].get(tid, "NA")
-                if h == "NA" or m in ("NA", "ERROR"):
-                    continue
-                if h == "FAIL":
-                    tp += m == "FAIL"
-                    fn += m != "FAIL"
-                else:
-                    tn += m != "FAIL"
-                    fp += m == "FAIL"
-            tpr = tp / (tp + fn) if tp + fn else None
-            tnr = tn / (tn + fp) if tn + fp else None
-            ok = (tpr is None or tpr >= 0.85) and (tnr is None or tnr >= 0.85)
             how = "Judge" if tid in {x["id"] for x in J.judge_types(slug)} else "코드"
-            f = lambda v: "-" if v is None else f"{v:.2f}"  # noqa: E731
-            lines.append(
-                f"| {tid} | {how} | {tp + fn} | {tn + fp} | {f(tpr)} | {f(tnr)} | {'✅' if ok else '⚠️ 보정 필요'} |"
+            is_judge = how == "Judge"
+            # f09 F-01 의 DELETE+ADD 라벨 충돌은 2026-10-28 사용자 결정(4건 모두 PASS)으로 해소했다.
+            is_quarantine = False
+
+            # Provenance 확인
+            if is_judge:
+                if not prov:
+                    has_prov = False
+                    prov_match = False
+                else:
+                    curr_hash = compute_prompt_hash(slug, tid)
+                    type_prov = prov.get("type_provenance", {}).get(tid, {})
+                    rec_hash = type_prov.get("prompt_hash") or prov.get("prompt_hashes", {}).get(tid)
+                    rec_status = type_prov.get("status")
+                    if not rec_hash or rec_status == "historical_unmodified":
+                        has_prov = False
+                        prov_match = False
+                    elif curr_hash and rec_hash != curr_hash:
+                        has_prov = True
+                        prov_match = False
+                    else:
+                        has_prov = True
+                        prov_match = True
+            else:
+                has_prov = True
+                prov_match = True
+
+            # 골드셋에서 FAIL 또는 PASS로 라벨링된 유효 정답 케이스
+            valid_cids = [cid for cid, lbs in gold.items() if lbs.get(tid) in ("FAIL", "PASS")]
+            valid_counts[tid] = len(valid_cids)
+
+            tp = fn = tn = fp = 0
+            unvalidated_cases: list[tuple[str, str]] = []
+
+            for cid in valid_cids:
+                h = gold[cid][tid]
+                r = res_rows.get(cid)
+
+                if r is None:
+                    unvalidated_cases.append((cid, "케이스 누락"))
+                    continue
+
+                s = r.get("sample", {})
+                if s.get("error") or r.get("error"):
+                    unvalidated_cases.append((cid, "실행 오류"))
+                    continue
+
+                trunc = False
+                if r.get("truncation_warnings", {}).get(tid):
+                    trunc = True
+                elif s.get("truncated") or r.get("truncated"):
+                    trunc = True
+                elif r.get("judge_snapshots", {}).get(tid, {}).get("input_truncated") or r.get(
+                    "judge_snapshots", {}
+                ).get(tid, {}).get("output_truncated"):
+                    trunc = True
+
+                if trunc:
+                    unvalidated_cases.append((cid, "입출력 잘림"))
+                    continue
+
+                v_map = r.get("verdict") or {}
+                if tid not in v_map or v_map[tid] is None or v_map[tid] == "":
+                    unvalidated_cases.append((cid, "판정 결측"))
+                    continue
+
+                m = str(v_map[tid]).strip().upper()
+                judge_v = r.get("judge", {}).get(tid, {}).get("verdict")
+
+                if m == "ERROR" or judge_v == "ERROR":
+                    unvalidated_cases.append((cid, "기계 ERROR"))
+                    continue
+
+                if m == "NA":
+                    unvalidated_cases.append((cid, "기계 NA"))
+                    continue
+
+                if m not in ("FAIL", "PASS"):
+                    unvalidated_cases.append((cid, f"알 수 없는 판정({m})"))
+                    continue
+
+                # 정상 채점 케이스
+                if h == "FAIL":
+                    if m == "FAIL":
+                        tp += 1
+                    else:
+                        fn += 1
+                else:  # h == "PASS"
+                    if m == "PASS":
+                        tn += 1
+                    else:
+                        fp += 1
+
+            unvalidated_details_by_tid[tid] = unvalidated_cases
+            evaluable = tp + fn + tn + fp
+            evaluable_counts[tid] = evaluable
+
+            reason_counts = Counter(r for _, r in unvalidated_cases)
+            reasons_summary = [f"{k} {v}건" for k, v in reason_counts.items()]
+
+            tpr, tnr, status = calib_metric_status(
+                tp=tp,
+                fn=fn,
+                tn=tn,
+                fp=fp,
+                unvalidated_count=len(unvalidated_cases),
+                unvalidated_reasons=reasons_summary,
+                is_quarantine=is_quarantine,
+                has_provenance=has_prov,
+                provenance_match=prov_match,
             )
-        write_section(
-            slug,
-            "5-3",
-            "\n".join(
-                [f"Judge 모델: Claude Sonnet (구독). 기준 실행: {res['version']} {res['run_at'][:16]}", "", *lines]
-            ),
+
+            f_str = lambda v: "-" if v is None else f"{v:.2f}"  # noqa: E731
+            lines.append(
+                f"| {tid} | {how} | {len(valid_cids)} | {evaluable} | {tp + fn} | {tn + fp} | {f_str(tpr)} | {f_str(tnr)} | {status} |"
+            )
+
+        details = []
+        for tid, unvals in unvalidated_details_by_tid.items():
+            if unvals:
+                items_str = ", ".join(f"{cid}({r})" for cid, r in unvals)
+                details.append(
+                    f"- **{tid}**: 필요 {valid_counts[tid]}건 중 채점 가능 {evaluable_counts[tid]}건, 누락/보류 {len(unvals)}건 — {items_str}"
+                )
+        if not details:
+            details = ["- 누락 및 보류 항목 없음 (전수 채점 완료)"]
+
+        report_text = "\n".join(
+            [
+                f"Judge 모델: Claude Sonnet (구독). 기준 실행: {res.get('version')} {res.get('run_at', '')[:16]}",
+                "※ 한쪽 클래스 표본 0건, 판정 결측, 실행 오류, 잘림, 프롬프트 provenance 불일치/부재는 통과(✅)로 간주하지 않고 정직하게 표기함.",
+                "",
+                *lines,
+                "",
+                "### 누락 및 보류 상세",
+                "",
+                *details,
+            ]
         )
-        print(slug, "보정 표 작성")
+        reports[slug] = report_text
+
+        if write_eval_md:
+            write_section(slug, "5-3", report_text)
+            print(slug, "EVAL.md 5-3 표 작성 완료")
+        else:
+            print(f"[{slug}] 보정 지표 계산 완료 (EVAL.md 덮어쓰기 건너뜀)")
+    return reports
 
 
 def write_section(slug: str, sec: str, body: str) -> None:

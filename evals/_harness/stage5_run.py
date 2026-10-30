@@ -27,6 +27,8 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[1]
@@ -36,16 +38,60 @@ PORT = int(os.environ.get("EVAL_PORT", "8078"))
 
 # ── 환경: 평가 DB 로만 붙는다 ─────────────────────────────────────────────
 def _env(key: str) -> str:
-    for line in (ROOT / ".env").read_text(encoding="utf-8").splitlines():
-        if line.startswith(f"{key}="):
-            return line.split("=", 1)[1].split("#", 1)[0].strip().strip('"')
+    env_path = ROOT / ".env"
+    if env_path.exists():
+        for line in env_path.read_text(encoding="utf-8").splitlines():
+            if line.startswith(f"{key}="):
+                return line.split("=", 1)[1].split("#", 1)[0].strip().strip('"')
     return ""
 
 
-_db = _env("DATABASE_URL")
-assert _db, "DATABASE_URL 없음"
-os.environ["DATABASE_URL"] = re.sub(r"/[A-Za-z0-9_]+$", "/ktb_eval", _db)
-assert os.environ["DATABASE_URL"].endswith("/ktb_eval")
+def _resolve_and_verify_eval_db_url() -> str:
+    # 1. parent env 우선 사용
+    raw_url = os.environ.get("DATABASE_URL")
+    if not raw_url:
+        env_val = _env("DATABASE_URL")
+        if not env_val:
+            raise RuntimeError("DATABASE_URL 이 환경 변수나 .env 에 존재하지 않습니다.")
+        parsed = urlsplit(env_val)
+        raw_url = urlunsplit((parsed.scheme, parsed.netloc, "/ktb_eval", parsed.query, parsed.fragment))
+
+    # 2. target DB path 엄격 검증 (/ktb_eval 만 허용, /ktb_eval_prod 등 차단)
+    parsed = urlsplit(raw_url)
+    if parsed.path != "/ktb_eval":
+        raise RuntimeError(
+            f"평가 DB 대상 경로가 '/ktb_eval'이 아닙니다 (현재 path='{parsed.path}'). 운영 DB 오염 방지를 위해 중단합니다."
+        )
+    return raw_url
+
+
+def get_eval_nonsecret_config() -> dict[str, str]:
+    """자격증명, 토큰, 비밀번호를 일절 배제한 순수 모델 및 평가 설정 딕셔너리를 추출한다."""
+
+    def _val(key: str, default: str = "") -> str:
+        return os.environ.get(key) or _env(key) or default
+
+    raw_config = {
+        "llm_model": _val("LLM_MODEL", "local-model"),
+        "llm_model_v2": _val("LLM_MODEL_V2", "local-model"),
+        "slm_tagging_model": _val("SLM_TAGGING_MODEL", ""),
+        "slm_extraction_model": _val("SLM_EXTRACTION_MODEL", ""),
+        "simulation_v2_judge_model": _val("SIMULATION_V2_JUDGE_MODEL", ""),
+        "judge_model": _val("JUDGE_MODEL", "sonnet"),
+        "langfuse_tracing_environment": _val("LANGFUSE_TRACING_ENVIRONMENT", "eval-local"),
+    }
+    forbidden = ("key", "secret", "password", "token", "cred", "url")
+    return {k: v for k, v in raw_config.items() if not any(f in k.lower() for f in forbidden)}
+
+
+def compute_config_hash(cfg: dict[str, Any]) -> str:
+    """비밀 없는 평가 구성 딕셔너리의 결정론적 sha256 fingerprint 계산."""
+    payload = json.dumps(cfg, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+_db_url = _resolve_and_verify_eval_db_url()
+os.environ["DATABASE_URL"] = _db_url
 os.environ["LANGFUSE_TRACING_ENVIRONMENT"] = "eval-local"
 os.environ["EVAL_BASE_URL"] = f"http://localhost:{PORT}/ai/api"
 os.environ.setdefault("EVAL_RUN_TAG", "s5")
@@ -1072,11 +1118,70 @@ def main() -> None:
     a = ap.parse_args()
     if a.split == "blind_holdout" and not a.allow_holdout:
         sys.exit("blind_holdout 은 6단계 최종 측정에서만 실행한다 (--allow-holdout).")
-    slugs = [s for s in S.D if not a.only or s in a.only.split(",")]
+    EXCLUDED_SLUGS = {"f10", "f11"}
+    QUARANTINED_SLUGS = {"f07"}
+    raw_slugs = [s for s in S.D if not a.only or s in a.only.split(",")]
+    slugs = []
+    for s in raw_slugs:
+        if s in EXCLUDED_SLUGS:
+            print(f"[{s}] 미사용 v1 기능으로 평가 대상에서 제외되었습니다. 건너뜁니다.", flush=True)
+            continue
+        if s in QUARANTINED_SLUGS:
+            print(
+                f"[{s}] PR #235로 인해 현재 HEAD 계약에서 제거되었습니다 (QUARANTINED_CONTRACT_DROPPED). 건너뜁니다.",
+                flush=True,
+            )
+            continue
+        slugs.append(s)
+
+    # 1. Manifest Hash 확인 및 사전 검증 (SERVER 시작 전)
+    manifest_hash = os.environ.get("EVAL_MANIFEST_HASH", "")
+    default_mf = EVALS / "manifest_b5e158c.json"
+    if not manifest_hash and default_mf.exists():
+        try:
+            manifest_hash = json.loads(default_mf.read_text(encoding="utf-8")).get("combined_hash", "")
+        except Exception:
+            manifest_hash = ""
+
+    if manifest_hash and default_mf.exists():
+        try:
+            expected_combined = json.loads(default_mf.read_text(encoding="utf-8")).get("combined_hash", "")
+            if expected_combined and manifest_hash != expected_combined:
+                sys.exit(
+                    f"[FATAL] Manifest Hash 불일치: env='{manifest_hash[:10]}...' != file='{expected_combined[:10]}...'. 서버 시작을 차단합니다."
+                )
+        except Exception as e:
+            sys.exit(f"[FATAL] Manifest 파일 검증 예외: {e}")
+
+    # 2. Nonsecret configuration & fingerprint 검증 (SERVER 시작 전)
+    nonsecret_config = get_eval_nonsecret_config()
+    config_hash = compute_config_hash(nonsecret_config)
+    env_config_hash = os.environ.get("EVAL_CONFIG_HASH", "")
+    if env_config_hash and env_config_hash != config_hash:
+        sys.exit(
+            f"[FATAL] Configuration Hash 불일치: env='{env_config_hash[:10]}...' != calculated='{config_hash[:10]}...'. 서버 시작을 차단합니다."
+        )
+
+    # 3. Full git commit 확인
+    git_commit = os.environ.get("EVAL_GIT_COMMIT", "")
+    if not git_commit:
+        try:
+            git_commit = subprocess.run(
+                ["git", "rev-parse", "HEAD"], capture_output=True, text=True, cwd=ROOT
+            ).stdout.strip()
+        except Exception:
+            git_commit = "unknown"
+
     start_server()
     ver = a.version or version_tag()
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     pool = ThreadPoolExecutor(a.judge_workers)
+
+    # checkpoint identity: ver + manifest_hash + config_hash
+    m_short = manifest_hash[:10] if manifest_hash else "nomanifest"
+    c_short = config_hash[:10] if config_hash else "noconfig"
+    identity_tag = f"{ver}_{m_short}_{c_short}"
+
     for slug in slugs:
         cases = [c for c in read_jsonl(J.folder(slug) / "goldset.jsonl") if c["split"] == a.split]
         if a.cases:
@@ -1086,15 +1191,15 @@ def main() -> None:
                 continue
         if a.limit:
             cases = cases[: a.limit]
-        # 중간 저장: 멈췄다가 다시 돌리면 끝난 문제는 건너뛴다 (같은 split·버전)
-        ckpt = J.folder(slug) / "results" / f".partial_{ver}_{a.split}.jsonl"
+        # 중간 저장: 멈췄다가 다시 돌리면 끝난 문제는 건너뛴다 (같은 split·버전·manifest·config)
+        ckpt = J.folder(slug) / "results" / f".partial_{identity_tag}_{a.split}.jsonl"
         ckpt.parent.mkdir(exist_ok=True)
         rows = read_jsonl(ckpt)
         done = {r["case_id"] for r in rows}
         for c in cases:
             if c["id"] in done:
                 continue
-            t0 = time.time()
+            t_app_start = time.time()
             try:
                 sample = {"id": c["id"], "input": c["input"], **EXEC[slug](c)}
             except Exception as e:  # noqa: BLE001
@@ -1104,8 +1209,16 @@ def main() -> None:
                     "output_raw": None,
                     "error": f"실행기 오류 {type(e).__name__}: {e}"[:400],
                 }
+            t_app_done = time.time()
+            app_elapsed = round(t_app_done - t_app_start, 3)
+
+            t_judge_start = time.time()
             codes = code_score(slug, c, sample)
             judges = {} if a.no_judge else judge_score(slug, c, sample, pool)
+            t_judge_done = time.time()
+            judge_elapsed = round(t_judge_done - t_judge_start, 3)
+
+            total_elapsed = round(t_judge_done - t_app_start, 1)
             rows.append(
                 {
                     "case_id": c["id"],
@@ -1115,39 +1228,55 @@ def main() -> None:
                     "code": codes,
                     "judge": judges,
                     "verdict": verdicts(slug, codes, judges),
-                    "seconds": round(time.time() - t0, 1),
+                    "seconds": total_elapsed,
+                    "app_seconds": app_elapsed,
+                    "judge_seconds": judge_elapsed,
                 }
             )
             with ckpt.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(rows[-1], ensure_ascii=False) + "\n")
-            print(f"{slug} {c['id']} {rows[-1]['seconds']}s err={str(sample.get('error'))[:60]}", flush=True)
+            print(
+                f"{slug} {c['id']} app={app_elapsed}s judge={judge_elapsed}s err={str(sample.get('error'))[:60]}",
+                flush=True,
+            )
         outd = J.folder(slug) / "results"
         outd.mkdir(exist_ok=True)
         p = outd / f"{stamp}_{ver}_{a.split}.json"
-        if a.cases:  # 최신 결과 파일의 해당 행만 바꾼다
-            prev = sorted(x for x in outd.glob(f"*_{a.split}.json") if "smoke" not in x.name)
-            if prev:
-                p = prev[-1]
-                old = json.loads(p.read_text())
+        if p.exists():
+            p = outd / f"{stamp}_{ver}_{a.split}_{uuid.uuid4().hex[:6]}.json"
+
+        if a.cases:  # 최신 결과 파일의 해당 행만 바꾼다 (과거 cb53097-dirty 등 historical 파일은 절대 덮어쓰지 않음)
+            prev = sorted(
+                x
+                for x in outd.glob(f"*_{a.split}.json")
+                if "smoke" not in x.name and "cb53097" not in x.name and not x.name.startswith(".partial")
+            )
+            matching_prev = [x for x in prev if f"_{ver}_" in x.name]
+            if matching_prev:
+                target_file = matching_prev[-1]
+                old = json.loads(target_file.read_text(encoding="utf-8"))
                 new = {r["case_id"]: r for r in rows}
                 old["rows"] = [new.pop(r["case_id"], r) for r in old["rows"]] + list(new.values())
-                p.write_text(json.dumps(old, ensure_ascii=False, indent=1))
+                target_file.write_text(json.dumps(old, ensure_ascii=False, indent=1), encoding="utf-8")
                 ckpt.unlink(missing_ok=True)
-                print("합침", p, flush=True)
+                print("합침", target_file, flush=True)
                 continue
+
+        payload = {
+            "feature": slug,
+            "split": a.split,
+            "version": ver,
+            "manifest_hash": manifest_hash or None,
+            "git_commit": git_commit or None,
+            "configuration_hash": config_hash,
+            "config": nonsecret_config,
+            "judge_model": J.JUDGE_MODEL if not a.no_judge else None,
+            "run_at": datetime.now().isoformat(),
+            "rows": rows,
+        }
         p.write_text(
-            json.dumps(
-                {
-                    "feature": slug,
-                    "split": a.split,
-                    "version": ver,
-                    "judge_model": J.JUDGE_MODEL if not a.no_judge else None,
-                    "run_at": datetime.now().isoformat(),
-                    "rows": rows,
-                },
-                ensure_ascii=False,
-                indent=1,
-            )
+            json.dumps(payload, ensure_ascii=False, indent=1),
+            encoding="utf-8",
         )
         ckpt.unlink(missing_ok=True)
         print("저장", p, flush=True)

@@ -86,9 +86,7 @@ def _clean(text: str, limit: int) -> str:
 
 
 def _clean_persona(p: PersonaResponse) -> PersonaResponse:
-    update: dict = {
-        k: [_clean(x, 100) for x in getattr(p, k)] for k in ("interests", "routine", "date_prefer", "date_avoid")
-    }
+    update: dict = {k: [] for k in ("interests", "routine", "date_prefer", "date_avoid")}
     if p.narrative is not None:
         update["narrative"] = p.narrative.model_copy(
             update={

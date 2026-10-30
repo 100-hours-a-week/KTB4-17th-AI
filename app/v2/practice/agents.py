@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
 from functools import lru_cache
 
 from langfuse import get_client
@@ -204,6 +204,7 @@ class PartnerAgent:
         partner: PersonaResponse,
         my_name: str,
         me: PersonaResponse | None,
+        partner_facts: Sequence[str] | None = None,
     ) -> str:
         me_section = ""
         if me is not None:
@@ -211,7 +212,7 @@ class PartnerAgent:
         return SYSTEM_TEMPLATE.format(
             partner=partner_name,
             me=my_name,
-            partner_profile=describe(partner_name, partner),
+            partner_profile=describe(partner_name, partner, facts=partner_facts),
             me_section=me_section,
         )
 

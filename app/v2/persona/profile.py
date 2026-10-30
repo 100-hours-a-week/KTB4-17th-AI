@@ -7,6 +7,8 @@ v2 시뮬레이션(대본)·연습대화(상대 역할)가 이 함수를 쓴다.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from app.features.persona.schemas import CONFIDENCE_LOW, SCORED, ConversationStyle, PersonaResponse
 
 # 이 밖이면 "뚜렷한 성향"으로 서술한다. 안쪽(36~64)은 중간이라 굳이 말하지 않는다.
@@ -80,8 +82,8 @@ def trait_lines(p: PersonaResponse) -> list[str]:
     return lines
 
 
-def describe(name: str, p: PersonaResponse) -> str:
-    """프롬프트에 그대로 붙이는 블록. 이름 · MBTI · 한 줄 · 대화 스타일 · 성향 · 관심사 · 일상 · 데이트."""
+def describe(name: str, p: PersonaResponse, *, facts: Sequence[str] | None = None) -> str:
+    """프롬프트에 그대로 붙이는 블록. 이름 · MBTI · 한 줄 · 대화 스타일 · 성향 (+ 선택적 메모리 사실)."""
     parts = [f"### {name}"]
     if p.mbti:
         # 본인이 고른 유형이라 말투를 잡는 데만 쓴다. 온보딩에서 직접 답한 성향이 늘 우선이고,
@@ -97,9 +99,9 @@ def describe(name: str, p: PersonaResponse) -> str:
     parts.append("뚜렷한 성향:\n" + ("\n".join(traits) if traits else "- (특별히 치우친 성향 없음)"))
     if p.conversation_style:
         parts.append(style_block(p.conversation_style))
-    parts.append(f"관심사: {', '.join(p.interests) or '알 수 없음'}")
-    parts.append(f"일상: {', '.join(p.routine) or '알 수 없음'}")
-    parts.append(
-        f"좋아하는 데이트: {', '.join(p.date_prefer) or '알 수 없음'} / 피하는 것: {', '.join(p.date_avoid) or '알 수 없음'}"
-    )
+    if facts is not None:
+        fact_rows = [f"- {f}" for f in facts if f]
+        parts.append(
+            "기억된 사실 (취미·일상·가치관·연애관):\n" + ("\n".join(fact_rows) if fact_rows else "- (알려진 사실 없음)")
+        )
     return "\n".join(parts)

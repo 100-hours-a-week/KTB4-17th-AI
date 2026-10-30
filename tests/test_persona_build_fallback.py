@@ -154,7 +154,7 @@ def test_next_build_retries_llm_and_replaces_fallback_draft():
     assert rebuilt.source == "llm"
     assert rebuilt.version == 2
     assert rebuilt.scores["avoidance"] == 78
-    assert rebuilt.interests == ["러닝"]
+    assert rebuilt.interests == []
 
 
 def test_build_persists_valid_summaries_and_drops_invalid_or_duplicate_categories():
@@ -185,15 +185,15 @@ def test_build_summaries_default_to_empty_list_when_llm_omits_them():
 
 
 def test_build_drops_scores_for_skipped_or_unasked_questions():
-    """LLM 이 건너뛴 주말 질문(date_prefer)·묻지 않은 차원(anxiety·problem_solving)까지 추측해 채워도 버린다."""
+    """LLM 이 묻지 않은 차원(anxiety·problem_solving)이나 텍스트 항목을 채워도 버린다."""
     raw = RawExtraction(
         avoidance=78,
         seriousness=90,
         anxiety=20,  # 묻지 않음
         problem_solving=85,  # 묻지 않음
         interests=["러닝"],
-        routine=["늦잠"],  # 건너뛴 주말 질문
-        date_prefer=["각자 시간 챙기기"],  # 건너뛴 주말 질문
+        routine=["늦잠"],
+        date_prefer=["각자 시간 챙기기"],
     )
 
     (draft,), _ = _build(raw)
@@ -201,38 +201,37 @@ def test_build_drops_scores_for_skipped_or_unasked_questions():
     assert (draft.scores["avoidance"], draft.scores["seriousness"]) == (78, 90)
     assert (draft.scores["anxiety"], draft.confidence["anxiety"]) == (None, "LOW")
     assert (draft.scores["problem_solving"], draft.confidence["problem_solving"]) == (None, "LOW")
-    assert draft.interests == ["러닝"]
-    assert (draft.routine, draft.date_prefer) == ([], [])
+    assert (draft.interests, draft.routine, draft.date_prefer, draft.date_avoid) == ([], [], [], [])
 
 
 def test_build_keeps_only_what_the_answer_itself_revealed():
-    """주말 질문은 일상·선호 데이트·피하는 것을 겨누지만, 답에 일상만 있으면 일상만 남는다."""
-    raw = RawExtraction(routine=["집에서 쉬기"], date_prefer=["각자 시간 챙기기"], date_avoid=["만나자마자 깊어지기"])
+    """태깅이 그 답변에서 주 근거(primary)로 짚은 점수 차원만 인정한다."""
+    raw = RawExtraction(contact_rhythm=70, anxiety=40)
 
-    (draft,), _ = _build(raw, weekend={"answer": "그냥 집에서 쉬어요", "tags": _tags("routine")})
+    (draft,), _ = _build(raw, weekend={"answer": "연락은 자주 하는 편이에요", "tags": _tags("contact_rhythm")})
 
-    assert draft.routine == ["집에서 쉬기"]
-    assert (draft.date_prefer, draft.date_avoid) == ([], [])
+    assert draft.scores["contact_rhythm"] == 70
+    assert draft.scores["anxiety"] is None
 
 
 def test_answer_whose_tagging_failed_is_tagged_again_at_build():
     """온보딩 중 태깅이 실패한 답(tags 없음)은 /build 때 다시 태깅해 그 답의 근거만 인정한다."""
-    raw = RawExtraction(routine=["집에서 쉬기"], date_prefer=["각자 시간 챙기기"])
-    tagger = FakeTagging(Tags(primary=["routine"]))
+    raw = RawExtraction(contact_rhythm=70, anxiety=40)
+    tagger = FakeTagging(Tags(primary=["contact_rhythm"]))
 
-    (draft,), _ = _build(raw, weekend={"answer": "그냥 집에서 쉬어요", "tags": None}, tagger=tagger)
+    (draft,), _ = _build(raw, weekend={"answer": "연락은 자주 하는 편이에요", "tags": None}, tagger=tagger)
 
-    assert tagger.seen == ["그냥 집에서 쉬어요"]
-    assert (draft.routine, draft.date_prefer) == (["집에서 쉬기"], [])
+    assert tagger.seen == ["연락은 자주 하는 편이에요"]
+    assert (draft.scores["contact_rhythm"], draft.scores["anxiety"]) == (70, None)
 
 
 def test_retagging_at_build_waits_longer_than_onboarding_tagging():
     """/build 는 사용자가 결과를 기다리는 단계라 온보딩 중(답마다 바로 다음 질문)보다 넉넉히 기다린다 (#80)."""
     from app.core.config import get_settings
 
-    tagger = FakeTagging(Tags(primary=["routine"]))
+    tagger = FakeTagging(Tags(primary=["contact_rhythm"]))
 
-    _build(RawExtraction(routine=["집에서 쉬기"]), weekend={"answer": "그냥 쉬어요", "tags": None}, tagger=tagger)
+    _build(RawExtraction(contact_rhythm=70), weekend={"answer": "그냥 쉬어요", "tags": None}, tagger=tagger)
 
     settings = get_settings()
     assert tagger.timeouts == [settings.persona_retag_timeout_s]
@@ -241,11 +240,11 @@ def test_retagging_at_build_waits_longer_than_onboarding_tagging():
 
 def test_answer_that_cannot_be_tagged_even_at_build_counts_for_nothing():
     """다시 태깅해도 실패하면 그 답에서 무엇이 드러났는지 확인할 수 없다 — 아무 차원도 인정하지 않는다."""
-    raw = RawExtraction(routine=["집에서 쉬기"], date_prefer=["각자 시간 챙기기"])
+    raw = RawExtraction(contact_rhythm=70, anxiety=40)
 
-    (draft,), _ = _build(raw, weekend={"answer": "그냥 집에서 쉬어요", "tags": None}, tagger=FakeTagging(None))
+    (draft,), _ = _build(raw, weekend={"answer": "연락은 자주 하는 편이에요", "tags": None}, tagger=FakeTagging(None))
 
-    assert (draft.routine, draft.date_prefer) == ([], [])
+    assert (draft.scores["contact_rhythm"], draft.scores["anxiety"]) == (None, None)
 
 
 def test_build_drops_summary_cards_for_areas_without_answers():
@@ -264,7 +263,7 @@ def test_build_drops_summary_cards_for_areas_without_answers():
 
 
 def test_build_asks_llm_only_about_answered_items(monkeypatch):
-    """실제 추출 에이전트를 통과시키고 LLM 호출만 가짜로 — LLM 에 '직접 답한 항목'만 알려준다."""
+    """실제 추출 에이전트를 통과시키고 LLM 호출만 가짜로 — LLM 에 '직접 답한 점수형 항목'만 알려준다."""
     from app.features.persona import agents
 
     sent = {}
@@ -278,9 +277,10 @@ def test_build_asks_llm_only_about_answered_items(monkeypatch):
     (draft,), _ = _build(agent=ExtractionAgent())
 
     assert "avoidance (거리 두기)" in sent["prompt"]
-    assert "interests (관심사)" in sent["prompt"]
+    assert "seriousness (관계 진지도)" in sent["prompt"]
+    assert "interests (관심사)" not in sent["prompt"]
     assert "anxiety (관계 불안)" not in sent["prompt"]  # 묻지 않음
-    assert "date_prefer (선호 데이트)" not in sent["prompt"]  # 건너뛴 주말 질문
+    assert "date_prefer (선호 데이트)" not in sent["prompt"]  # 텍스트형 항목 제외
     assert (draft.scores["avoidance"], draft.scores["anxiety"]) == (78, None)
 
 

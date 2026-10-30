@@ -49,7 +49,14 @@ from .agents import (
     PartnerAgent,
     without_identity_confession,
 )
-from .memory import MemoryContext, grounding_texts, load_memory_context, render_memory_section
+from .memory import (
+    MemoryContext,
+    fact_attributes,
+    grounding_texts,
+    load_confirmed_fact_texts,
+    load_memory_context,
+    render_memory_section,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +101,7 @@ class V2PracticeService:
         self.agent = PartnerAgent()
         self.embedder = embedder or get_embedder()  # 모델은 첫 호출 때 로드된다
         self._memory = MemoryContext()  # _system 이 채우고 _guardrail_context 가 읽는다 (요청마다 새 인스턴스)
+        self._partner_facts: list[str] = []
 
     # PersonaRef 로 저장된 페르소나를 불러온다. 없으면 PersonaNotFound
     async def _load(self, who: str, ref: PersonaRef) -> LoadedPersona:
@@ -185,12 +193,22 @@ class V2PracticeService:
             logger.exception("v2 memory retrieval failed for user=%s — continuing without memory", session.user_id)
             return MemoryContext()
 
+    async def _load_partner_facts(self, user_id: str | None) -> list[str]:
+        if not user_id:
+            return []
+        try:
+            return await load_confirmed_fact_texts(self.db, user_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("v2 partner fact retrieval failed for user=%s — continuing without facts", user_id)
+            return []
+
     # ── 프롬프트 ──────────────────────────────────────────
 
     # 상대(+나) 프로필 → 기본 시스템 프롬프트, 그 뒤에 가드레일·메모리 지시를 붙인다
     async def _system(self, session: PracticeSession) -> str:
         self._memory = await self._load_memory(session)  # _guardrail_context 가 읽으므로 먼저 채운다
         partner = await self._load("partner", PersonaRef(persona_id=session.partner_persona_id))
+        self._partner_facts = await self._load_partner_facts(partner.record.user_id or session.partner_user_id)
         me = None
         if session.my_persona_id:
             me = await load_persona(self.db, PersonaRef(persona_id=session.my_persona_id))
@@ -210,6 +228,7 @@ class V2PracticeService:
             partner=partner.response,
             my_name=session.my_nickname,
             me=me.response if me else None,
+            partner_facts=self._partner_facts,
         )
         if mode == "enforce":
             system += "\n" + practice_cove_addon(
@@ -220,9 +239,9 @@ class V2PracticeService:
         return system
 
     # 가드레일 문맥. 메모리에서 꺼낸 사실도 "사용자가 말한 것"으로 인정해 근거 검사에서 걸리지 않게 한다
-    def _guardrail_context(self, session: PracticeSession, partner, me) -> GuardrailContext:
-        speaker = [*partner.interests, *partner.routine, *partner.date_prefer]
-        own = [*me.interests, *me.routine, *me.date_prefer] if me else []
+    def _guardrail_context(self, session: PracticeSession, partner=None, me=None) -> GuardrailContext:
+        speaker = fact_attributes(self._partner_facts)
+        own = fact_attributes(self._memory.all_facts)
         partner_only = [item for item in own if item not in speaker]
         user_texts = [m.content for m in session.messages if m.role == "user"]
         return GuardrailContext(

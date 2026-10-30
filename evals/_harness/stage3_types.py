@@ -1581,3 +1581,10 @@ def ko_name(name: str) -> str:
 
 def ko_sev(sev: str) -> str:
     return SEV_KO.get(sev.split()[0], sev)
+
+
+# 2026-10-29 사용자 결정: 가벼운(MIN) 유형 중 '결과 형식 규칙 위반'(f03 F-06)과
+# '정해진 분류 밖 카테고리'(f08 F-03)만 남기고 나머지는 평가에서 삭제한다. 번호는 다시 매기지 않는다.
+REMOVED_TYPES = {"f01": {"F-02", "F-05", "F-06", "F-07"}, "f06": {"F-05"}}
+for _slug, _ids in REMOVED_TYPES.items():
+    D[_slug]["types"] = [t for t in D[_slug]["types"] if t["id"] not in _ids]

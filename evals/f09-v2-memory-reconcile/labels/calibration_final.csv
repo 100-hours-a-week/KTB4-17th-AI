@@ -1,8 +1,8 @@
 ﻿case_id,F-01,F-02,F-03,F-04,출처
 09-mem-20-b,PASS,PASS,PASS,NA,Codex·Grok 일치
-09-mem-30-b,FAIL,PASS,NA,NA,Codex·Grok 일치
-09-mem-08-b,FAIL,PASS,NA,NA,Codex·Grok 일치
-09-mem-22-b,FAIL,PASS,NA,NA,Codex·Grok 일치
+09-mem-30-b,PASS,PASS,NA,NA,Codex·Grok 일치+사용자(F-01 DELETE+ADD 통과 2026-10-28)
+09-mem-08-b,PASS,PASS,NA,NA,Codex·Grok 일치+사용자(F-01 DELETE+ADD 통과 2026-10-28)
+09-mem-22-b,PASS,PASS,NA,NA,Codex·Grok 일치+사용자(F-01 DELETE+ADD 통과 2026-10-28)
 09-mem-16-b,PASS,PASS,PASS,NA,Codex·Grok 일치
 09-mem-26-b,PASS,PASS,NA,NA,Codex·Grok 일치+사용자
 09-mem-21-b,PASS,FAIL,PASS,NA,Claude+Codex·Grok 일치

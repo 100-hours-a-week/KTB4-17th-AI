@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
+from app.v2.persona.service import run_onboarding_memory_update
 
 from .agents import BuildFailed
 from .repository import PersonaRepository, SessionBusy
@@ -181,6 +182,7 @@ async def build(
 async def confirm(
     persona_id: str,
     req: ConfirmPersonaRequest,
+    background: BackgroundTasks,
     service: OnboardingService = Depends(get_service),
     db: AsyncSession = Depends(get_db),
 ) -> ConfirmPersonaResponse:
@@ -196,6 +198,8 @@ async def confirm(
         raise HTTPException(409, "persona is already confirmed with different data") from e
 
     await db.commit()
+    if result.user_id:
+        background.add_task(run_onboarding_memory_update, result.user_id)
     return result
 
 

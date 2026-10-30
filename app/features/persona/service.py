@@ -12,7 +12,7 @@ import re
 from datetime import UTC, datetime
 
 from app.core.config import get_settings
-from app.core.guardrail import contains_profanity, effective_mode
+from app.core.guardrail import effective_mode
 from app.core.guardrail_trace import record_guardrail
 from app.core.observability import build_langfuse_metadata
 
@@ -730,17 +730,8 @@ class OnboardingService:
             evidence = max(coverage.primary.get(key, 0), 1 if key in answered else 0)
             confidence[key] = confidence_of(value is not None, evidence)
 
-        texts: dict[str, list[str]] = {}
-        for key in TEXTUAL:
-            values = getattr(raw, key, [])
-            if values and key not in answered:
-                dropped.append(key)
-                values = []
-            # 욕설이 든 항목은 버린다 — narrative·summaries 는 가드레일을 거치지만 texts 는 거치지 않았다
-            clean = [v for v in values if not contains_profanity(v)]
-            if len(clean) != len(values):
-                logger.info("dropped profane %s items: %d", key, len(values) - len(clean))
-            texts[key] = clean
+        # 텍스트형 항목(interests, routine, date_prefer, date_avoid)은 v2 메모리에서 관리하므로 추출하지 않는다
+        texts: dict[str, list[str]] = {key: [] for key in TEXTUAL}
         if dropped:
             logger.info("dropped unanswered dimensions from extraction: %s", dropped)
 

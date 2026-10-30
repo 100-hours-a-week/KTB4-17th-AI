@@ -61,6 +61,12 @@ data/simfid/
 
 # 골드셋 초안 작업 파일(scripts/gold_drafts.py). 확정 골드셋은 evals/quality_datasets/human/ 에 남긴다
 data/gold_work/
+.grok/skills/flow-code-diagram/SKILL.md
+.grok/skills/flow-code-diagram/assets/shell.html
+.grok/skills/flow-code-diagram/references/layers.md
+.grok/skills/flow-code-diagram/references/markup.md
+.grok/skills/flow-code-diagram/scripts/verify_doc.py
+scripts/embedding_local_check.py
 
 # 기능별 LLM 성능평가. 시험과 채점 실행에 쓰는 파일만 버전 관리한다.
 # 시뮬레이션 v1(f10, f11)은 2026-10-28 평가 제외.
@@ -98,5 +104,10 @@ evals/_harness/*.py
 !evals/_harness/stage5_labels.py
 !evals/_harness/stage5_rejudge.py
 !evals/_harness/stage5_rescore.py
+!evals/_harness/stage5_supplement.py
+!evals/_harness/stage6_cli.py
+!evals/_harness/stage6_manifest.py
+!evals/_harness/stage6_preflight.py
+!evals/_harness/stage6_scorecard.py
 !evals/_harness/run_kakao.py
 !evals/_harness/run_simulation.py

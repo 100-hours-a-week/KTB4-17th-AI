@@ -247,10 +247,11 @@ def test_report_failure_falls_back_to_template():
 
 
 def test_report_perspective_swap_retries_once_then_template():
-    # b 의 관심사(독서 모임)를 a 이름 뒤에 붙인 리포트
+    # b 의 fact(독서 모임)를 a 이름 뒤에 붙인 리포트
+    fb = [fact(11, "독서 모임에 참여한다", vec(1.0))]
     swapped = report_call(headline="민수님은 독서 모임을 좋아해요")
     llm = FakeLLM({"generate": [script_call(good_script())], "judge": [judge_pass()], "report": [swapped]})
-    res = _run(llm)
+    res = _run(llm, facts_b=fb)
     assert llm.count("report") == 2
     assert res.report.narrative_source == "template"
 
