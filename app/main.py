@@ -25,6 +25,7 @@ from fastapi import APIRouter, FastAPI
 from langfuse import get_client
 
 from app.core import slm
+from app.core.http_metrics import setup_http_metrics
 from app.features.chat_end.api import router as chat_end_router
 from app.features.face_verification.api import router as face_verification_router
 from app.features.persona.api import router as persona_router
@@ -136,3 +137,5 @@ async def health_check() -> dict[str, str]:
 
 
 app.include_router(api_router)
+
+setup_http_metrics(app)

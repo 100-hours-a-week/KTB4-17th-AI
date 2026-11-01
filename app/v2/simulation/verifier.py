@@ -138,7 +138,7 @@ def _supported(key: str, own_corpus: str) -> bool:
 
 
 _JOSA = re.compile(r"(?:에서|으로|이랑|하고|을|를|이|가|은|는|에|의|도|와|과|로|랑)$")
-_VERBISH = re.compile(r"(?:다|요|고|며|서|져|게|해|한|하는|했|던|된|될|운|인|있|없|면|니|지|할|일|을|함)$")
+_VERBISH = re.compile(r"(?:다|요|고|며|[아어해여워고면나와봐가]서|져|게|해|한|하는|했|던|된|될|운|인|있|없|면|니|지|할|일|을|함)$")
 _FACT_STOP = {
     "마음",
     "기분",
@@ -165,6 +165,11 @@ _FACT_STOP = {
     "직접",
     "친구",
     "친구들",
+    "모임",
+    "동호회",
+    "활동",
+    "참여",
+    "즐겨",
 }
 
 
@@ -289,10 +294,6 @@ def _format_issues(script: list[ScriptLineV2], turns: int) -> list[Issue]:
     return issues
 
 
-def _attrs(p) -> list[str]:
-    return [*p.interests, *p.routine, *p.date_prefer]
-
-
 def rule_check(
     script: list[ScriptLineV2], ctx: SimContext, plan: TopicPlan, turns: int
 ) -> tuple[list[Issue], list[str]]:
@@ -310,7 +311,6 @@ def rule_check(
     self_re = {} if same_name else {k: _calls_self(v) for k, v in names.items() if v.strip()}
     claim_re = {} if same_name else {k: _claims_name(v) for k, v in names.items() if v.strip()}
     allowed = {"a": _allowed_corpus(ctx, plan, "a"), "b": _allowed_corpus(ctx, plan, "b")}
-    persona = {"a": ctx.persona_a, "b": ctx.persona_b}
     # 각 화자가 지금까지 fact_refs 로 꺼낸 ref (소유권 검사용)
     mentioned: dict[str, set[str]] = {"a": set(), "b": set()}
     last_round_start = max(len(script) - 2, 0)
@@ -353,9 +353,13 @@ def rule_check(
                     Issue(i=k, type="self_address", severity="local", evidence="상대 닉네임을 자기 이름처럼 소개함")
                 )
 
-        # 가드레일: 관점 뒤바뀜 / 사실 창작
-        own = _attrs(persona[spk])
-        partner_only = [x for x in _attrs(persona[other]) if x not in own]
+        # 가드레일: 관점 뒤바뀜 / 사실 창작 (메모리 fact 기반)
+        own_facts = [f.text for f in (plan.facts_a if spk == "a" else plan.facts_b)]
+        other_facts = [f.text for f in (plan.facts_b if spk == "a" else plan.facts_a)]
+        own = list(dict.fromkeys(key for ft in own_facts for key in _fact_keys(ft)))
+        partner_only = list(
+            dict.fromkeys(key for ft in other_facts for key in _fact_keys(ft) if not _supported(key, allowed[spk]))
+        )
         try:
             checked = validate(
                 line.text,
@@ -391,9 +395,7 @@ def rule_check(
         # 자체 규칙 — 가드레일이 놓치는 경우 (같은 문장에 상대 호칭이 있으면 가드레일 관점 규칙이 꺼진다)
         line_types = {x.type for x in issues if x.i == k}
         if "perspective" not in line_types and (
-            attr := _self_claims(
-                line.text, partner_only, allowed[spk], [f.text for f in (plan.facts_b if spk == "a" else plan.facts_a)]
-            )
+            attr := _self_claims(line.text, partner_only, allowed[spk], other_facts)
         ):
             issues.append(
                 Issue(

@@ -9,7 +9,7 @@ import pytest
 
 from app.core.config import get_settings
 from app.v2.simulation import llm as llm_mod
-from app.v2.simulation.generator import SUBMIT_SCRIPT_TOOL, parse_lines
+from app.v2.simulation.generator import SUBMIT_SCRIPT_TOOL_OLD, parse_lines_old
 from app.v2.simulation.llm import SimLLMError, call_tools
 
 
@@ -44,7 +44,9 @@ def _call(monkeypatch, resp, *, use_tools=True):
     client = FakeClient(resp)
     monkeypatch.setattr(llm_mod, "_get_client", lambda: client)
     monkeypatch.setattr(get_settings(), "simulation_v2_use_tools", use_tools)
-    out = asyncio.run(call_tools(system="s", user="u", tools=[SUBMIT_SCRIPT_TOOL], max_tokens=100, timeout=5, name="t"))
+    out = asyncio.run(
+        call_tools(system="s", user="u", tools=[SUBMIT_SCRIPT_TOOL_OLD], max_tokens=100, timeout=5, name="t")
+    )
     return out, client
 
 
@@ -89,8 +91,8 @@ def test_upstream_exception_wrapped(monkeypatch):
         _call(monkeypatch, RuntimeError("down"))
 
 
-def test_parse_lines_normalizes_speakers_and_reindexes():
-    lines = parse_lines(
+def test_parse_lines_old_normalizes_speakers_and_reindexes():
+    lines = parse_lines_old(
         [
             {"i": 5, "speaker": "민수", "text": " 안녕하세요 ", "fact_refs": ["A-f1", "A-f1"]},
             {"i": 6, "speaker": "누구", "text": "버림"},
@@ -105,7 +107,7 @@ def test_parse_lines_normalizes_speakers_and_reindexes():
         (0, "a", "안녕하세요", ["A-f1"]),
         (1, "b", "반가워요", []),
     ]
-    assert parse_lines(None, "a", "b") == []
+    assert parse_lines_old(None, "a", "b") == []
 
 
 def test_provider_error_salvages_parsed_calls_and_dedupes(monkeypatch):
@@ -122,15 +124,15 @@ def test_provider_error_without_calls_raises(monkeypatch):
     assert e.value.reason == "upstream_error"
 
 
-def test_script_tool_uses_nicknames_unless_same():
-    from app.v2.simulation.generator import script_tool
+def test_script_tool_old_uses_nicknames_unless_same():
+    from app.v2.simulation.generator import script_tool_old
 
     def enum(t):
         return t["function"]["parameters"]["properties"]["lines"]["items"]["properties"]["speaker"]["enum"]
 
-    assert enum(script_tool("민수", "지은")) == ["민수", "지은"]
-    assert enum(script_tool("민수", "민수")) == ["a", "b"]
-    assert enum(SUBMIT_SCRIPT_TOOL) == ["a", "b"]  # 원본은 바뀌지 않는다
+    assert enum(script_tool_old("민수", "지은")) == ["민수", "지은"]
+    assert enum(script_tool_old("민수", "민수")) == ["a", "b"]
+    assert enum(SUBMIT_SCRIPT_TOOL_OLD) == ["a", "b"]  # 원본은 바뀌지 않는다
 
 
 def test_normalize_lines_merges_trims_and_reindexes():
@@ -152,9 +154,9 @@ def test_normalize_lines_merges_trims_and_reindexes():
     ]
 
 
-def test_parse_lines_moves_inline_fact_ids_out_of_text():
+def test_parse_lines_old_moves_inline_fact_ids_out_of_text():
     """실측: 닉네임 화자 도구에서 모델이 '…가거든요. A-f1' 처럼 ID 를 본문에 씀."""
-    lines = parse_lines(
+    lines = parse_lines_old(
         [
             {"speaker": "민수", "text": "저는 주말마다 산에 가거든요. A-f1", "fact_refs": []},
             {"speaker": "지은", "text": "저도 트레킹 해요 (B-f1) ㅎㅎ", "fact_refs": ["B-f1"]},
@@ -168,8 +170,8 @@ def test_parse_lines_moves_inline_fact_ids_out_of_text():
     ]
 
 
-def test_parse_lines_literal_speaker_beats_nickname():
-    lines = parse_lines([{"speaker": "b", "text": "안녕"}], "b", "지은")
+def test_parse_lines_old_literal_speaker_beats_nickname():
+    lines = parse_lines_old([{"speaker": "b", "text": "안녕"}], "b", "지은")
     assert lines[0].speaker == "b"
 
 

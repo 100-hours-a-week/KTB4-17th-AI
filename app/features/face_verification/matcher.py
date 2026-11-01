@@ -27,19 +27,19 @@ class FaceMatcher:
         self._recognizer = None
         self._fallback_detector = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
         self._lock = threading.Lock()
-        self._cached_ref_key: bytes | None = None
-        self._cached_ref_feature: np.ndarray | None = None
+        # 원본·좌우 반전 대표 사진을 번갈아 비교하므로 최근 두 장의 특징을 보관한다.
+        self._cached_ref_features: dict[bytes, np.ndarray] = {}
 
     def compare(self, reference: np.ndarray, live: np.ndarray) -> tuple[bool, float]:
-        self._load()
         ref_key = blake2b(memoryview(np.ascontiguousarray(reference)), digest_size=16).digest()
         with self._lock:
-            if self._cached_ref_key == ref_key and self._cached_ref_feature is not None:
-                reference_feature = self._cached_ref_feature
-            else:
+            self._load()
+            reference_feature = self._cached_ref_features.get(ref_key)
+            if reference_feature is None:
                 reference_feature = self._feature(reference)
-                self._cached_ref_key = ref_key
-                self._cached_ref_feature = reference_feature
+                if len(self._cached_ref_features) >= 2:
+                    self._cached_ref_features.pop(next(iter(self._cached_ref_features)))
+                self._cached_ref_features[ref_key] = reference_feature
             live_feature = self._feature(live)
             similarity = float(self._recognizer.match(reference_feature, live_feature, cv2.FaceRecognizerSF_FR_COSINE))
         return similarity >= self.threshold, similarity
@@ -103,5 +103,10 @@ class FaceMatcher:
         crop = image[y1:y2, x1:x2]
         if crop.size == 0:
             raise FaceNotFound("얼굴 비교 특징을 만들 수 없습니다.")
-        aligned = cv2.resize(crop, (112, 112), interpolation=cv2.INTER_AREA)
+        # Haar는 재검출할 영역만 찾는다. 특징 추출에는 반드시 YuNet의 5점 정렬을 쓴다.
+        landmarks = self._detect(crop)
+        if landmarks is None or len(landmarks) == 0:
+            raise FaceNotFound("얼굴 비교를 위한 정렬점을 찾을 수 없습니다.")
+        primary = max(landmarks, key=lambda face: float(face[2] * face[3]))
+        aligned = self._recognizer.alignCrop(crop, primary)
         return self._recognizer.feature(aligned)

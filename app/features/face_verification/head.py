@@ -24,23 +24,17 @@ MIN_TURNED_FRAMES = 2
 
 
 class HeadMovement(StrEnum):
-    TURN_LEFT = "TURN_LEFT"
-    TURN_RIGHT = "TURN_RIGHT"
     LOOK_UP = "LOOK_UP"
     LOOK_DOWN = "LOOK_DOWN"
 
 
 HEAD_MOVEMENT_LABELS: dict[HeadMovement, str] = {
-    HeadMovement.TURN_LEFT: "왼쪽으로 고개 돌리기",
-    HeadMovement.TURN_RIGHT: "오른쪽으로 고개 돌리기",
     HeadMovement.LOOK_UP: "위로 고개 들기",
     HeadMovement.LOOK_DOWN: "아래로 고개 숙이기",
 }
 
-# 사용자 기준 방향 → (축, 부호). yaw는 원본 영상에서 코가 오른쪽으로 갈수록, pitch는 고개를 숙일수록 커진다.
+# 사용자 기준 상하 방향 → (축, 부호). pitch는 고개를 숙일수록 커지고 들수록 작아진다.
 _AXES: dict[HeadMovement, tuple[str, int]] = {
-    HeadMovement.TURN_LEFT: ("yaw", 1),
-    HeadMovement.TURN_RIGHT: ("yaw", -1),
     HeadMovement.LOOK_UP: ("pitch", -1),
     HeadMovement.LOOK_DOWN: ("pitch", 1),
 }
@@ -77,18 +71,15 @@ def movement_delta(pose: HeadPose, baseline: HeadPose, movement: HeadMovement) -
 
 
 def read_movement(pose: HeadPose, baseline: HeadPose) -> HeadMovement | None:
-    """지금 자세가 기준 대비 어느 방향으로 돌아가 있는지. 실시간 표시용."""
-    yaw, pitch = abs(pose.yaw - baseline.yaw), abs(pose.pitch - baseline.pitch)
-    if min(yaw, pitch) >= HEAD_TURN_MIN_DELTA_DEG and max(yaw, pitch) < min(yaw, pitch) * 1.35:
-        return None  # 두 축이 비슷하게 움직이면 좌우/상하 중 하나로 억지로 분류하지 않는다.
+    """지금 자세가 기준 대비 상하(pitch) 어느 방향으로 움직였는지 판정한다."""
     movement = max(HeadMovement, key=lambda item: movement_delta(pose, baseline, item))
     return movement if movement_delta(pose, baseline, movement) >= HEAD_TURN_MIN_DELTA_DEG else None
 
 
 def judge_head_turn(poses: Sequence[HeadPose | None], expected: HeadMovement) -> HeadTurn:
-    """시간순 프레임 자세(얼굴이 하나가 아니면 None)로 고개 동작을 판정한다."""
+    """시간순 프레임 자세(얼굴이 하나가 아니면 None)로 고개 상하 동작을 판정한다 (복귀 불필요)."""
     faces = [pose for pose in poses if pose is not None]
-    if len(faces) < BASELINE_FRAMES + MIN_TURNED_FRAMES + 1:
+    if len(faces) < BASELINE_FRAMES + MIN_TURNED_FRAMES:
         return HeadTurn(expected, len(faces), None, 0.0, 0, False, None, False)
 
     if any(pose is None for pose in poses[:BASELINE_FRAMES]):
@@ -99,19 +90,16 @@ def judge_head_turn(poses: Sequence[HeadPose | None], expected: HeadMovement) ->
     )
     deltas = [movement_delta(pose, baseline, expected) for pose in faces]
     turned = [index for index, delta in enumerate(deltas) if delta >= HEAD_TURN_MIN_DELTA_DEG]
-    consecutive, completed_turn, returned = 0, False, False
+    consecutive, completed_turn = 0, False
     for pose in poses[BASELINE_FRAMES:]:
         if pose is None:
-            consecutive, completed_turn = 0, False
+            consecutive = 0
             continue
         if read_movement(pose, baseline) == expected:
             consecutive += 1
-            completed_turn |= consecutive >= MIN_TURNED_FRAMES
-        elif max(abs(pose.yaw - baseline.yaw), abs(pose.pitch - baseline.pitch)) <= HEAD_RETURN_MAX_DELTA_DEG:
-            if completed_turn:
-                returned = True
+            if consecutive >= MIN_TURNED_FRAMES:
+                completed_turn = True
                 break
-            consecutive = 0
         else:
             consecutive = 0
 
@@ -119,6 +107,7 @@ def judge_head_turn(poses: Sequence[HeadPose | None], expected: HeadMovement) ->
     strongest = max(peaks, key=peaks.__getitem__)
     if peaks[strongest] < HEAD_TURN_MIN_DELTA_DEG:
         strongest = None
+    passed = completed_turn and strongest == expected
 
     return HeadTurn(
         expected=expected,
@@ -126,7 +115,7 @@ def judge_head_turn(poses: Sequence[HeadPose | None], expected: HeadMovement) ->
         baseline=baseline,
         peak_delta_deg=round(peaks[expected], 1),
         turned_frames=len(turned),
-        returned=returned,
+        returned=passed,
         strongest=strongest,
-        passed=completed_turn and returned and strongest == expected,
+        passed=passed,
     )

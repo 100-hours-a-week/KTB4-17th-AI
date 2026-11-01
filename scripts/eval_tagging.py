@@ -11,7 +11,8 @@
 
 평가는 지정한 모델 하나만 잰다. 앱의 SLM 라우팅·메인 LLM 폴백은 끈다 (폴백이 섞이면 점수가 두 모델의 혼합이 된다).
 
-서빙 코드의 TaggingAgent 를 그대로 호출하므로 프롬프트·타임아웃·JSON 파싱·차원 필터까지 운영과 같다.
+서빙 코드의 TaggingAgent 를 호출하므로 프롬프트·타임아웃·JSON 추출은 운영과 같다.
+평가에서는 strict 검증을 켜서 미등록 차원 삭제·필드 기본값·타입 변환으로 오답이 정답이 되는 것을 막는다.
 blind_holdout 은 최종 판정 때만 본다. 개발 중에 보면 그 split 에 맞춰 튜닝하게 돼 의미가 없어진다.
 """
 
@@ -68,8 +69,15 @@ def load_cases(splits: list[str], path: Path = DATASET) -> list[dict[str, Any]]:
 
 
 def score(output: dict[str, Any] | None, expected: dict[str, Any]) -> dict[str, bool]:
-    """autoMetrics 계약대로 채점한다. 정답 또는 허용 대안 중 하나와 집합이 같으면 맞음. 실패(None)는 전부 오답."""
+    """autoMetrics 계약대로 채점한다. 실패·형식 위반은 전부 오답, 유효한 라벨은 집합으로 비교한다."""
+    from app.features.persona.agents import parse_tags
+
     metrics = expected["autoMetrics"]
+    if output is not None:
+        try:
+            parse_tags(output, strict=True)
+        except ValueError:
+            output = None
     if output is None:
         return {"primary": False, "secondary": False, "off_topic": False, "exact": False, "failed": True}
 
@@ -128,7 +136,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         inp = case["input"]
         async with gate:
             started = time.perf_counter()
-            tags = await agent.tag(inp["question"], inp["answer"], timeout=timeout)
+            tags = await agent.tag(inp["question"], inp["answer"], timeout=timeout, strict=True)
             latency = time.perf_counter() - started
         output = tags.model_dump() if tags is not None else None
         return {
@@ -147,6 +155,7 @@ async def _run(args: argparse.Namespace) -> dict[str, Any]:
         "base_url": settings.llm_base_url,
         "splits": args.split,
         "timeout_s": timeout,
+        "output_validation": "strict",
         "summary": summarize(results),
         "results": results,
     }

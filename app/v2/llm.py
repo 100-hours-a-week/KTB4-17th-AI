@@ -1,6 +1,6 @@
 """v2 공용 LLM JSON 호출부 — v1 app/features/persona/agents.py 의 호출 함수를 복제했다.
 
-v2 메모리 추출·정리, 연습대화 말투 허락 판정, 카톡 추출이 이 모듈을 쓴다.
+v2 메모리 추출·정리와 카톡 추출이 이 모듈을 쓴다.
 v1 코드를 바꿔도 v2 동작이 같이 바뀌지 않도록 v1 을 import 하지 않는다.
 """
 
@@ -83,7 +83,7 @@ async def _call(
             slm.record_fallback(name, e)
     return await _complete(
         _get_client(),
-        get_settings().llm_model,
+        get_settings().llm_model_v2,
         payload,
         max_tokens,
         timeout,

@@ -91,6 +91,10 @@ class TeacherClient:
             if providers:
                 provider |= {"order": providers, "allow_fallbacks": False}
             self.extra_body = {"provider": provider, "reasoning": {"enabled": reasoning, "exclude": True}}
+        else:
+            # 자체 서빙(vLLM)은 채팅 템플릿이 추론 여부를 정한다. Qwen3.8 템플릿 기본값이 추론 켜짐이라
+            # 끄지 않으면 <think> 블록이 TAG_MAX_TOKENS 를 다 써서 JSON 이 잘린다
+            self.extra_body = {"chat_template_kwargs": {"enable_thinking": reasoning}}
 
     async def complete(self, system: str, user: str, temperature: float, max_tokens: int) -> Completion:
         if self.reasoning:

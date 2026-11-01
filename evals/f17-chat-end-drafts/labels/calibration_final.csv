@@ -1,0 +1,12 @@
+﻿case_id,F-01,F-02,F-03,F-04,출처
+17-ce-19,FAIL,PASS,PASS,PASS,Codex·Grok 일치
+17-ce-20,PASS,PASS,PASS,PASS,Codex·Grok 일치
+17-ce-07,FAIL,PASS,PASS,PASS,Codex·Grok 일치
+17-ce-24,PASS,PASS,PASS,PASS,Claude+Codex·Grok 일치
+17-ce-12,PASS,PASS,PASS,PASS,Codex·Grok 일치
+17-ce-08,PASS,PASS,PASS,PASS,Codex·Grok 일치
+17-ce-22,PASS,PASS,PASS,PASS,Codex·Grok 일치
+g17-e09,PASS,PASS,PASS,PASS,Codex·Grok 일치
+g17-e10,PASS,FAIL,PASS,PASS,Codex·Grok 일치
+g17-e11,PASS,PASS,PASS,FAIL,Claude+Codex·Grok 일치
+g17-e12,FAIL,PASS,PASS,PASS,Codex·Grok 일치

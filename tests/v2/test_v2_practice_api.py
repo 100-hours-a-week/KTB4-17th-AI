@@ -44,6 +44,15 @@ async def _seed_memory(db_session) -> None:
         embedding=VEC,
         embedding_model="KURE-v1",
     )
+    await repo.add_fact(
+        user_id="pu1",
+        category="취미",
+        fact="독서 모임에 나가고 에세이를 즐겨 읽는다",
+        confidence=0.95,
+        status="confirmed",
+        embedding=VEC,
+        embedding_model="KURE-v1",
+    )
     await db_session.commit()
 
 
@@ -89,12 +98,16 @@ def test_stream_reply_injects_memory_into_system_prompt_and_grounds_guardrail():
             system = agent.systems[0]
             assert "거주 지역: 부산" in system
             assert "주말마다 등산을 다닌다" in system
+            assert "독서 모임에 나가고 에세이를 즐겨 읽는다" in system
+            assert "관심사: 알 수 없음" not in system
 
-            # 가드레일 근거: 검색된 Fact 와 코어 값이 user_texts 에 들어간다
+            # 가드레일 근거: 검색된 Fact 와 코어 값이 user_texts 에 들어가고, 화자/상대 속성은 메모리 Fact 키워드에서 나온다
             ctx = service._guardrail_context(
                 session, (await service._load("partner", _ref("p-partner"))).response, None
             )
             assert "주말마다 등산을 다닌다" in ctx.user_texts and "부산" in ctx.user_texts
+            assert "독서" in ctx.speaker_attributes
+            assert "등산" in ctx.partner_attributes
 
     asyncio.run(with_db(body))
 

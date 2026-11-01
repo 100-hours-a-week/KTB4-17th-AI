@@ -83,7 +83,6 @@ RUBRIC = f"""\
     "disclosure": {{"value": 72, "evidence": [2, 19, 57]}}
   }},
   "style": {{
-    "speech_level": "존댓말 | 반말 | 혼용",
     "frequent_phrases": ["..."],
     "endings": ["~..."],
     "interjections": ["..."],

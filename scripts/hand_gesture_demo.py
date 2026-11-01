@@ -156,11 +156,6 @@ class HeadPreview:
         if self.stage == "TURN":
             self.consecutive = self.consecutive + 1 if read_movement(pose, self.baseline) == self.target else 0
             if self.consecutive >= MIN_TURNED_FRAMES:
-                self.stage, self.consecutive = "RETURN", 0
-        else:
-            frontal = max(abs(pose.yaw - self.baseline.yaw), abs(pose.pitch - self.baseline.pitch))
-            self.consecutive = self.consecutive + 1 if frontal <= HEAD_RETURN_MAX_DELTA_DEG else 0
-            if self.consecutive >= MIN_TURNED_FRAMES:
                 self.stage = "DONE"
 
 
@@ -238,7 +233,7 @@ def draw_head_panel(view: np.ndarray, head: HeadPreview) -> np.ndarray:
         else:
             pose = head.filtered_pose
             movement = read_movement(pose, head.baseline) if pose else None
-            delta = max(abs(pose.yaw - head.baseline.yaw), abs(pose.pitch - head.baseline.pitch)) if pose else 0
+            delta = abs(pose.pitch - head.baseline.pitch) if pose else 0
             direction = (
                 movement.value
                 if movement
@@ -333,7 +328,7 @@ def announce_target(gesture: HandGesture | None, direction: HandDirection, head:
         if not requires_hand_direction(gesture, direction):
             print(f"손 안내: {name} — 방향에 상관없이 손 모양을 유지하세요.")
             if head:
-                print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]} 후 정면으로 돌아오세요.")
+                print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]}.")
             return
         orientation = {
             HandDirection.UP: "위쪽",
@@ -343,7 +338,7 @@ def announce_target(gesture: HandGesture | None, direction: HandDirection, head:
         guide = "손목에서 손가락 마디 쪽이" if gesture == HandGesture.FIST else "편 손가락이"
         print(f"손 안내: {name} — {guide} {orientation}을 향하도록 유지하세요.")
     if head:
-        print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]} 후 정면으로 돌아오세요.")
+        print(f"고개 안내: 정면에서 {HEAD_MOVEMENT_LABELS[head]}.")
 
 
 def run_image(

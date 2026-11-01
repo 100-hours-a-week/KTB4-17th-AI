@@ -73,11 +73,14 @@ class ChallengeSigner:
     def create(self) -> VerificationChallengeResponse:
         plan = []
         if self.active_enabled:
-            selected = random_challenge()
-            target = encode_target(
-                ChallengeTarget(selected.gesture, selected.direction, None) if self.adaptive_enabled else selected
-            )
-            plan = [list(target) for _ in range(MAX_ATTEMPTS)]
+            # 시도마다 따로 뽑아, 한 번 실패하면 다음 시도는 다른 손 모양으로 진행한다.
+            selected = None
+            for _ in range(MAX_ATTEMPTS):
+                selected = random_challenge(selected)
+                target = (
+                    ChallengeTarget(selected.gesture, selected.direction, None) if self.adaptive_enabled else selected
+                )
+                plan.append(list(encode_target(target)))
         expires = datetime.now(UTC) + timedelta(seconds=self.ttl_seconds)
         return self._issue(plan, expires, version=3 if self.adaptive_enabled else 2)
 
@@ -125,7 +128,7 @@ class ChallengeSigner:
                 raise InvalidChallenge("만료된 챌린지 토큰입니다.")
             if payload.get("v") in (2, 3):
                 plan = payload["plan"]
-                if len(plan) != MAX_ATTEMPTS or not payload.get("nonce") or any(target != plan[0] for target in plan):
+                if len(plan) != MAX_ATTEMPTS or not payload.get("nonce"):
                     raise InvalidChallenge("유효하지 않은 챌린지 계획입니다.")
                 for target in plan:
                     decode_target([Challenge(item) for item in target])

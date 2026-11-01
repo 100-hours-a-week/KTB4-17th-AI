@@ -59,6 +59,7 @@ uv run python training/tagging/build_sft.py data/tagging.jsonl --allow-unreviewe
 
 teacher 라벨은 `reviewed_by` 가 비어 있어 사람이 확인하기 전에는 학습에 들어가지 않는다. 검수는 5회 샘플 판정 일치율
 (`aggregate.agreement`)이 낮은 것부터 본다. teacher 자체의 골드셋 점수는 `scripts/score_teacher_gold.py` 로 잰다.
+teacher 를 RunPod 에 직접 띄워 라벨링하는 절차는 `serving/teacher/README.md` 에 있다.
 
 ```bash
 uv run python training/tagging/build_sft.py data/tagging.jsonl --out training/tagging/out

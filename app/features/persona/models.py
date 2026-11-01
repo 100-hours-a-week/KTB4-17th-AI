@@ -13,9 +13,13 @@ import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import JSON, Boolean, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
+
+
+JSONBCompat = JSON().with_variant(JSONB(), "postgresql")
 
 
 def _uuid() -> str:
@@ -126,5 +130,54 @@ class PersonaRecord(Base):
     mbti: Mapped[str | None] = mapped_column(String(4))
     # "llm" | "fallback" | "practice" | "kakao" | "reset" — 추출 또는 리셋 버전 포함
     source: Mapped[str] = mapped_column(String(8), default="llm", server_default="llm")
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class PersonaCardRecord(Base):
+    """Kanana-2 SFT 및 캐릭터 대화용 구조화된 Persona Card ORM 모델."""
+
+    __tablename__ = "persona_cards"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    persona_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(50))
+    gender: Mapped[str] = mapped_column(String(16), default="unspecified")  # female | male | unspecified
+    generation_mode: Mapped[str] = mapped_column(String(32))  # self_mirror | compatible_character | fictional_variant
+    mbti_reference: Mapped[str | None] = mapped_column(String(4))
+
+    # 15개 지표 세부 객체 (raw_score, effective_score, delta, level, status, interpretation)
+    traits: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
+
+    # 결측치 관리 배열
+    imputed_scores: Mapped[list] = mapped_column(JSONBCompat, default=list)
+    unknown_origin_scores: Mapped[list] = mapped_column(JSONBCompat, default=list)
+    available_summaries: Mapped[list] = mapped_column(JSONBCompat, default=list)
+    missing_summaries: Mapped[list] = mapped_column(JSONBCompat, default=list)
+
+    # 행동 및 선호 지표 분류
+    behavior_traits: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
+    partner_preferences: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
+
+    # 대화 및 관계 스타일
+    communication_style: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
+    conflict_style: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
+    relationship_style: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
+
+    # 근거 기반 행동 규칙
+    personality_rules: Mapped[list] = mapped_column(JSONBCompat, nullable=False)
+
+    # 동적 대화 상태 (current_mood, closeness, trust, current_context)
+    dynamic_state: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
+
+    # Kanana-2 SFT용 멀티턴 대화 예시
+    dialogue_examples: Mapped[list] = mapped_column(JSONBCompat, default=list)
+
+    # 메타데이터 및 검증
+    evidence: Mapped[list] = mapped_column(JSONBCompat, default=list)
+    creative_elements: Mapped[list] = mapped_column(JSONBCompat, default=list)
+    conflicts: Mapped[list] = mapped_column(JSONBCompat, default=list)
+    quality_checks: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)

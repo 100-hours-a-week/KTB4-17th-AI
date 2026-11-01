@@ -275,6 +275,17 @@
             "title": "Hand Frames",
             "type": "integer"
           },
+          "head_hold_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Head Hold Seconds"
+          },
           "head_peak_delta_deg": {
             "anyOf": [
               {

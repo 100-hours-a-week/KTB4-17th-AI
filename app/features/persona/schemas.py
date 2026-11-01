@@ -158,14 +158,14 @@ class Topic:
 
 
 # 하루의 자기소개는 사용자별 취미 추출 근거와 별개이며, 주제가 바뀌어도 같은 설정을 쓴다.
-HARU_PROFILE = "취미는 밤 산책입니다. 약속 없는 주말에는 집에서 쉬다가 가볍게 산책하는 편입니다."
+HARU_PROFILE = "취미는 베이킹입니다. 약속 없는 주말에는 집에서 빵을 자주 만드는 편입니다."
 
 
 TOPICS: list[Topic] = [
     Topic(
         id="interests",
         weight=Weight.LIGHT,
-        opener="저는 요즘 밤 산책에 빠져있어요.",
+        opener="저는 요즘 베이킹에 빠져있어요.",
         covers=("interests",),
         intent="요즘 시간을 많이 쓰는 취미·관심사와 그게 좋은 이유",
         seed="요즘 시간을 가장 많이 쓰는 취미나 관심사가 뭐예요?",
@@ -173,7 +173,7 @@ TOPICS: list[Topic] = [
     Topic(
         id="weekend",
         weight=Weight.LIGHT,
-        opener="저는 약속 없는 주말에는 집에서 쉬다가 가볍게 산책하는 편이에요.",
+        opener="저는 약속 없는 주말에는 집에서 빵 만드는 편이에요.",
         covers=("routine", "date_prefer", "date_avoid"),
         intent="약속 없는 주말을 보내는 방식 + 하고 싶은 데이트 하나, 피하고 싶은 것 하나",
         seed="아무 약속 없는 주말은 보통 어떻게 보내세요?",
@@ -359,7 +359,6 @@ class Summary(BaseModel):
 
 # ══ 실제 대화에서 관찰한 대화 스타일 (persona_extraction 이 채운다) ═══════════
 
-SPEECH_LEVELS = ("존댓말", "반말", "혼용")
 # 실제 대화로 보정하는 점수 — 메신저 대화에서 드러나는 것만. 갈등·이상형·연락 빈도는 대화만으로 판단하기 어렵다
 REFLECTED_SCORES = ("disclosure", "positivity", "openness", "assurances")
 _STYLE_TEXT_MAX = 80
@@ -374,7 +373,6 @@ class ConversationStyle(BaseModel):
     model_config = {"extra": "ignore"}
 
     # 말투·말버릇
-    speech_level: str | None = None  # 존댓말 | 반말 | 혼용
     frequent_phrases: list[str] = Field(default_factory=list)  # 실제 문구, 최대 10개 (개인정보는 추출 서비스가 거름)
     endings: list[str] = Field(default_factory=list)  # 어미 습관: "~요", "~용"
     interjections: list[str] = Field(default_factory=list)  # 감탄사·추임새: "헐", "오"
@@ -392,11 +390,6 @@ class ConversationStyle(BaseModel):
     humor: str | None = None
     initiative: str | None = None
     summary: str | None = None  # 한 줄 요약 1~2문장
-
-    @field_validator("speech_level", mode="before")
-    @classmethod
-    def _known_level(cls, v: object) -> object:
-        return v if v in SPEECH_LEVELS else None
 
     @field_validator("frequent_phrases", "endings", "interjections", "slang", mode="before")
     @classmethod

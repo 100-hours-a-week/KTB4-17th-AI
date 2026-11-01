@@ -670,9 +670,16 @@ def tagging_messages(question: str, answer: str) -> list[dict]:
     return [{"role": "user", "content": f"질문: {question}\n답변: {answer}"}]
 
 
-def parse_tags(raw: dict) -> Tags:
-    """모델 JSON → Tags. 모델이 없는 차원명을 지어냈을 수 있으므로 걸러낸다."""
+def parse_tags(raw: dict, *, strict: bool = False) -> Tags:
+    """모델 JSON → Tags. 평가는 보정 전 계약을 검사하고, 운영은 미등록 차원을 걸러낸다."""
     valid = set(ALL_DIMENSIONS)
+    if strict:
+        if not isinstance(raw, dict) or set(raw) != {"primary", "secondary", "off_topic"}:
+            raise ValueError("tagging output must contain exactly primary, secondary and off_topic")
+        tags = Tags.model_validate(raw, strict=True)
+        if any(d not in valid for d in (*tags.primary, *tags.secondary)):
+            raise ValueError("tagging output contains an unknown dimension")
+        return tags
     return Tags(
         primary=[d for d in raw.get("primary", []) if d in valid],
         secondary=[d for d in raw.get("secondary", []) if d in valid],
@@ -689,10 +696,12 @@ class TaggingAgent:
         *,
         timeout: float | None = None,
         trace_metadata: LangfuseMetadata | None = None,
+        strict: bool = False,
     ) -> Tags | None:
         """실패 시 None. service가 topic.covers를 대신 쓴다.
 
         timeout 을 안 주면 온보딩 중 답변 태깅용(onboarding_tag_timeout_s).
+        strict=True 는 평가용: 필드 누락·타입 오류·미등록 차원을 보정하지 않고 실패로 센다.
 
         태깅 실패로 커버리지가 영영 안 차면 같은 주제를 맴돌게 되므로
         여기서 예외를 올리지 않는다.
@@ -715,7 +724,13 @@ class TaggingAgent:
                 )
                 return None
 
-            return parse_tags(raw)
+            try:
+                return parse_tags(raw, strict=strict)
+            except ValueError as exc:
+                if not strict:
+                    raise
+                logger.warning("tagging output rejected by strict evaluation: %s", exc)
+                return None
 
 
 # ══ 추출 ════════════════════════════════════════════════
@@ -749,7 +764,7 @@ RUBRIC = f"""\
 - 입력의 user_evidence만 사용자 사실의 근거입니다. question_context는 짧은 답의 질문을 이해하는 맥락이며,
   그 안에 있는 하루의 자기소개·예시·취미는 사용자 사실이 아닙니다. 질문에 나왔다는 이유만으로 사용자 사실로 간주하지 마세요.
 - 답변이 명확한 수긍이면 해당 질문의 대상만 연결하고, 하루의 자기소개까지 가져오지 마세요.
-- 이 기준은 점수, 텍스트형 항목, narrative, summaries에 모두 적용됩니다.
+- 이 기준은 점수, narrative, summaries에 모두 적용됩니다.
 
 ## 점수 원칙
 - 0~100 정수.
@@ -759,13 +774,6 @@ RUBRIC = f"""\
 
 ## 점수형 차원
 {_scored_section()}
-
-## 텍스트형 항목
-{_textual_section()}
-
-- 관심사·일상·데이트 취향은 사용자가 직접 밝힌 대상, 행위, 부정과 조건을 보존합니다.
-  선호·소비와 제작·수행 경험·능력은 서로 다른 사실입니다. 관련 있어 보인다는 이유로 바꾸거나 덧붙이지 마세요.
-- 없거나 불명확한 관심사는 빈 배열로 둡니다. 예시 취미, 하루의 설정, 다른 사람의 정보로 채우지 마세요.
 
 ## 상충처럼 보이지만 정상인 조합
 - withdrawal 높음 + problem_solving 높음:
@@ -832,9 +840,9 @@ RUBRIC = f"""\
 
 ## 출력 형식
 JSON 객체 하나만 출력하세요. 설명·마크다운·코드펜스 금지.
-점수형은 정수, 텍스트형은 문자열 배열.
+점수형은 정수.
 근거를 찾지 못한 차원은 키를 아예 생략하세요. (50으로 채우지 마세요)
-{{"avoidance": 78, ..., "interests": [], "routine": [], "date_prefer": [], "date_avoid": [],
+{{"avoidance": 78, ...,
   "narrative": {{"headline": "...", "body": "...", "traits": ["...", "..."]}},
   "summaries": [{{"category": "intimacy", "title": "...", "content": "..."}}]}}
 """
@@ -861,7 +869,7 @@ class ExtractionAgent:
     @staticmethod
     def _answered_section(answered: set[str]) -> str:
         """사용자가 직접 답한 차원만 쓰라는 제한. 서술·특징·카드는 코드로 거를 수 없어 프롬프트로 막는다."""
-        labels = {**{k: d.label for k, d in SCORED.items()}, **TEXTUAL}
+        labels = {k: d.label for k, d in SCORED.items()}
         allowed = [f"{k} ({labels[k]})" for k in labels if k in answered]
         return (
             "\n\n# 사용자가 직접 답한 항목\n"

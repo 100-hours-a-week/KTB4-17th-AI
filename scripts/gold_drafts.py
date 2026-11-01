@@ -12,6 +12,11 @@
        uv run python scripts/gold_drafts.py build --kind tagging --labels labels_A.csv labels_B.csv \\
            --reviewers A,B [--adjudicated adjudicated.csv]
 
+기존 골드셋(LLM 초안 라벨, human_anchor_pending)을 사람이 다시 다는 경우는 prepare 대신 export 로 같은 시트를 만든다.
+누수 검사는 하지 않고(골드셋 자신이므로) caseId·split·입력은 그대로 둔다. 초안 라벨은 시트에 보이지 않게 숨긴다.
+       uv run python scripts/gold_drafts.py export --kind tagging   # calibration+regression 의 label_accuracy
+       uv run python scripts/gold_drafts.py build --kind tagging --work-dir data/gold_work/existing --labels A.csv B.csv
+
 출력 골드셋은 evals/quality_datasets/human/ 에 쌓는다. 기존 evals/quality_datasets/*.jsonl 은 생성기와 manifest 해시로
 고정된 합성 초안이라 건드리지 않는다. 행 구조(input·expectedOutput·metadata)와 채점 계약(autoMetrics)은 같아서
 score_teacher_gold.py·label_with_teacher.py(--gold-dir)·eval_tagging.py(--dataset)가 그대로 읽는다.
@@ -33,6 +38,7 @@ ROOT = Path(__file__).resolve().parents[1]
 GOLD_DIR = ROOT / "evals" / "quality_datasets"
 HUMAN_DIR = GOLD_DIR / "human"
 WORK_DIR = ROOT / "data" / "gold_work"
+EXPORT_WORK_DIR = WORK_DIR / "existing"  # prepare 의 새 초안 묶음과 items.jsonl 이 섞이지 않게 따로 둔다
 MAX_ANSWER_LEN = 200
 DATASET = {"tagging": "persona_onboarding_tagging", "build": "persona_build"}
 # 추출 정답 구간 — profile.py 서술 경계(35 / 65)와 student 의 구간 일치 지표에 맞춘다
@@ -234,6 +240,66 @@ def prepare(
     return kept, report
 
 
+def export_items(rows: list[dict], *, kind: str, splits: list[str]) -> list[dict]:
+    """기존 골드셋 행 → prepare 와 같은 라벨링 대상 목록. label_accuracy 만 (code_behavior 는 서비스 코드 fixture)."""
+    items = []
+    for row in rows:
+        meta = row["metadata"]
+        if meta["evaluationKind"] != "label_accuracy" or meta["split"] not in splits:
+            continue
+        expected = row["expectedOutput"]
+        item = {
+            "caseId": meta["caseId"],  # 그대로 둬야 teacher 실행 id(gold:<caseId>)를 초안·사람 골드셋에서 같이 쓴다
+            "draftId": meta["prototypeId"],
+            "kind": kind,
+            "author": meta["generationMethod"],
+            "draftFile": f"{DATASET[kind]}.jsonl",
+            "split": meta["split"],
+            "category": meta["category"],
+            "familyId": meta["familyId"],
+            "difficulty": meta["difficulty"],
+            "input": row["input"],  # 자극(질문·세션 상태·coverage)은 그대로, 정답만 사람이 다시 단다
+            "hidden": {
+                "draftLabels": expected["referenceLabels"],
+                "draftRanges": expected["acceptableRanges"],
+                "draftReviewFlags": meta["reviewFlags"],
+            },
+        }
+        if kind == "tagging":
+            item |= {"question": row["input"]["question"], "answer": row["input"]["answer"]}
+        else:
+            item |= {"history": row["input"]["history"]}
+        items.append(item)
+    return items
+
+
+def write_sheet(path: Path, kind: str, items: list[dict]) -> None:
+    header, rows = (tagging_sheet_rows if kind == "tagging" else build_sheet_rows)(items)
+    with path.open("w", encoding="utf-8-sig", newline="") as f:  # utf-8-sig: 엑셀·구글 시트에서 한글이 안 깨진다
+        writer = csv.writer(f)
+        writer.writerow(header)
+        writer.writerows(rows)
+
+
+def cmd_export(args: argparse.Namespace) -> int:
+    splits = args.splits.split(",")
+    items = export_items(_rows(args.gold_dir / f"{DATASET[args.kind]}.jsonl"), kind=args.kind, splits=splits)
+    work = args.work_dir / args.kind
+    _write_rows(work / "items.jsonl", items)  # 다시 돌리면 덮어쓴다 — 기존 골드셋이 원본이다
+    write_sheet(work / "sheet.csv", args.kind, items)
+    brief = {
+        "items": len(items),
+        "splits": dict(Counter(i["split"] for i in items)),
+        "flagged": dict(
+            Counter(f for i in items for f in i["hidden"]["draftReviewFlags"] if f != "human_anchor_pending")
+        ),
+        "sheet": str(work / "sheet.csv"),
+        "items_file": str(work / "items.jsonl"),
+    }
+    print(json.dumps(brief, ensure_ascii=False, indent=2))
+    return 0
+
+
 def cmd_prepare(args: argparse.Namespace) -> int:
     authors = args.author.split(",") if args.author else ["unknown"]
     if len(authors) == 1:
@@ -270,12 +336,8 @@ def cmd_prepare(args: argparse.Namespace) -> int:
         existing_ids=existing,
     )
     _write_rows(items_path, previous + kept)
-    header, rows = (tagging_sheet_rows if args.kind == "tagging" else build_sheet_rows)(previous + kept)
     sheet = work / "sheet.csv"
-    with sheet.open("w", encoding="utf-8-sig", newline="") as f:  # utf-8-sig: 엑셀·구글 시트에서 한글이 안 깨진다
-        writer = csv.writer(f)
-        writer.writerow(header)
-        writer.writerows(rows)
+    write_sheet(sheet, args.kind, previous + kept)
     (work / "prepare_report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     brief = {k: (len(v) if isinstance(v, list) else v) for k, v in report.items()}
     print(json.dumps(brief | {"sheet": str(sheet), "items": str(items_path)}, ensure_ascii=False, indent=2))
@@ -417,7 +479,7 @@ def _metadata(item: dict, kind: str, flags: list[str], reviewers: list[str]) -> 
         "split": item["split"],
         "splitGroup": item["familyId"],
         "category": item["category"],
-        "difficulty": "medium",
+        "difficulty": item.get("difficulty", "medium"),
         "sourceRefs": ["scripts/gold_drafts.py"],
         "generationMethod": f"llm-draft:{item['author']}",
         "prototypeId": item["draftId"],
@@ -435,7 +497,8 @@ def tagging_row(item: dict, label: dict, flags: list[str], reviewers: list[str])
     scored, textual = _dims()
     secondary_accepted = [label["secondary"], *label.get("secondaryAlternatives", [])]
     return {
-        "input": {
+        "input": item.get("input")  # export 한 기존 골드셋은 입력을 그대로 둔다
+        or {
             "task": "persona_tagging",
             "question": item["question"],
             "answer": item["answer"],
@@ -477,7 +540,9 @@ def build_row(item: dict, label: dict, flags: list[str], reviewers: list[str]) -
     users = sum(m["role"] == "user" for m in item["history"])
     ranges = {d: LEVEL_RANGES[v] for d, v in levels.items()}
     return {
-        "input": {
+        # export 한 기존 골드셋은 입력(세션 상태·태깅 coverage)을 그대로 둔다 — 운영 파이프라인이 넘기는 값이지 정답이 아니다
+        "input": item.get("input")
+        or {
             "task": "persona_build",
             "history": item["history"],
             "answeredDimensions": answered,
@@ -596,6 +661,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--split", choices=("calibration", "regression", "blind_holdout"), help="이 묶음 전체의 split")
     p.add_argument("--work-dir", type=Path, default=WORK_DIR)
     p.set_defaults(func=cmd_prepare)
+
+    e = sub.add_parser("export", help="기존 골드셋(LLM 초안 라벨) → 사람 재검수용 라벨링 시트")
+    e.add_argument("--kind", choices=tuple(DATASET), required=True)
+    e.add_argument(
+        "--splits", default="calibration,regression", help="쉼표 구분. blind_holdout 은 최종 판정용이라 기본 제외"
+    )
+    e.add_argument("--gold-dir", type=Path, default=GOLD_DIR)
+    e.add_argument("--work-dir", type=Path, default=EXPORT_WORK_DIR)
+    e.set_defaults(func=cmd_export)
 
     b = sub.add_parser("build", help="두 라벨러 시트 → 골드셋")
     b.add_argument("--kind", choices=tuple(DATASET), required=True)

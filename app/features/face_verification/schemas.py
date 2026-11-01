@@ -104,6 +104,7 @@ class LivenessResult(BaseModel):
     head_returned: bool | None = None
     frontal_hold_seconds: float | None = None
     pose_hold_seconds: float | None = None
+    head_hold_seconds: float | None = None
     repeated_frame_ratio: float = 0.0
 
 
