@@ -23,9 +23,9 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 from fastapi import APIRouter, FastAPI
 from langfuse import get_client
-from prometheus_fastapi_instrumentator import Instrumentator, metrics
 
 from app.core import slm
+from app.core.http_metrics import setup_http_metrics
 from app.features.chat_end.api import router as chat_end_router
 from app.features.face_verification.api import router as face_verification_router
 from app.features.persona.api import router as persona_router
@@ -138,16 +138,4 @@ async def health_check() -> dict[str, str]:
 
 app.include_router(api_router)
 
-# 헬스·수집 요청은 제외하고 실제 API의 상태 코드와 전체 HTTP 처리시간을 기록한다.
-instrumentator = Instrumentator(
-    should_group_status_codes=False,
-    excluded_handlers=[r"^/health$", r"^/ai/api/health$", r"^/ai/api/metrics$"],
-)
-instrumentator.add(metrics.requests())
-instrumentator.add(
-    metrics.latency(
-        should_include_status=False,
-        buckets=(0.1, 0.5, 1, 2, 3, 5, 10, 20, 30, 60, 120),
-    )
-)
-instrumentator.instrument(app).expose(app, endpoint="/ai/api/metrics", include_in_schema=False)
+setup_http_metrics(app)
