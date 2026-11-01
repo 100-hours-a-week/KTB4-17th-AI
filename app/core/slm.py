@@ -56,6 +56,12 @@ class Route:
     model: str
 
 
+@dataclass(frozen=True)
+class RoutingDecision:
+    route: Route | None
+    skip_reason: str | None
+
+
 @lru_cache
 def _get_client() -> AsyncOpenAI:
     settings = get_settings()
@@ -138,16 +144,27 @@ def enabled() -> bool:
 
 def route_for(name: str) -> Route | None:
     """이 호출을 SLM 으로 보낼 수 있으면 그 경로. 꺼져 있거나 대상이 아니거나 내려가 있으면 None."""
-    if not enabled() or not health.up:
-        return None
+    return routing_decision(name).route
+
+
+def routing_decision(name: str, *, use_slm: bool = True) -> RoutingDecision:
+    """Explain a pre-call skip separately from an attempted SLM call failing."""
+    if not use_slm:
+        return RoutingDecision(None, "slm_disabled")
     settings = get_settings()
+    if name not in TASKS:
+        return RoutingDecision(None, "task_not_supported")
+    if not settings.slm_base_url:
+        return RoutingDecision(None, "slm_base_url_not_configured")
     model = {
         "tagging": settings.slm_tagging_model,
         "extraction": settings.slm_extraction_model,
     }.get(TASKS.get(name, ""), "")
     if not model:
-        return None
-    return Route(client=_get_client(), model=model)
+        return RoutingDecision(None, "slm_model_not_configured")
+    if not health.up:
+        return RoutingDecision(None, "slm_unhealthy")
+    return RoutingDecision(Route(client=_get_client(), model=model), None)
 
 
 def record_fallback(name: str, error: BaseException) -> None:

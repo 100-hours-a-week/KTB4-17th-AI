@@ -35,7 +35,20 @@ from app.core.guardrail import (
     effective_mode,
 )
 from app.core.guardrail_trace import record_guardrail
-from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
+from app.core.observability import (
+    LangfuseMetadata,
+    begin_model_attempt,
+    current_model_selection,
+    model_failure_reason,
+    propagate_langfuse_metadata,
+    record_model_failure,
+    record_model_fallback,
+    record_model_response,
+    record_model_selection,
+    record_rule_result,
+    track_model_selection,
+    update_langfuse_span,
+)
 
 from .schemas import (
     ALL_DIMENSIONS,
@@ -104,6 +117,7 @@ def _record_llm_failure(name: str, model: str, timeout: float, started: float, e
         logger.debug("failed to attach llm failure info to span", exc_info=True)
 
 
+@track_model_selection()
 async def _call(
     *,
     system: str,
@@ -120,11 +134,16 @@ async def _call(
     메인 LLM 으로 넘긴다 (app/core/slm.py). 메인 LLM 쪽은 원래 재시도 규칙을 그대로 쓴다.
     """
     payload = [{"role": "system", "content": system}, *messages]
-    route = slm.route_for(name) if use_slm else None
+    decision = slm.routing_decision(name, use_slm=use_slm)
+    route = decision.route
+    record_model_selection(source="slm" if route else "main_llm", skip_reason=decision.skip_reason)
     if route is not None:
         try:
-            return await _complete(route.client, route.model, payload, max_tokens, timeout, name, metadata, total=1)
+            return await _complete(
+                route.client, route.model, payload, max_tokens, timeout, name, metadata, total=1, source="slm"
+            )
         except LLMError as e:
+            record_model_fallback(e)
             slm.record_fallback(name, e)
     return await _complete(
         _get_client(),
@@ -148,9 +167,11 @@ async def _complete(
     metadata: LangfuseMetadata | None,
     *,
     total: int,
+    source: str = "main_llm",
 ) -> str:
     for attempt in range(1, total + 1):
         started = time.monotonic()
+        attempt_metadata = begin_model_attempt(model, source=source, attempt=attempt)
         try:
             async with asyncio.timeout(timeout):
                 resp = await client.chat.completions.create(
@@ -158,7 +179,7 @@ async def _complete(
                     model=model,
                     messages=payload,  # type: ignore[arg-type]
                     max_tokens=max_tokens,
-                    metadata=metadata,
+                    metadata={**(metadata or {}), **attempt_metadata},
                 )
         except Exception as e:
             error = LLMError(f"timeout after {timeout}s") if isinstance(e, TimeoutError) else LLMError(str(e))
@@ -168,6 +189,7 @@ async def _complete(
             _record_llm_failure(name, model, timeout, started, e)
             raise error from e
 
+        record_model_response(resp, source=source)
         text = ""
         if resp.choices:
             text = (resp.choices[0].message.content or "").strip()
@@ -201,6 +223,7 @@ async def _before_retry(name: str, attempt: int, error: LLMError) -> None:
 
 
 # 함수 호출 시, 이름=값 형태로 전달한 인자들을 함수 내부에서 {'이름': '값'} 구조의 딕셔너리(dictionary)로 묶어서 처리
+@track_model_selection()
 async def _call_json(**kwargs) -> dict:
     text = await _call(**kwargs)  # kwargs 딕셔너리를 다시 펼쳐서 _call()에 전달
     try:
@@ -208,10 +231,12 @@ async def _call_json(**kwargs) -> dict:
     except LLMError as e:
         # SLM 이 JSON 을 깨뜨렸다면 메인 LLM 으로 한 번 더. SLM 을 안 쓰는 호출이면 그대로 실패
         name = kwargs.get("name", "")
-        if slm.route_for(name) is None:
+        selection = current_model_selection()
+        if selection is None or selection.response_source != "slm":
             raise
+        record_model_fallback(e)
         slm.record_fallback(name, e)
-        return _parse_json(await _call(**kwargs, use_slm=False))
+        return _parse_json(await _call(**{**kwargs, "use_slm": False}))
 
 
 def _parse_json(text: str) -> dict:
@@ -339,6 +364,7 @@ def _parse_first_turn(raw: dict, nickname: str, topic: Topic) -> list[Segment]:
         texts[t] = template[t]
     if repaired:
         logger.warning("first turn segments repaired with template: %s", repaired)
+        record_rule_result("first_turn_segments_repaired", mixed=len(repaired) < len(FIRST_TURN_TYPES))
 
     return [Segment(type=t, text=texts[t]) for t in FIRST_TURN_TYPES]  # type: ignore[arg-type]
 
@@ -453,6 +479,7 @@ class ConversationAgent:  # 대화 생성 담당
     """
 
     @observe(name="persona-conversation-workflow", capture_input=False, capture_output=False)
+    @track_model_selection("persona-conversation")
     async def generate(
         self,
         *,
@@ -503,8 +530,9 @@ class ConversationAgent:  # 대화 생성 담당
                 )
             except LLMError as e:
                 # 폴백 — 시드 질문 사용. API 호출 실패 시 사용
+                record_rule_result(model_failure_reason(e))
                 logger.warning("turn generation failed (%s), using seed", e)
-                get_client().update_current_span(
+                update_langfuse_span(
                     level="WARNING",
                     status_message="persona conversation fell back to seed",
                 )
@@ -516,6 +544,7 @@ class ConversationAgent:  # 대화 생성 담당
             # off/shadow는 예전과 같이 없는 과거 회상을 사용자에게 보여 주지 않는다.
             # shadow는 시드로 바꾼 뒤에도 판정만 남겨, enforce로 올리기 전에 빈도를 본다.
             if mode != "enforce" and _PAST_MEETING.search(text):
+                record_rule_result("past_meeting_rejected")
                 validation = None
                 if mode == "shadow":
                     judged = await apply_text(text, ctx, user_key=user_key, fallback=topic.seed)
@@ -540,6 +569,8 @@ class ConversationAgent:  # 대화 생성 담당
 
             applied = await apply_text(text, ctx, user_key=user_key, regenerate=regenerate, fallback=topic.seed)
             final = applied.text
+            if applied.result and applied.result.status == "FALLBACK":
+                record_rule_result("guardrail_rejected")
             return Utterance(
                 text=final,
                 source="seed" if applied.result and applied.result.status == "FALLBACK" else "llm",
@@ -577,10 +608,11 @@ class ConversationAgent:  # 대화 생성 담당
             segments = _parse_first_turn(raw if isinstance(raw, dict) else {}, nickname, topic)
         except (LLMError, ValueError) as e:  # pydantic ValidationError 도 ValueError
             logger.warning("first turn generation failed (%s), using template", e)
-            get_client().update_current_span(
+            update_langfuse_span(
                 level="WARNING",
                 status_message="persona first turn fell back to template",
             )
+            record_rule_result(model_failure_reason(e))
             segments = _first_turn_fallback(topic, nickname)
             return Utterance(text=_join(segments), source="seed", segments=tuple(segments))
 
@@ -610,6 +642,8 @@ class ConversationAgent:  # 대화 생성 담당
             initial_text, ctx, user_key=user_key, regenerate=regenerate, fallback=_join(fallback_segments)
         )
         status = applied.result.status if applied.result else None
+        if status == "FALLBACK":
+            record_rule_result("guardrail_rejected")
         final_segments = (
             fallback_segments
             if status == "FALLBACK"
@@ -689,6 +723,7 @@ def parse_tags(raw: dict, *, strict: bool = False) -> Tags:
 
 class TaggingAgent:
     @observe(name="persona-tagging-workflow", capture_input=False, capture_output=False)
+    @track_model_selection("persona-tagging")
     async def tag(
         self,
         question: str,
@@ -717,8 +752,9 @@ class TaggingAgent:
                     metadata=trace_metadata,
                 )
             except LLMError as e:
+                record_model_failure(model_failure_reason(e))
                 logger.warning("tagging failed: %s", e)
-                get_client().update_current_span(
+                update_langfuse_span(
                     level="WARNING",
                     status_message="persona tagging failed and used topic coverage",
                 )
@@ -727,6 +763,7 @@ class TaggingAgent:
             try:
                 return parse_tags(raw, strict=strict)
             except ValueError as exc:
+                record_model_failure("schema_validation_failed")
                 if not strict:
                     raise
                 logger.warning("tagging output rejected by strict evaluation: %s", exc)
@@ -879,6 +916,7 @@ class ExtractionAgent:
         )
 
     @observe(name="persona-extraction-workflow", capture_input=False, capture_output=False)
+    @track_model_selection("persona-extraction")
     async def extract(
         self,
         history: list[dict],
@@ -948,9 +986,15 @@ class ExtractionAgent:
                     [extracted.narrative.headline, extracted.narrative.body, *extracted.narrative.traits]
                 ):
                     extracted.narrative = None
+                    record_rule_result(
+                        "extraction_guardrail_rejected", mixed=bool(extracted.model_dump(exclude_defaults=True))
+                    )
             if extracted.summaries:
                 if await rejected(
                     [text for summary in extracted.summaries for text in (summary.title, summary.content)]
                 ):
                     extracted.summaries = []
+                    record_rule_result(
+                        "extraction_guardrail_rejected", mixed=bool(extracted.model_dump(exclude_defaults=True))
+                    )
             return extracted
