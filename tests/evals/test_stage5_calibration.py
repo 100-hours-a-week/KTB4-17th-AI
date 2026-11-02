@@ -87,6 +87,13 @@ def test_weekly_limit_immediate_stop_no_retry(monkeypatch):
 
 def test_rejudge_dry_run_zero_file_creation(tmp_path, monkeypatch):
     """rejudge dry-run 실행 시 결과 파일이 0개 생성되고 LLM 호출이 0회인지 검증."""
+    # 실제 평가 유형 개수와 무관하게, 설정된 두 Judge가 모두 계획에 포함되어야 한다.
+    monkeypatch.setattr(R.J, "judge_types", lambda slug: [{"id": "F-01"}, {"id": "F-03"}])
+
+    def forbid_llm_call(*args, **kwargs):
+        pytest.fail("dry-run에서 LLM을 호출하면 안 됩니다.")
+
+    monkeypatch.setattr(R.J, "call", forbid_llm_call)
     sample_res = {
         "run_at": "2026-10-26T22:48:00",
         "version": "cb53097",
@@ -102,8 +109,8 @@ def test_rejudge_dry_run_zero_file_creation(tmp_path, monkeypatch):
     assert initial_files == current_files, "dry-run 은 어떠한 새 파일도 디스크에 생성하지 않아야 함"
     assert plan["dry_run"] is True
     assert plan["total_rows"] == 1
-    # no-judge 이므로 f01의 6개 Judge 유형 전체가 todo로 잡힘
-    assert plan["total_todo_judges"] == 6
+    assert plan["total_todo_judges"] == 2
+    assert plan["rows"][0]["todo_types"] == ["F-01", "F-03"]
 
 
 def test_supplement_dry_run_zero_file_creation(tmp_path, monkeypatch):

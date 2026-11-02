@@ -17,7 +17,15 @@ from langfuse.openai import AsyncOpenAI
 
 from app.core import llm_retry, slm
 from app.core.config import get_settings
-from app.core.observability import LangfuseMetadata
+from app.core.observability import (
+    LangfuseMetadata,
+    begin_model_attempt,
+    current_model_selection,
+    record_model_fallback,
+    record_model_response,
+    record_model_selection,
+    track_model_selection,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +68,7 @@ def _record_llm_failure(name: str, model: str, timeout: float, started: float, e
         logger.debug("failed to attach llm failure info to span", exc_info=True)
 
 
+@track_model_selection()
 async def _call(
     *,
     system: str,
@@ -75,11 +84,16 @@ async def _call(
     SLM 이 설정된 호출이면 먼저 SLM 에 한 번만 보내고, 실패하면 메인 LLM 으로 넘긴다 (app/core/slm.py).
     """
     payload = [{"role": "system", "content": system}, *messages]
-    route = slm.route_for(name) if use_slm else None
+    decision = slm.routing_decision(name, use_slm=use_slm)
+    route = decision.route
+    record_model_selection(source="slm" if route else "main_llm", skip_reason=decision.skip_reason)
     if route is not None:
         try:
-            return await _complete(route.client, route.model, payload, max_tokens, timeout, name, metadata, total=1)
+            return await _complete(
+                route.client, route.model, payload, max_tokens, timeout, name, metadata, total=1, source="slm"
+            )
         except LLMError as e:
+            record_model_fallback(e)
             slm.record_fallback(name, e)
     return await _complete(
         _get_client(),
@@ -103,9 +117,11 @@ async def _complete(
     metadata: LangfuseMetadata | None,
     *,
     total: int,
+    source: str = "main_llm",
 ) -> str:
     for attempt in range(1, total + 1):
         started = time.monotonic()
+        attempt_metadata = begin_model_attempt(model, source=source, attempt=attempt)
         try:
             async with asyncio.timeout(timeout):
                 resp = await client.chat.completions.create(
@@ -113,7 +129,7 @@ async def _complete(
                     model=model,
                     messages=payload,  # type: ignore[arg-type]
                     max_tokens=max_tokens,
-                    metadata=metadata,
+                    metadata={**(metadata or {}), **attempt_metadata},
                 )
         except Exception as e:
             error = LLMError(f"timeout after {timeout}s") if isinstance(e, TimeoutError) else LLMError(str(e))
@@ -123,6 +139,7 @@ async def _complete(
             _record_llm_failure(name, model, timeout, started, e)
             raise error from e
 
+        record_model_response(resp, source=source)
         text = ""
         if resp.choices:
             text = (resp.choices[0].message.content or "").strip()
@@ -141,6 +158,7 @@ async def _before_retry(name: str, attempt: int, error: LLMError) -> None:
     await asyncio.sleep(llm_retry.RETRY_BACKOFF_S)
 
 
+@track_model_selection()
 async def _call_json(**kwargs) -> dict:
     text = await _call(**kwargs)
     try:
@@ -148,10 +166,12 @@ async def _call_json(**kwargs) -> dict:
     except LLMError as e:
         # SLM 이 JSON 을 깨뜨렸다면 메인 LLM 으로 한 번 더. SLM 을 안 쓰는 호출이면 그대로 실패
         name = kwargs.get("name", "")
-        if slm.route_for(name) is None:
+        selection = current_model_selection()
+        if selection is None or selection.response_source != "slm":
             raise
+        record_model_fallback(e)
         slm.record_fallback(name, e)
-        return _parse_json(await _call(**kwargs, use_slm=False))
+        return _parse_json(await _call(**{**kwargs, "use_slm": False}))
 
 
 def _parse_json(text: str) -> dict:

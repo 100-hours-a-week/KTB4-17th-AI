@@ -1,10 +1,10 @@
 """'야 내일 뭐해? 나랑 같이 연극보러갈래?' 문구로 5개 캐릭터 연습대화 단일 턴 테스트."""
 
 import asyncio
-from app.core.db import SessionLocal
-from app.features.practice.service import PracticeService
-from app.features.practice.schemas import PracticeStartRequest
 
+from app.core.db import SessionLocal
+from app.features.practice.schemas import PracticeStartRequest
+from app.features.practice.service import PracticeService
 
 CHARACTERS = [
     {"user_id": "synth_user_intj_001", "name": "서윤", "mbti": "INTJ", "archetype": "논리·신중형"},
@@ -49,14 +49,14 @@ async def test_character(char_info: dict) -> str:
 
 
 async def main():
-    print(f"\n==================================================")
-    print(f"👤 사용자: \"{USER_PROMPT}\"")
-    print(f"==================================================\n")
+    print("\n==================================================")
+    print(f'👤 사용자: "{USER_PROMPT}"')
+    print("==================================================\n")
 
     for char in CHARACTERS:
         reply = await test_character(char)
         print(f"🎭 [{char['name']} ({char['mbti']} / {char['archetype']})]")
-        print(f"👉 \"{reply}\"\n")
+        print(f'👉 "{reply}"\n')
 
 
 if __name__ == "__main__":

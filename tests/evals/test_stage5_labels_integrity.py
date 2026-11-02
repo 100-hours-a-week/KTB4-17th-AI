@@ -4,7 +4,7 @@
 1. root 재현 버그: 유효 정답 대비 기계 ERROR 혼합 시 통과(✅) 차단 및 UNKNOWN/NOT_VALIDATED 보류
 2. 유효 정답의 결측/NA/누락/알수없는판정/실행오류/잘림 발생 시 성능 PASS 금지 및 사유 분리
 3. 프롬프트 provenance 부재(역사적 관측치) 및 해시 불일치 시 통과 금지
-4. f09 F-01 참조 라벨 충돌 격리 (QUARANTINE_LABEL_CONFLICT) 및 원본 불변
+4. f09 F-01 라벨 충돌 해소 반영 및 원본 불변
 5. f10/f11 제외 슬러그의 J.folder() 조회 0회 및 미존재 환경 무장애 통과
 6. 정상 완전 채점 + 양 클래스 표본 존재 + 정합 provenance 일 때만 수학상 통과
 """
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 from collections import Counter
 
 import pytest
@@ -258,26 +259,57 @@ def test_perfect_run_with_provenance_and_two_classes_passes(monkeypatch):
     assert "| F-01 | Judge | 20 | 20 | 10 | 10 | 1.00 | 1.00 | ✅ 통과 |" in rep
 
 
-# ── 4. f09 F-01 격리 및 라벨 원본 불변 검증 ─────────────────────────
+# ── 4. f09 F-01 라벨 충돌 해소 및 원본 불변 검증 ────────────────────
 
 
-def test_f09_f01_quarantine_label_conflict_and_label_file_immutable(monkeypatch):
-    """f09 F-01은 무조건 QUARANTINE_LABEL_CONFLICT로 보고되며, 라벨 원본 파일은 변경되지 않아야 함."""
+def test_f09_f01_resolved_labels_and_label_file_immutable(tmp_path, monkeypatch):
+    """확정된 f09 F-01 라벨을 격리하지 않으며, FAIL 표본이 없으면 통과시키지 않는다."""
     label_path = J.folder("f09") / "labels" / "calibration_final.csv"
     orig_bytes = label_path.read_bytes()
     orig_sha = hashlib.sha256(orig_bytes).hexdigest()
 
-    # f09의 calib 실행
+    # 실제 평가 결과는 Git에 없으므로 로컬 실행 결과에 의존하지 않는 입력을 만든다.
+    feature_dir = tmp_path / "f09-v2-memory-reconcile"
+    (feature_dir / "labels").mkdir(parents=True)
+    (feature_dir / "results").mkdir()
+    (feature_dir / "judges").mkdir()
+    fixture_labels = feature_dir / "labels" / "calibration_final.csv"
+    fixture_labels.write_bytes(orig_bytes)
+    template = (J.folder("f09") / "judges" / "F-01.md").read_bytes()
+    (feature_dir / "judges" / "F-01.md").write_bytes(template)
+    prompt_hash = hashlib.sha256(template).hexdigest()[:16]
+    pass_cases = [
+        "09-mem-20-b",
+        "09-mem-30-b",
+        "09-mem-08-b",
+        "09-mem-22-b",
+        "09-mem-16-b",
+        "09-mem-26-b",
+        "09-mem-21-b",
+        "09-mem-29-b",
+        "g09-n09",
+        "g09-n10",
+    ]
+    result = {
+        "version": "fixture",
+        "rows": [{"case_id": cid, "sample": {}, "verdict": {"F-01": "PASS"}} for cid in pass_cases],
+        "rejudge_provenance": {"prompt_hashes": {"F-01": prompt_hash}},
+    }
+    (feature_dir / "results" / "20261028-1200_fixture_calibration.json").write_text(json.dumps(result))
+    f01_type = next(t for t in L.S.D["f09"]["types"] if t["id"] == "F-01")
+    monkeypatch.setattr(L.S, "D", {"f09": {"types": [f01_type]}})
+    monkeypatch.setattr(L.J, "EVALS", tmp_path)
+
     reports = L.calib(write_eval_md=False)
     rep = reports["f09"]
 
-    # F-01 격리 상태 검증
-    assert "QUARANTINE_LABEL_CONFLICT" in rep
-    assert "✅ 통과" not in rep.split("| F-01 |")[1].split("\n")[0]
+    assert "QUARANTINE_LABEL_CONFLICT" not in rep
+    assert "| F-01 | Judge | 10 | 10 | 0 | 10 | - | 1.00 | ⚠️ FAIL 표본 0 (재현력 미검증) |" in rep
 
     # 원본 파일 불변 검증
     current_sha = hashlib.sha256(label_path.read_bytes()).hexdigest()
     assert current_sha == orig_sha, "calibration_final.csv 원본 라벨 파일이 수정되어서는 안 됨"
+    assert fixture_labels.read_bytes() == orig_bytes
 
 
 # ── 5. f10/f11 제외 및 J.folder 0회 조회 검증 ────────────────────────
@@ -326,20 +358,20 @@ def test_calib_runs_cleanly_when_f10_f11_directories_do_not_exist(tmp_path, monk
     (f01_dir / "results").mkdir()
     (f01_dir / "goldset.jsonl").write_text('{"id": "01", "input": {}}\n')
     (f01_dir / "labels" / "calibration_final.csv").write_text("case_id,F-01\n01,PASS\n")
-    (f01_dir / "results" / "20261028-1200_test_calibration.json").write_text(
+    (f01_dir / "results" / "20261028-1200_fixture_calibration.json").write_text(
         '{"version": "v1", "rows": [{"case_id": "01", "sample": {}, "verdict": {"F-01": "PASS"}}]}\n'
     )
 
-    monkeypatch.setattr(J, "EVALS", fake_evals)
-    monkeypatch.setattr(L, "EVALS", fake_evals)
+    monkeypatch.setattr(L.J, "EVALS", fake_evals)
 
-    # S.D에는 f10, f11이 포함되어 있는 상태
-    d_with_f10 = copy.deepcopy(S.D)
-    monkeypatch.setattr(S, "D", d_with_f10)
+    # 호출 대상 모듈의 의존성을 바꿔 실제로 이 임시 디렉터리만 읽게 한다.
+    d_with_f10 = {"f01": copy.deepcopy(L.S.D["f01"]), "f10": {"types": []}, "f11": {"types": []}}
+    monkeypatch.setattr(L.S, "D", d_with_f10)
 
     # FileNotFoundError 없이 정상 완료되어야 함
     reports = L.calib(write_eval_md=False)
     assert "f01" in reports
+    assert "| F-01 | Judge | 1 | 1 | 0 | 1 |" in reports["f01"]
     assert "f10" not in reports
     assert "f11" not in reports
 

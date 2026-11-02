@@ -39,6 +39,9 @@ jobs:
       #현재 테스트코드가 /test 안에 혼재되어 있어 파일명으로 구분함.
       #단위 테스트 
       - name: Unit Test
+        env:
+          # 평가 모듈 수집 시 /ktb_eval 경로를 검증한다. 실제 DB 호출은 테스트에서 대체한다.
+          DATABASE_URL: postgresql+asyncpg://ci:ci@127.0.0.1:5432/ktb_eval
         run: uv run pytest --ignore-glob='tests/test_*_api.py'
 
 

@@ -14,7 +14,7 @@ from langfuse import observe
 from pydantic import ValidationError
 
 from app.core.config import get_settings
-from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
+from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata, track_model_selection
 from app.features.persona.schemas import SCORED, ConversationStyle
 from app.v2.llm import LLMError, _call_json
 
@@ -98,6 +98,7 @@ RUBRIC = f"""\
 class ConversationAgent:
     # 번호 붙은 대화 흐름 + 이전 스타일 → 점수 관찰값(근거 번호 포함) + 말투
     @observe(name="v2-persona-extraction", capture_input=False, capture_output=False)
+    @track_model_selection("v2-persona-extraction")
     async def analyze(
         self,
         transcript: str,

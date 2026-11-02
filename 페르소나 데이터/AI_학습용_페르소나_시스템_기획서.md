@@ -70,15 +70,15 @@ class PersonaCardRecord(Base):
     __tablename__ = "persona_cards"
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
-    persona_id: Mapped[str] = mapped_column(String(64), unique=True, index=True) # e.g. character_001
-    user_id: Mapped[str] = mapped_column(String(64), index=True) # e.g. synth_user_intj_01
+    persona_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # e.g. character_001
+    user_id: Mapped[str] = mapped_column(String(64), index=True)  # e.g. synth_user_intj_01
     name: Mapped[str] = mapped_column(String(50))
-    generation_mode: Mapped[str] = mapped_column(String(32)) # self_mirror | compatible_character | fictional_variant
+    generation_mode: Mapped[str] = mapped_column(String(32))  # self_mirror | compatible_character | fictional_variant
     mbti_reference: Mapped[str | None] = mapped_column(String(4))
 
     # 15개 지표 세부 해석 객체 (raw_score, effective_score, delta, level, status, interpretation)
     traits: Mapped[dict] = mapped_column(JSONBCompat, nullable=False)
-    
+
     # 결측치 관리 배열
     imputed_scores: Mapped[list] = mapped_column(JSONBCompat, default=list)
     unknown_origin_scores: Mapped[list] = mapped_column(JSONBCompat, default=list)
