@@ -1,11 +1,10 @@
 """적재된 페르소나 유저들로 연습 대화(Practice Conversation) 시뮬레이션 및 테스트."""
 
 import asyncio
-from app.core.db import SessionLocal
-from app.features.practice.service import PracticeService
-from app.features.practice.schemas import PracticeStartRequest
-from app.features.persona.schemas import PersonaRef
 
+from app.core.db import SessionLocal
+from app.features.practice.schemas import PracticeStartRequest
+from app.features.practice.service import PracticeService
 
 TEST_CHARACTERS = [
     {
@@ -84,7 +83,7 @@ async def run_practice_test_for_character(char_info: dict):
         session = await service.repo.get_session(session_id)
         assert session is not None
         await service.end(session)
-        print(f"🔒 세션 정상 종료\n")
+        print("🔒 세션 정상 종료\n")
 
 
 async def main():

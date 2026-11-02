@@ -9,7 +9,6 @@
 import json
 from pathlib import Path
 
-
 DIMENSIONS = [
     "anxiety", "avoidance", "assurances", "compliance", "contact_rhythm",
     "disclosure", "engagement", "openness", "positivity", "problem_solving",
@@ -288,8 +287,7 @@ def generate_256_characters() -> list[dict]:
                 # 화법 및 표현 스타일
                 is_extrovert = mbti.startswith("E")
                 is_feeling = "F" in mbti
-                is_judging = mbti.endswith("J")
-
+                #is_judging = mbti.endswith("J")
                 # 8개 변형별 다채로운 말투 스타일
                 style_presets = [
                     ("반말", "짧고 명확함", "절제됨", "필요시 주도적"),
@@ -390,7 +388,7 @@ def generate_256_characters() -> list[dict]:
                 if "avoidance" in char_scores and char_scores["avoidance"] >= 75:
                     sample_reply = "연극? 글쎄, 내일은 혼자 시간 보내려고 했는데. 별로 안 땡기네."
                 elif "positivity" in char_scores and char_scores["positivity"] >= 75:
-                    sample_reply = f"우와 연극이요?! 완전 좋아요! 내일 약속 없는데 같이 보러 가요 😊 무슨 작품이에요?"
+                    sample_reply = "우와 연극이요?! 완전 좋아요! 내일 약속 없는데 같이 보러 가요 😊 무슨 작품이에요?"
                 elif "problem_solving" in char_scores and char_scores["problem_solving"] >= 75:
                     sample_reply = "내일 시간 비어 있어. 어떤 장르 연극인데? 시놉시스나 시간대 먼저 알려줘."
                 elif "compliance" in char_scores and char_scores["compliance"] >= 75:
@@ -497,7 +495,7 @@ def main():
     uncovered = [k for k, v in slot_coverage.items() if v == 0]
     print(f"Total slots to cover: {len(slot_coverage)}")
     print(f"Covered slots: {len(slot_coverage) - len(uncovered)} / {len(slot_coverage)}")
-    
+
     # 각 슬롯당 평균 및 최소 관측 수
     min_count = min(slot_coverage.values())
     max_count = max(slot_coverage.values())

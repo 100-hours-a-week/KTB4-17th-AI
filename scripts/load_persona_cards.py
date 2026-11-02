@@ -5,17 +5,15 @@
 """
 
 import asyncio
-from datetime import UTC, datetime
 import json
-from pathlib import Path
 import uuid
+from datetime import UTC, datetime
+from pathlib import Path
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.db import Base, engine, SessionLocal
+from app.core.db import Base, SessionLocal, engine
 from app.features.persona.models import OnboardingSession, PersonaCardRecord, PersonaRecord
-
 
 JSON_PATH = Path("페르소나 데이터/persona_cards.json")
 
@@ -37,15 +35,16 @@ async def init_tables():
 
 async def load_persona_cards():
     """persona_cards.json 파일의 데이터를 DB에 적재."""
-    if not JSON_PATH.exists():
+    #    if not JSON_PATH.exists():
+    if not await asyncio.to_thread(JSON_PATH.exists):
         raise FileNotFoundError(f"JSON file not found: {JSON_PATH}")
-
-    with open(JSON_PATH, "r", encoding="utf-8") as f:
-        cards_data = json.load(f)
+    ''' with open(JSON_PATH, "r", encoding="utf-8") as f:
+               cards_data = json.load(f)'''
+    cards_data = json.loads(await asyncio.to_thread(JSON_PATH.read_text, encoding="utf-8"))
 
     print(f"Loaded {len(cards_data)} persona cards from {JSON_PATH}")
 
-    async with SessionLocal() as db:  # type: AsyncSession
+    async with SessionLocal() as db:
         for data in cards_data:
             persona_id = data["persona_id"]
             user_id = data["user_id"]

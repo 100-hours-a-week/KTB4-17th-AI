@@ -9,7 +9,6 @@
 import json
 from pathlib import Path
 
-
 DIMENSIONS = [
     "anxiety", "avoidance", "assurances", "compliance", "contact_rhythm",
     "disclosure", "engagement", "openness", "positivity", "problem_solving",
@@ -269,7 +268,6 @@ def generate_64_characters() -> list[dict]:
                 # 말투 및 표현 스타일
                 is_extrovert = mbti.startswith("E")
                 is_feeling = "F" in mbti
-                is_judging = mbti.endswith("J")
 
                 if is_extrovert:
                     speech = "활기찬 존댓말/반말 혼용" if is_feeling else "자신감 넘치고 시원시원한 반말"
@@ -371,7 +369,7 @@ def generate_64_characters() -> list[dict]:
                 if "avoidance" in char_scores and char_scores["avoidance"] >= 75:
                     sample_reply = "연극? 글쎄, 내일은 혼자 시간 보내려고 했는데. 별로 안 땡기네."
                 elif "positivity" in char_scores and char_scores["positivity"] >= 75:
-                    sample_reply = f"우와 연극이요?! 완전 좋아요! 내일 약속 없는데 같이 보러 가요 😊 무슨 작품이에요?"
+                    sample_reply = "우와 연극이요?! 완전 좋아요! 내일 약속 없는데 같이 보러 가요 😊 무슨 작품이에요?"
                 elif "problem_solving" in char_scores and char_scores["problem_solving"] >= 75:
                     sample_reply = "내일 시간 비어 있어. 어떤 장르 연극인데? 시놉시스나 시간대 먼저 알려줘."
                 elif is_extrovert:

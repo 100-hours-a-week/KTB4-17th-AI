@@ -1,6 +1,5 @@
 """새로운 온디바이스 모델 학습 프로젝트(/Users/hrun/persona_model)로 필수 자산을 복사하고 독립 구성을 완성하는 스크립트."""
 
-import os
 import shutil
 from pathlib import Path
 

@@ -7,11 +7,11 @@
 """
 
 import json
-from pathlib import Path
 
 
 def run_full_verification():
-    with open("페르소나 데이터/persona_cards.json", "r", encoding="utf-8") as f:
+    #    with open("페르소나 데이터/persona_cards.json", "r", encoding="utf-8") as f:
+    with open("페르소나 데이터/persona_cards.json", encoding="utf-8") as f:
         cards = json.load(f)
 
     total_cards = len(cards)
@@ -91,7 +91,7 @@ def run_full_verification():
             results["trait_accuracy"]["errors"].append(f"{cid} ({cname}): 유효 지표 수 {active_cnt}개 (5~10개 범위 초과)")
 
         # 2. 개별 지표 정확성 검증
-        for t_k, t_name in traits_list:
+        for t_k, _t_name in traits_list:
             t_data = traits[t_k]
             raw = t_data["raw_score"]
             eff = t_data["effective_score"]

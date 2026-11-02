@@ -14,7 +14,7 @@ from pathlib import Path
 
 
 def generate_spec():
-    with open("페르소나 데이터/persona_cards_352.json", "r", encoding="utf-8") as f:
+    with open("페르소나 데이터/persona_cards_352.json", encoding="utf-8") as f:
         cards = json.load(f)
 
     b32 = cards[:32]
@@ -177,7 +177,7 @@ def generate_spec():
 
     lines.append(f"| **전체 60슬롯 합계** | **15개 지표 총합** | **{tot_q1}건** | **{tot_q2}건** | **{tot_q3}건** | **{tot_q4}건** | **총 60/60 (100.0%)** |")
     lines.append("")
-    lines.append(f"> [!NOTE]")
+    lines.append("> [!NOTE]")
     lines.append(
         f"> 352명 캐릭터의 총 유효 관측 지표 수는 **{tot_q1 + tot_q2 + tot_q3 + tot_q4}개**이며, "
         "Q1(23.8%), Q2(25.2%), Q3(25.1%), Q4(26.0%)로 4대 분위수가 완벽에 가까운 황금 균형을 이룹니다."
