@@ -1,0 +1,32 @@
+# vLLM 0.30.0 서버 설정 — teacher 후보 Kanana-2 30B-A3B instruct (RunPod A40·RTX A6000 48GB 2장)
+# Qwen(config.a40-fp8.yaml)과 골드셋으로 비교하려고 둔다. start.sh 에 VLLM_CONFIG 로 이 파일을 넘긴다.
+# 골드셋 검증과 대량 라벨링은 같은 설정으로 한다.
+
+# MoE 30B(활성 3B), DeepseekV3 구조(MLA). 라이선스 Kanana License — 출력으로 학습한 모델은 이름 앞에 Kanana 를 붙인다 (3.1(v))
+# student(kanana-2-3b-instruct)가 이미 같은 라이선스라 새 제약은 없다. 커밋을 고정해 라벨을 재현한다
+model: kakaocorp/kanana-2-30b-a3b-instruct-2601
+revision: 4a781fe5027da4af8d8208cb21bc5108b913bb62
+# label_with_teacher.py 의 TEACHER_LLM_MODEL
+served-model-name: kanana-2-30b
+
+host: "0.0.0.0" # RunPod 프록시가 들어오려면 0.0.0.0
+port: 8000
+
+# 메모리 — BF16 가중치 61.3GB 라 48GB 1장에 안 들어간다. 공식 FP8 은 없다 (개인 AWQ·GPTQ 4bit 만 있다).
+# 2장에 나눠 올리면 장당 약 31GB, 남는 메모리를 KV 캐시로 쓴다. MLA 라 토큰당 KV 가 작다.
+# Ampere 는 FlashMLA(Hopper 전용)를 못 써서 vLLM 이 Triton MLA 로 돌린다. 실제 값은 시작 로그의 KV cache / Maximum concurrency 줄로 확인한다
+tensor-parallel-size: 2
+gpu-memory-utilization: 0.92
+# 추출 입력(RUBRIC + 온보딩 10턴) + 출력 1500 토큰. 모델 기본값은 32768
+max-model-len: 8192
+max-num-seqs: 32
+# 태깅 요청은 전부 같은 TAG_PROMPT 로 시작하고 같은 답변을 5번 샘플링해서 프리픽스 캐시 효과가 크다
+enable-prefix-caching: true
+
+# 모델의 generation_config.json 이 샘플링을 바꾸지 않게 (라벨 재현성. 온도는 스크립트가 정한다)
+generation-config: vllm
+
+uvicorn-log-level: info
+# API 키는 여기 쓰지 않는다. vLLM 이 환경변수 VLLM_API_KEY 를 읽는다 (RunPod Secrets)
+# instruct 모델이라 추론(thinking)이 없다. 스크립트가 보내는 chat_template_kwargs.enable_thinking 은 템플릿이 쓰지 않아 무시된다
+# 도구 호출을 쓰지 않아 모델 카드의 --enable-auto-tool-choice / --tool-call-parser 는 넣지 않는다
