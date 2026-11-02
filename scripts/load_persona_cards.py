@@ -38,8 +38,8 @@ async def load_persona_cards():
     #    if not JSON_PATH.exists():
     if not await asyncio.to_thread(JSON_PATH.exists):
         raise FileNotFoundError(f"JSON file not found: {JSON_PATH}")
-    ''' with open(JSON_PATH, "r", encoding="utf-8") as f:
-               cards_data = json.load(f)'''
+    """ with open(JSON_PATH, "r", encoding="utf-8") as f:
+               cards_data = json.load(f)"""
     cards_data = json.loads(await asyncio.to_thread(JSON_PATH.read_text, encoding="utf-8"))
 
     print(f"Loaded {len(cards_data)} persona cards from {JSON_PATH}")
@@ -169,7 +169,9 @@ async def load_persona_cards():
         for r in all_cards:
             print(f"- {r.persona_id} | {r.name} | {r.mbti_reference}")
 
-        stmt_all_personas = select(PersonaRecord.id, PersonaRecord.user_id, PersonaRecord.mbti, PersonaRecord.is_confirmed)
+        stmt_all_personas = select(
+            PersonaRecord.id, PersonaRecord.user_id, PersonaRecord.mbti, PersonaRecord.is_confirmed
+        )
         all_personas = (await db.execute(stmt_all_personas)).fetchall()
         print(f"\n[Verification: personas] Total: {len(all_personas)}")
         for r in all_personas:

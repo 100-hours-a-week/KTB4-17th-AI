@@ -46,14 +46,14 @@ def run_full_verification():
             "level_label_pass": 0,
             "interpretation_pass": 0,
             "trait_count_pass": 0,
-            "errors": []
+            "errors": [],
         },
         "imputation": {
             "neutral_50_count": 0,
             "observed_count": 0,
             "status_match_pass": 0,
             "quality_checks_pass": 0,
-            "errors": []
+            "errors": [],
         },
         "rule_conflicts": {
             "tests_run": 0,
@@ -65,10 +65,10 @@ def run_full_verification():
                 "Rule 4: 순응 극저(compliance <= 24) vs 무조건적 양보 갈등스타일 충돌",
                 "Rule 5: 문제해결 극대(problem_solving >= 75) vs 영구적 회피/방치 갈등스타일 충돌",
                 "Rule 6: 자기노출 극저(disclosure <= 24) vs 모든 속마음 고백 룰 충돌",
-                "Rule 7: 외향(E형) vs 대화몰입 극저(engagement <= 24) AND 연락 극저(contact <= 24) 모순"
+                "Rule 7: 외향(E형) vs 대화몰입 극저(engagement <= 24) AND 연락 극저(contact <= 24) 모순",
             ],
-            "details": []
-        }
+            "details": [],
+        },
     }
 
     trait_counts_list = []
@@ -81,14 +81,18 @@ def run_full_verification():
         strat = card.get("conflict_style", {}).get("primary_strategy", "")
 
         # 1. 관측 지표 수 확인
-        active_cnt = sum(1 for t, _ in traits_list if traits[t]["effective_score"] != 50 or traits[t].get("status") == "observed")
+        active_cnt = sum(
+            1 for t, _ in traits_list if traits[t]["effective_score"] != 50 or traits[t].get("status") == "observed"
+        )
         trait_counts_list.append(active_cnt)
         results["trait_count_distribution"][active_cnt] = results["trait_count_distribution"].get(active_cnt, 0) + 1
 
         if 5 <= active_cnt <= 10:
             results["trait_accuracy"]["trait_count_pass"] += 1
         else:
-            results["trait_accuracy"]["errors"].append(f"{cid} ({cname}): 유효 지표 수 {active_cnt}개 (5~10개 범위 초과)")
+            results["trait_accuracy"]["errors"].append(
+                f"{cid} ({cname}): 유효 지표 수 {active_cnt}개 (5~10개 범위 초과)"
+            )
 
         # 2. 개별 지표 정확성 검증
         for t_k, _t_name in traits_list:
@@ -114,7 +118,7 @@ def run_full_verification():
             if delta == (eff - 50):
                 results["trait_accuracy"]["delta_pass"] += 1
             else:
-                results["trait_accuracy"]["errors"].append(f"{cid} {t_k}: 델타 오류 (delta={delta}, eff-50={eff-50})")
+                results["trait_accuracy"]["errors"].append(f"{cid} {t_k}: 델타 오류 (delta={delta}, eff-50={eff - 50})")
 
             # 2.3 7단계 분류 라벨 검증
             expected_level = "중립"
@@ -136,7 +140,9 @@ def run_full_verification():
             if level == expected_level:
                 results["trait_accuracy"]["level_label_pass"] += 1
             else:
-                results["trait_accuracy"]["errors"].append(f"{cid} {t_k}: 레벨 오류 (eff={eff}, level='{level}', expected='{expected_level}')")
+                results["trait_accuracy"]["errors"].append(
+                    f"{cid} {t_k}: 레벨 오류 (eff={eff}, level='{level}', expected='{expected_level}')"
+                )
 
             # 2.4 해석문 누락 여부
             if interp and len(interp.strip()) > 0:
@@ -150,13 +156,17 @@ def run_full_verification():
                 if status == "imputed":
                     results["imputation"]["status_match_pass"] += 1
                 else:
-                    results["imputation"]["errors"].append(f"{cid} {t_k}: 점수 50인데 status='{status}' (imputed 불일치)")
+                    results["imputation"]["errors"].append(
+                        f"{cid} {t_k}: 점수 50인데 status='{status}' (imputed 불일치)"
+                    )
             else:
                 results["imputation"]["observed_count"] += 1
                 if status == "observed":
                     results["imputation"]["status_match_pass"] += 1
                 else:
-                    results["imputation"]["errors"].append(f"{cid} {t_k}: 점수 {eff}인데 status='{status}' (observed 불일치)")
+                    results["imputation"]["errors"].append(
+                        f"{cid} {t_k}: 점수 {eff}인데 status='{status}' (observed 불일치)"
+                    )
 
         # 3. 품질검사 플래그 확인
         qc = card.get("quality_checks", {})
@@ -179,37 +189,51 @@ def run_full_verification():
         # Rule 1
         if av >= 75 and cr >= 75:
             results["rule_conflicts"]["conflicts_found"] += 1
-            results["rule_conflicts"]["details"].append(f"Rule 1 위반: {cid} ({cname}) avoidance({av}) >= 75 & contact_rhythm({cr}) >= 75")
+            results["rule_conflicts"]["details"].append(
+                f"Rule 1 위반: {cid} ({cname}) avoidance({av}) >= 75 & contact_rhythm({cr}) >= 75"
+            )
 
         # Rule 2
         if av >= 75 and dc >= 75:
             results["rule_conflicts"]["conflicts_found"] += 1
-            results["rule_conflicts"]["details"].append(f"Rule 2 위반: {cid} ({cname}) avoidance({av}) >= 75 & disclosure({dc}) >= 75")
+            results["rule_conflicts"]["details"].append(
+                f"Rule 2 위반: {cid} ({cname}) avoidance({av}) >= 75 & disclosure({dc}) >= 75"
+            )
 
         # Rule 3
         if anx <= 24 and ass >= 75:
             results["rule_conflicts"]["conflicts_found"] += 1
-            results["rule_conflicts"]["details"].append(f"Rule 3 위반: {cid} ({cname}) anxiety({anx}) <= 24 & assurances({ass}) >= 75")
+            results["rule_conflicts"]["details"].append(
+                f"Rule 3 위반: {cid} ({cname}) anxiety({anx}) <= 24 & assurances({ass}) >= 75"
+            )
 
         # Rule 4
         if comp <= 24 and any(w in strat for w in ["전적 양보", "상대에게 맞춤", "저자세"]):
             results["rule_conflicts"]["conflicts_found"] += 1
-            results["rule_conflicts"]["details"].append(f"Rule 4 위반: {cid} ({cname}) compliance({comp}) <= 24 but strat='{strat}'")
+            results["rule_conflicts"]["details"].append(
+                f"Rule 4 위반: {cid} ({cname}) compliance({comp}) <= 24 but strat='{strat}'"
+            )
 
         # Rule 5
         if ps >= 75 and any(w in strat for w in ["무조건 회피", "잠수", "영구 차단"]):
             results["rule_conflicts"]["conflicts_found"] += 1
-            results["rule_conflicts"]["details"].append(f"Rule 5 위반: {cid} ({cname}) problem_solving({ps}) >= 75 but strat='{strat}'")
+            results["rule_conflicts"]["details"].append(
+                f"Rule 5 위반: {cid} ({cname}) problem_solving({ps}) >= 75 but strat='{strat}'"
+            )
 
         # Rule 6
         if dc <= 24 and any("모든 비밀" in r.get("rule", "") for r in card.get("personality_rules", [])):
             results["rule_conflicts"]["conflicts_found"] += 1
-            results["rule_conflicts"]["details"].append(f"Rule 6 위반: {cid} ({cname}) disclosure({dc}) <= 24 but personality_rules contains 비밀 공유")
+            results["rule_conflicts"]["details"].append(
+                f"Rule 6 위반: {cid} ({cname}) disclosure({dc}) <= 24 but personality_rules contains 비밀 공유"
+            )
 
         # Rule 7
         if mbti.startswith("E") and eg <= 24 and cr <= 24:
             results["rule_conflicts"]["conflicts_found"] += 1
-            results["rule_conflicts"]["details"].append(f"Rule 7 위반: {cid} ({cname}) E형인데 engagement({eg}) <= 24 & contact({cr}) <= 24 극단 모순")
+            results["rule_conflicts"]["details"].append(
+                f"Rule 7 위반: {cid} ({cname}) E형인데 engagement({eg}) <= 24 & contact({cr}) <= 24 극단 모순"
+            )
 
     return results
 
@@ -226,4 +250,6 @@ if __name__ == "__main__":
     print(f"Interpretation Pass: {res['trait_accuracy']['interpretation_pass']}/{res['total_trait_instances']} (100%)")
     print(f"Imputation Status Match: {res['imputation']['status_match_pass']}/{res['total_trait_instances']} (100%)")
     print(f"Imputation Quality Checks: {res['imputation']['quality_checks_pass']}/{res['total_cards']} (100%)")
-    print(f"Rule Conflicts Found: {res['rule_conflicts']['conflicts_found']}/{res['rule_conflicts']['tests_run']} (0건 충돌)")
+    print(
+        f"Rule Conflicts Found: {res['rule_conflicts']['conflicts_found']}/{res['rule_conflicts']['tests_run']} (0건 충돌)"
+    )

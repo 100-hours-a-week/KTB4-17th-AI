@@ -9,8 +9,12 @@ def generate_verification_report():
     lines.append("## (성향 반영 정확성 · 결측치 처리 · 규칙 충돌 전수 검증)")
     lines.append("")
     lines.append("> **검증 일시**: 2026-10-29  ")
-    lines.append("> **검증 대상**: 로컬 PostgreSQL DB 및 마스터 JSON(`persona_cards.json`) 탑재 352개 페르소나 카드 전수  ")
-    lines.append("> **검증 단위**: 352명 캐릭터 × 15개 성격 지표 = **총 5,280개 지표 인스턴스 및 2,464개 행동 규칙 테스트**  ")
+    lines.append(
+        "> **검증 대상**: 로컬 PostgreSQL DB 및 마스터 JSON(`persona_cards.json`) 탑재 352개 페르소나 카드 전수  "
+    )
+    lines.append(
+        "> **검증 단위**: 352명 캐릭터 × 15개 성격 지표 = **총 5,280개 지표 인스턴스 및 2,464개 행동 규칙 테스트**  "
+    )
     lines.append("> **검증 결과 요약**: **3대 핵심 검증 영역 전 항목 100% 무결성 통과 (Pass Rate: 100.0%)**")
     lines.append("")
     lines.append("---")
@@ -19,13 +23,21 @@ def generate_verification_report():
     # Section 1
     lines.append("## 1. 검증 개요 및 목적")
     lines.append("")
-    lines.append("본 검증은 Kanana-2 1.3B Persona-conditioned SFT 학습 및 고품질 캐릭터 대화 서비스의 신뢰성을 보장하기 위해, "
-                 "구축된 352개 캐릭터 페르소나 데이터셋에 대해 기획서([AI_학습용_페르소나_시스템_기획서.md](file:///Users/hrun/Documents/ktb4-17/KTB-17DEV/페르소나%20데이터/AI_학습용_페르소나_시스템_기획서.md))에 명시된 3대 필수 품질 기준을 전수 검증한 공식 보고서입니다.")
+    lines.append(
+        "본 검증은 Kanana-2 1.3B Persona-conditioned SFT 학습 및 고품질 캐릭터 대화 서비스의 신뢰성을 보장하기 위해, "
+        "구축된 352개 캐릭터 페르소나 데이터셋에 대해 기획서([AI_학습용_페르소나_시스템_기획서.md](file:///Users/hrun/Documents/ktb4-17/KTB-17DEV/페르소나%20데이터/AI_학습용_페르소나_시스템_기획서.md))에 명시된 3대 필수 품질 기준을 전수 검증한 공식 보고서입니다."
+    )
     lines.append("")
     lines.append("### 3대 핵심 검증 영역")
-    lines.append("1. **성향 반영 정확성 (Trait Reflection Accuracy)**: 점수 수치(0~100), 7단계 레벨 라벨, 분위수(Q1~Q4), 델타 계산, 5~10개 지표 제한 준수 여부 및 해석문의 정합성")
-    lines.append("2. **결측치 처리 (Missing Value & Imputation Handling)**: 미관측 지표에 대한 50점 중립 대체 원칙, 원시값(`raw_score`)과 유효값(`effective_score`)의 분리, 결측 상태 플래그 및 요약 텍스트 오염 방지 여부")
-    lines.append("3. **규칙 충돌 (Rule Conflict & Semantic Consistency)**: 심리학적으로 양립 불가능한 극단 지표 간의 모순, 성향 지표와 행동/갈등 대처 양식 간의 충돌, MBTI 기질과의 모순 여부")
+    lines.append(
+        "1. **성향 반영 정확성 (Trait Reflection Accuracy)**: 점수 수치(0~100), 7단계 레벨 라벨, 분위수(Q1~Q4), 델타 계산, 5~10개 지표 제한 준수 여부 및 해석문의 정합성"
+    )
+    lines.append(
+        "2. **결측치 처리 (Missing Value & Imputation Handling)**: 미관측 지표에 대한 50점 중립 대체 원칙, 원시값(`raw_score`)과 유효값(`effective_score`)의 분리, 결측 상태 플래그 및 요약 텍스트 오염 방지 여부"
+    )
+    lines.append(
+        "3. **규칙 충돌 (Rule Conflict & Semantic Consistency)**: 심리학적으로 양립 불가능한 극단 지표 간의 모순, 성향 지표와 행동/갈등 대처 양식 간의 충돌, MBTI 기질과의 모순 여부"
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -35,19 +47,27 @@ def generate_verification_report():
     lines.append("")
     lines.append("| 검증 대분류 | 세부 검증 항목 | 검증 모수 | 통과 건수 | 결함 건수 | 달성률 | 최종 판정 |")
     lines.append("| :--- | :--- | :---: | :---: | :---: | :---: | :---: |")
-    lines.append("| **1. 성향 반영 정확성** | 점수 유효 범위 (0~100 정수) | 5,280건 | 5,280건 | 0건 | 100.0% | **PASS** |")
+    lines.append(
+        "| **1. 성향 반영 정확성** | 점수 유효 범위 (0~100 정수) | 5,280건 | 5,280건 | 0건 | 100.0% | **PASS** |"
+    )
     lines.append("| | 델타 계산 정확성 (`delta == score - 50`) | 5,280건 | 5,280건 | 0건 | 100.0% | **PASS** |")
     lines.append("| | 7단계 레벨 분류 라벨 일치성 | 5,280건 | 5,280건 | 0건 | 100.0% | **PASS** |")
     lines.append("| | 유효 지표 수 규칙 준수 (5~10개) | 352명 | 352명 | 0건 | 100.0% | **PASS** |")
     lines.append("| | 지표 해석문(Interpretation) 완비율 | 5,280건 | 5,280건 | 0건 | 100.0% | **PASS** |")
-    lines.append("| **2. 결측치 처리** | 50점 중립 결측 보완 기준값 엄수 | 2,753건 | 2,753건 | 0건 | 100.0% | **PASS** |")
+    lines.append(
+        "| **2. 결측치 처리** | 50점 중립 결측 보완 기준값 엄수 | 2,753건 | 2,753건 | 0건 | 100.0% | **PASS** |"
+    )
     lines.append("| | 결측 원시값(`raw_score: None`) 분리 | 2,753건 | 2,753건 | 0건 | 100.0% | **PASS** |")
     lines.append("| | 상태 플래그 (`imputed` vs `observed`) 일치성 | 5,280건 | 5,280건 | 0건 | 100.0% | **PASS** |")
     lines.append("| | 품질 검사 메타데이터 플래그 정합성 | 352명 | 352명 | 0건 | 100.0% | **PASS** |")
-    lines.append("| **3. 규칙 충돌** | 극단 지표 양립 불가 7대 규칙 검사 | 2,464회 | 2,464회 | 0건 | 100.0% | **PASS** |")
+    lines.append(
+        "| **3. 규칙 충돌** | 극단 지표 양립 불가 7대 규칙 검사 | 2,464회 | 2,464회 | 0건 | 100.0% | **PASS** |"
+    )
     lines.append("| | 성향 점수 vs 갈등 대처 전략 충돌 | 352명 | 352명 | 0건 | 100.0% | **PASS** |")
     lines.append("| | MBTI 기본 기질과의 극단적 모순 | 352명 | 352명 | 0건 | 100.0% | **PASS** |")
-    lines.append("| **전체 총계** | **전체 항목 종합 전수 검증** | **29,677회** | **29,677회** | **0건** | **100.0%** | **최우수 (PERFECT)** |")
+    lines.append(
+        "| **전체 총계** | **전체 항목 종합 전수 검증** | **29,677회** | **29,677회** | **0건** | **100.0%** | **최우수 (PERFECT)** |"
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -56,7 +76,9 @@ def generate_verification_report():
     lines.append("## 3. 영역 1: 성향 반영 정확성 (Trait Reflection Accuracy) 정밀 검증")
     lines.append("")
     lines.append("### 3.1 7단계 점수 분류 체계 준수 검증")
-    lines.append("기획서에 정의된 7개 구간의 점수 경계 조건이 5,280개 모든 지표 인스턴스에서 단 1건의 오차도 없이 정확한 라벨로 매핑되었습니다.")
+    lines.append(
+        "기획서에 정의된 7개 구간의 점수 경계 조건이 5,280개 모든 지표 인스턴스에서 단 1건의 오차도 없이 정확한 라벨로 매핑되었습니다."
+    )
     lines.append("")
     lines.append("| 점수 구간 | 강도 분류 라벨 | 전체 인스턴스 수 | 비율 (%) | 검증 판정 |")
     lines.append("| :---: | :---: | :---: | :---: | :---: |")
@@ -71,7 +93,9 @@ def generate_verification_report():
     lines.append("")
 
     lines.append("### 3.2 캐릭터당 유효 지표 수 분포 (5 ~ 10개 규칙)")
-    lines.append("사용자가 요청한 **'캐릭터당 5~10개의 성향 지표 보유'** 조건을 352명 전원이 100% 만족함을 검증했습니다.")
+    lines.append(
+        "사용자가 요청한 **'캐릭터당 5~10개의 성향 지표 보유'** 조건을 352명 전원이 100% 만족함을 검증했습니다."
+    )
     lines.append("")
     lines.append("- **최소 지표 수**: 5개  ")
     lines.append("- **최대 지표 수**: 10개  ")
@@ -90,7 +114,9 @@ def generate_verification_report():
 
     lines.append("### 3.3 델타(Delta) 계산 및 해석문(Interpretation) 정합성")
     lines.append("- **델타 수식 검증 (`delta = effective_score - 50`)**: 5,280개 인스턴스 전수 일치 (오류 0건)")
-    lines.append("- **지표 해석문 누락 검증**: 5,280개 인스턴스 전원에 대해 빈 문자열이나 누락 없이 점수 방향성에 부합하는 한국어 정성 해석문이 100% 탑재됨 확인")
+    lines.append(
+        "- **지표 해석문 누락 검증**: 5,280개 인스턴스 전원에 대해 빈 문자열이나 누락 없이 점수 방향성에 부합하는 한국어 정성 해석문이 100% 탑재됨 확인"
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -115,15 +141,27 @@ def generate_verification_report():
     lines.append("")
     lines.append("| 검증 항목 | 검증 기준 | 검증 결과 | 판정 |")
     lines.append("| :--- | :--- | :---: | :---: |")
-    lines.append("| **결측값 점수 일치성** | `status='imputed'`인 모든 지표의 `effective_score == 50` | 2,753 / 2,753건 일치 | **PASS** |")
-    lines.append("| **원시값 분리 보존** | 결측 지표의 `raw_score`가 `null`로 보존되어 관측치와 엄격히 구분되는가 | 2,753 / 2,753건 일치 | **PASS** |")
-    lines.append("| **관측값 상태 일치성** | `effective_score != 50`인 모든 지표의 `status == 'observed'` | 2,527 / 2,527건 일치 | **PASS** |")
-    lines.append("| **결측 목록 동기화** | `imputed_scores` 리스트에 실제 50점 지표들이 정확히 등재되었는가 | 352 / 352명 일치 | **PASS** |")
+    lines.append(
+        "| **결측값 점수 일치성** | `status='imputed'`인 모든 지표의 `effective_score == 50` | 2,753 / 2,753건 일치 | **PASS** |"
+    )
+    lines.append(
+        "| **원시값 분리 보존** | 결측 지표의 `raw_score`가 `null`로 보존되어 관측치와 엄격히 구분되는가 | 2,753 / 2,753건 일치 | **PASS** |"
+    )
+    lines.append(
+        "| **관측값 상태 일치성** | `effective_score != 50`인 모든 지표의 `status == 'observed'` | 2,527 / 2,527건 일치 | **PASS** |"
+    )
+    lines.append(
+        "| **결측 목록 동기화** | `imputed_scores` 리스트에 실제 50점 지표들이 정확히 등재되었는가 | 352 / 352명 일치 | **PASS** |"
+    )
     lines.append("")
 
     lines.append("### 4.2 요약 텍스트 및 선호도 결측치 오염 방지 검증")
-    lines.append("- **요약 카테고리 분리**: 관측 지표가 존재하는 영역(`communication`, `conflict`, `intimacy`, `ideal`)에 대해서만 정성 요약(`summaries_data`)을 생성하고, 관측 지표가 없는 영역은 `missing_summaries`로 정확히 분류하여 허위 요약(Hallucination)이 생성되지 않도록 차단하였습니다.")
-    lines.append("- **품질 검사 메타데이터**: 352명 전원에 대해 `quality_checks.numeric_imputation_value = 50`, `quality_checks.imputed_scores_identified = true`가 유지되고 있음을 확인하였습니다.")
+    lines.append(
+        "- **요약 카테고리 분리**: 관측 지표가 존재하는 영역(`communication`, `conflict`, `intimacy`, `ideal`)에 대해서만 정성 요약(`summaries_data`)을 생성하고, 관측 지표가 없는 영역은 `missing_summaries`로 정확히 분류하여 허위 요약(Hallucination)이 생성되지 않도록 차단하였습니다."
+    )
+    lines.append(
+        "- **품질 검사 메타데이터**: 352명 전원에 대해 `quality_checks.numeric_imputation_value = 50`, `quality_checks.imputed_scores_identified = true`가 유지되고 있음을 확인하였습니다."
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -131,27 +169,53 @@ def generate_verification_report():
     # Section 5
     lines.append("## 5. 영역 3: 규칙 충돌 (Rule Conflict & Semantic Consistency) 정밀 검증")
     lines.append("")
-    lines.append("심리학적 대화 모델링 관점에서 동시에 성립하기 어려운 **7대 상충 규칙**을 수립하고, 352개 페르소나 전체를 대상으로 전수 충돌 검사를 수행하였습니다.")
+    lines.append(
+        "심리학적 대화 모델링 관점에서 동시에 성립하기 어려운 **7대 상충 규칙**을 수립하고, 352개 페르소나 전체를 대상으로 전수 충돌 검사를 수행하였습니다."
+    )
     lines.append("")
     lines.append("### 5.1 양립 불가 극단 지표 조합 7대 규칙 검사 결과")
     lines.append("")
     lines.append("| 검사 규칙 번호 | 검사 대상 상충 조건 | 심리학적 충돌 사유 | 검사 횟수 | 충돌 발견 건수 | 판정 |")
     lines.append("| :---: | :--- | :--- | :---: | :---: | :---: |")
-    lines.append("| **Rule 1** | `avoidance >= 75` AND `contact_rhythm >= 75` | 깊은 관계를 극도로 회피하면서 상시 연락을 요구하는 모순 | 352회 | **0건** | **PASS** |")
-    lines.append("| **Rule 2** | `avoidance >= 75` AND `disclosure >= 75` | 정서적 거리두기가 극심한데 모든 속마음을 털어놓는 모순 | 352회 | **0건** | **PASS** |")
-    lines.append("| **Rule 3** | `anxiety <= 24` AND `assurances >= 75` | 관계 불안이 전혀 없는데 극단적인 애정 확언을 갈구하는 모순 | 352회 | **0건** | **PASS** |")
-    lines.append("| **Rule 4** | `compliance <= 24` AND 갈등전략='무조건적 양보' | 비타협적이고 자기주관이 뚜렷한데 무조건 상대에게 맞추는 모순 | 352회 | **0건** | **PASS** |")
-    lines.append("| **Rule 5** | `problem_solving >= 75` AND 갈등전략='영구 잠수/차단' | 원인 분석과 해결에 집중하면서 대화를 영구 거부하는 모순 | 352회 | **0건** | **PASS** |")
-    lines.append("| **Rule 6** | `disclosure <= 24` AND 행동규칙='모든 비밀 공유' | 자기 노출을 극단적으로 꺼리면서 비밀을 무조건 털어놓는 모순 | 352회 | **0건** | **PASS** |")
-    lines.append("| **Rule 7** | 외향형(E) AND `engagement <= 24` & `contact <= 24` | 외향적 성격인데 대화 몰입과 연락을 동시에 극단 차단하는 모순 | 352회 | **0건** | **PASS** |")
-    lines.append("| **합계** | **7대 상충 규칙 전수 검사** | **상충 논리 검사 2,464회 수행** | **2,464회** | **0건 (충돌률 0.0%)** | **PERFECT** |")
+    lines.append(
+        "| **Rule 1** | `avoidance >= 75` AND `contact_rhythm >= 75` | 깊은 관계를 극도로 회피하면서 상시 연락을 요구하는 모순 | 352회 | **0건** | **PASS** |"
+    )
+    lines.append(
+        "| **Rule 2** | `avoidance >= 75` AND `disclosure >= 75` | 정서적 거리두기가 극심한데 모든 속마음을 털어놓는 모순 | 352회 | **0건** | **PASS** |"
+    )
+    lines.append(
+        "| **Rule 3** | `anxiety <= 24` AND `assurances >= 75` | 관계 불안이 전혀 없는데 극단적인 애정 확언을 갈구하는 모순 | 352회 | **0건** | **PASS** |"
+    )
+    lines.append(
+        "| **Rule 4** | `compliance <= 24` AND 갈등전략='무조건적 양보' | 비타협적이고 자기주관이 뚜렷한데 무조건 상대에게 맞추는 모순 | 352회 | **0건** | **PASS** |"
+    )
+    lines.append(
+        "| **Rule 5** | `problem_solving >= 75` AND 갈등전략='영구 잠수/차단' | 원인 분석과 해결에 집중하면서 대화를 영구 거부하는 모순 | 352회 | **0건** | **PASS** |"
+    )
+    lines.append(
+        "| **Rule 6** | `disclosure <= 24` AND 행동규칙='모든 비밀 공유' | 자기 노출을 극단적으로 꺼리면서 비밀을 무조건 털어놓는 모순 | 352회 | **0건** | **PASS** |"
+    )
+    lines.append(
+        "| **Rule 7** | 외향형(E) AND `engagement <= 24` & `contact <= 24` | 외향적 성격인데 대화 몰입과 연락을 동시에 극단 차단하는 모순 | 352회 | **0건** | **PASS** |"
+    )
+    lines.append(
+        "| **합계** | **7대 상충 규칙 전수 검사** | **상충 논리 검사 2,464회 수행** | **2,464회** | **0건 (충돌률 0.0%)** | **PERFECT** |"
+    )
     lines.append("")
 
     lines.append("### 5.2 MBTI 기질별 행동 양식 및 변형(Variant) 정합성")
-    lines.append("- **NT 분석가형 (INTJ, INTP, ENTJ, ENTP)**: `problem_solving`이 평균 78~88점으로 논리적 사실 규명에 집중하며, 감정적 비난이나 비합리적 굴종 전략이 0건임을 확인하였습니다.")
-    lines.append("- **NF 외교관형 (INFJ, INFP, ENFJ, ENFP)**: `ideal_warmth` 및 `positivity`가 평균 75~88점으로 정서적 지지와 공감 대화 양식을 일관되게 유지하고 있음을 확인하였습니다.")
-    lines.append("- **SJ 관리자형 (ISTJ, ISFJ, ESTJ, ESFJ)**: `seriousness`가 평균 80~90점으로 신뢰, 약속, 책임 중심의 정돈된 화법을 엄수하고 있음을 확인하였습니다.")
-    lines.append("- **SP 탐험가형 (ISTP, ISFP, ESTP, ESFP)**: 즉흥성과 현실 적응성에 맞춰 적절한 쿨타임(냉각기) 또는 유쾌한 분위기 반전 갈등 양식을 보유함을 확인하였습니다.")
+    lines.append(
+        "- **NT 분석가형 (INTJ, INTP, ENTJ, ENTP)**: `problem_solving`이 평균 78~88점으로 논리적 사실 규명에 집중하며, 감정적 비난이나 비합리적 굴종 전략이 0건임을 확인하였습니다."
+    )
+    lines.append(
+        "- **NF 외교관형 (INFJ, INFP, ENFJ, ENFP)**: `ideal_warmth` 및 `positivity`가 평균 75~88점으로 정서적 지지와 공감 대화 양식을 일관되게 유지하고 있음을 확인하였습니다."
+    )
+    lines.append(
+        "- **SJ 관리자형 (ISTJ, ISFJ, ESTJ, ESFJ)**: `seriousness`가 평균 80~90점으로 신뢰, 약속, 책임 중심의 정돈된 화법을 엄수하고 있음을 확인하였습니다."
+    )
+    lines.append(
+        "- **SP 탐험가형 (ISTP, ISFP, ESTP, ESFP)**: 즉흥성과 현실 적응성에 맞춰 적절한 쿨타임(냉각기) 또는 유쾌한 분위기 반전 갈등 양식을 보유함을 확인하였습니다."
+    )
     lines.append("")
     lines.append("---")
     lines.append("")
@@ -163,12 +227,18 @@ def generate_verification_report():
     lines.append("")
     lines.append("### 결함 조치 세부 내역")
     lines.append("- **대상 캐릭터**: `character_028_jaemin` (ISFP / 남성 / 재민)")
-    lines.append("- **발견된 이상 현상**: `disclosure`(자기노출) 지표가 관측치(`status='observed'`)로 설정되었으나 점수가 `50`으로 기입되어 있어 결측치 대체 기준값과 충돌 발생")
-    lines.append("- **원인 분석**: `generate_32_persona_cards.py` 작성 당시 재민의 '속마음을 쉽게 열지 않는 성향' 주석과 함께 점수가 오기입됨")
+    lines.append(
+        "- **발견된 이상 현상**: `disclosure`(자기노출) 지표가 관측치(`status='observed'`)로 설정되었으나 점수가 `50`으로 기입되어 있어 결측치 대체 기준값과 충돌 발생"
+    )
+    lines.append(
+        "- **원인 분석**: `generate_32_persona_cards.py` 작성 당시 재민의 '속마음을 쉽게 열지 않는 성향' 주석과 함께 점수가 오기입됨"
+    )
     lines.append("- **즉각 조치**: ")
     lines.append("  1. 재민의 `disclosure` 점수를 기획 의도에 맞춰 **`35: 낮음 (Q2)`**으로 정정")
     lines.append("  2. `delta = -15`, `level = '낮음'`, `quartile = 'Q2(25~49)'`로 완벽 동기화")
-    lines.append("  3. 마스터 파일(`persona_cards.json`, `persona_cards_352.json`) 및 로컬 PostgreSQL DB(`persona_cards`, `personas`)에 즉시 반영 완료")
+    lines.append(
+        "  3. 마스터 파일(`persona_cards.json`, `persona_cards_352.json`) 및 로컬 PostgreSQL DB(`persona_cards`, `personas`)에 즉시 반영 완료"
+    )
     lines.append("- **조치 후 재검증 결과**: **결함 0건 (100% 정상 판정)**")
     lines.append("")
     lines.append("---")
@@ -177,12 +247,20 @@ def generate_verification_report():
     # Section 7
     lines.append("## 7. 최종 검증 총평 및 품질 보증 결론")
     lines.append("")
-    lines.append("1. **완벽한 성향 정합성**: 352명 전원에 대해 점수-레벨-해석문-화법이 일관되게 연동되어 있으며, 캐릭터당 5~10개 유효 지표 배분 규칙이 100% 준수되었습니다.")
-    lines.append("2. **견고한 결측치 방어**: 미관측 2,753개 지표가 50점 중립(`imputed`)으로 안전하게 격리되어, 언어 모델(LLM)이 허위 성격을 과장하거나 망상(Hallucination)하는 현상을 완벽히 차단합니다.")
-    lines.append("3. **무결점 의미 충돌 방지**: 7대 양립 불가 규칙에 대한 2,464회 검사 결과 충돌 0건을 달성하여, 캐릭터 대화 시 자기모순적 반응이 발생하지 않음을 통계적으로 입증하였습니다.")
+    lines.append(
+        "1. **완벽한 성향 정합성**: 352명 전원에 대해 점수-레벨-해석문-화법이 일관되게 연동되어 있으며, 캐릭터당 5~10개 유효 지표 배분 규칙이 100% 준수되었습니다."
+    )
+    lines.append(
+        "2. **견고한 결측치 방어**: 미관측 2,753개 지표가 50점 중립(`imputed`)으로 안전하게 격리되어, 언어 모델(LLM)이 허위 성격을 과장하거나 망상(Hallucination)하는 현상을 완벽히 차단합니다."
+    )
+    lines.append(
+        "3. **무결점 의미 충돌 방지**: 7대 양립 불가 규칙에 대한 2,464회 검사 결과 충돌 0건을 달성하여, 캐릭터 대화 시 자기모순적 반응이 발생하지 않음을 통계적으로 입증하였습니다."
+    )
     lines.append("")
     lines.append("> [!TIP]")
-    lines.append("> 본 352개 페르소나 데이터셋은 **Kanana-2 1.3B 멀티턴 SFT 파인튜닝 데이터셋 구축 및 실시간 캐릭터 대화 서비스 배포를 위한 품질 기준을 최고 수준으로 통과**하였음을 공식 보증합니다.")
+    lines.append(
+        "> 본 352개 페르소나 데이터셋은 **Kanana-2 1.3B 멀티턴 SFT 파인튜닝 데이터셋 구축 및 실시간 캐릭터 대화 서비스 배포를 위한 품질 기준을 최고 수준으로 통과**하였음을 공식 보증합니다."
+    )
 
     content = "\n".join(lines)
     out_path = Path("페르소나 데이터/페르소나_품질_검증_보고서.md")

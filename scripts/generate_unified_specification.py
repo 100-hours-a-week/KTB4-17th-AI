@@ -132,22 +132,34 @@ def generate_spec():
     lines.append("")
     lines.append("| 점수 범위 | 단계 분류 | 행동 및 발현 양상 | 대표 어조 및 태도 |")
     lines.append("| :---: | :---: | :--- | :--- |")
-    lines.append("| **0 ~ 24** | **매우 낮음** | 해당 특성을 극단적으로 회피하거나 거의 나타나지 않음 | 차갑거나 극도로 무관심, 혹은 완전한 무억압 |")
-    lines.append("| **25 ~ 39** | **낮음** | 낮은 방향의 특성이 뚜렷하게 관측됨 | 소극적, 신중함, 일정한 심리적 거리 유지 |")
-    lines.append("| **40 ~ 49** | **약간 낮음** | 기준치보다 미세하게 낮은 경향성 발현 | 무난하지만 약간 건조하거나 담백한 반응 |")
-    lines.append("| **50** | **중립 (Neutral)** | **특정 방향으로 치우치지 않는 기준 기준점 (Imputed 기본값)** | 균형 잡힌 객관적 태도 |")
-    lines.append("| **51 ~ 60** | **약간 높음** | 기준치보다 미세하게 높은 경향성 발현 | 부드러운 온기, 은근한 호의 및 참여 |")
-    lines.append("| **61 ~ 75** | **높음** | 높은 방향의 특성이 일상 대화에서 뚜렷하게 관측됨 | 적극적인 호응, 명확한 배려, 분명한 주장 |")
-    lines.append("| **76 ~ 100** | **매우 높음** | 해당 특성이 캐릭터의 정체성(시그니처)으로 극대화됨 | 열정적 공감, 칼 같은 논리적 타결, 폭발적 리액션 |")
+    lines.append(
+        "| **0 ~ 24** | **매우 낮음** | 해당 특성을 극단적으로 회피하거나 거의 나타나지 않음 | 차갑거나 극도로 무관심, 혹은 완전한 무억압 |"
+    )
+    lines.append(
+        "| **25 ~ 39** | **낮음** | 낮은 방향의 특성이 뚜렷하게 관측됨 | 소극적, 신중함, 일정한 심리적 거리 유지 |"
+    )
+    lines.append(
+        "| **40 ~ 49** | **약간 낮음** | 기준치보다 미세하게 낮은 경향성 발현 | 무난하지만 약간 건조하거나 담백한 반응 |"
+    )
+    lines.append(
+        "| **50** | **중립 (Neutral)** | **특정 방향으로 치우치지 않는 기준 기준점 (Imputed 기본값)** | 균형 잡힌 객관적 태도 |"
+    )
+    lines.append(
+        "| **51 ~ 60** | **약간 높음** | 기준치보다 미세하게 높은 경향성 발현 | 부드러운 온기, 은근한 호의 및 참여 |"
+    )
+    lines.append(
+        "| **61 ~ 75** | **높음** | 높은 방향의 특성이 일상 대화에서 뚜렷하게 관측됨 | 적극적인 호응, 명확한 배려, 분명한 주장 |"
+    )
+    lines.append(
+        "| **76 ~ 100** | **매우 높음** | 해당 특성이 캐릭터의 정체성(시그니처)으로 극대화됨 | 열정적 공감, 칼 같은 논리적 타결, 폭발적 리액션 |"
+    )
     lines.append("")
 
     lines.append("### 2.2 4대 분위 구간 (Quartile) 및 지표 수 규칙")
     lines.append(
         "- **4대 분위 구간 분할**: Q1 (0~24: 매우 낮음), Q2 (25~49: 낮음~약간 낮음), Q3 (51~74: 약간 높음~높음), Q4 (75~100: 매우 높음)"
     )
-    lines.append(
-        "- **캐릭터당 유효 지표 수**: **엄격히 5 ~ 10개**로 제한 (전체 352명 평균 7.2개, 최소 5개, 최대 10개)"
-    )
+    lines.append("- **캐릭터당 유효 지표 수**: **엄격히 5 ~ 10개**로 제한 (전체 352명 평균 7.2개, 최소 5개, 최대 10개)")
     lines.append(
         "- **중립값(50점) 결측치 보완(Imputed)**: 관측되지 않은 나머지 지표는 50점으로 고정되어, 과도한 성격 왜곡을 방지하고 현실적인 입체성을 부여함"
     )
@@ -163,7 +175,9 @@ def generate_spec():
         "각 슬롯마다 충분한 빈도수(슬롯당 최소 33건 ~ 최대 57건)로 골고루 분포되어 SFT 학습 시 완벽한 일반화 성능을 제공합니다."
     )
     lines.append("")
-    lines.append("| 지표 (Trait) | 한국어 명칭 | Q1 (0~24)<br/>매우 낮음 | Q2 (25~49)<br/>낮음 | Q3 (51~74)<br/>높음 | Q4 (75~100)<br/>매우 높음 | 슬롯 커버리지 |")
+    lines.append(
+        "| 지표 (Trait) | 한국어 명칭 | Q1 (0~24)<br/>매우 낮음 | Q2 (25~49)<br/>낮음 | Q3 (51~74)<br/>높음 | Q4 (75~100)<br/>매우 높음 | 슬롯 커버리지 |"
+    )
     lines.append("| :--- | :--- | :---: | :---: | :---: | :---: | :---: |")
 
     tot_q1 = sum(stats[t[0]]["Q1"] for t in traits_list)
@@ -173,9 +187,13 @@ def generate_spec():
 
     for key, name in traits_list:
         s = stats[key]
-        lines.append(f"| **`{key}`** | {name} | {s['Q1']}건 | {s['Q2']}건 | {s['Q3']}건 | {s['Q4']}건 | **100% (4/4)** |")
+        lines.append(
+            f"| **`{key}`** | {name} | {s['Q1']}건 | {s['Q2']}건 | {s['Q3']}건 | {s['Q4']}건 | **100% (4/4)** |"
+        )
 
-    lines.append(f"| **전체 60슬롯 합계** | **15개 지표 총합** | **{tot_q1}건** | **{tot_q2}건** | **{tot_q3}건** | **{tot_q4}건** | **총 60/60 (100.0%)** |")
+    lines.append(
+        f"| **전체 60슬롯 합계** | **15개 지표 총합** | **{tot_q1}건** | **{tot_q2}건** | **{tot_q3}건** | **{tot_q4}건** | **총 60/60 (100.0%)** |"
+    )
     lines.append("")
     lines.append("> [!NOTE]")
     lines.append(
@@ -192,11 +210,11 @@ def generate_spec():
 
     # 4.1 Batch 1 (32종)
     lines.append("### 4.1 Batch 1: 기초 32종 페르소나 매트릭스 (16 MBTI × 남/여 2성별 1:1)")
-    lines.append(
-        "가장 기초가 되는 16대 MBTI의 성별별 표준형 캐릭터 데이터셋입니다. (기존 5종 핵심 시드 캐릭터 포함)"
-    )
+    lines.append("가장 기초가 되는 16대 MBTI의 성별별 표준형 캐릭터 데이터셋입니다. (기존 5종 핵심 시드 캐릭터 포함)")
     lines.append("")
-    lines.append("| No | ID | 이름 | 성별 | MBTI | 생성 모드 | 화법 및 표현 스타일 | 핵심 유효 지표 분포 (Q1~Q4) | 갈등 대처 방식 |")
+    lines.append(
+        "| No | ID | 이름 | 성별 | MBTI | 생성 모드 | 화법 및 표현 스타일 | 핵심 유효 지표 분포 (Q1~Q4) | 갈등 대처 방식 |"
+    )
     lines.append("| :---: | :--- | :---: | :---: | :---: | :---: | :--- | :--- | :--- |")
 
     for i, card in enumerate(b32, 1):
@@ -224,9 +242,11 @@ def generate_spec():
                     active_q.append(f"Q4({t_n[:2]} {sc})")
         q_str = ", ".join(active_q[:4])
         if len(active_q) > 4:
-            q_str += f" 외 {len(active_q)-4}개"
+            q_str += f" 외 {len(active_q) - 4}개"
 
-        lines.append(f"| **{i}** | `{cid}` | **{cname}** | {cgen} | **{cmbti}** | `{cmode}` | {cstyle} | {q_str} | {cstrat} |")
+        lines.append(
+            f"| **{i}** | `{cid}` | **{cname}** | {cgen} | **{cmbti}** | `{cmode}` | {cstyle} | {q_str} | {cstrat} |"
+        )
 
     lines.append("")
     lines.append("---")
@@ -238,7 +258,9 @@ def generate_spec():
         "15개 지표의 60개 슬롯을 빈틈없이 전수 커버하기 위해 MBTI 기본축당 2개 변형(A/B)으로 설계된 데이터셋입니다."
     )
     lines.append("")
-    lines.append("| No | ID | 이름 | 성별 | MBTI | 변형 | 지표수 | 화법 및 표현 스타일 | 핵심 유효 지표 분포 (Q1~Q4) | 갈등 대처 방식 | 요약 수 |")
+    lines.append(
+        "| No | ID | 이름 | 성별 | MBTI | 변형 | 지표수 | 화법 및 표현 스타일 | 핵심 유효 지표 분포 (Q1~Q4) | 갈등 대처 방식 | 요약 수 |"
+    )
     lines.append("| :---: | :--- | :---: | :---: | :---: | :---: | :---: | :--- | :--- | :--- | :---: |")
 
     for i, card in enumerate(b64, 1):
@@ -266,7 +288,7 @@ def generate_spec():
                     active_q.append(f"Q4({t_n[:2]} {sc})")
         q_str = ", ".join(active_q[:3])
         if len(active_q) > 3:
-            q_str += f" 외 {len(active_q)-3}개"
+            q_str += f" 외 {len(active_q) - 3}개"
 
         lines.append(
             f"| **{i}** | `{cid}` | **{cname}** | {cgen} | **{cmbti}** | {cvar} | {len(active_q)}개 | {cstyle} | {q_str} | {cstrat} | {sum_cnt}개 |"
@@ -317,13 +339,19 @@ def generate_spec():
 
         # Top 2 extreme traits
         sorted_traits = sorted(
-            [(t_k, t_n, card["traits"][t_k]["effective_score"]) for t_k, t_n in traits_list if card["traits"][t_k]["effective_score"] != 50],
+            [
+                (t_k, t_n, card["traits"][t_k]["effective_score"])
+                for t_k, t_n in traits_list
+                if card["traits"][t_k]["effective_score"] != 50
+            ],
             key=lambda x: abs(x[2] - 50),
             reverse=True,
         )
         t_summary = ", ".join([f"{t[1][:2]}({t[2]})" for t in sorted_traits[:2]])
 
-        lines.append(f"| **{i}** | `{cid}` | **{cname}** | {cgen} | **{cmbti}** | {cvar} | {active_cnt}개 | {t_summary} | {sum_text[:40]}... |")
+        lines.append(
+            f"| **{i}** | `{cid}` | **{cname}** | {cgen} | **{cmbti}** | {cvar} | {active_cnt}개 | {t_summary} | {sum_text[:40]}... |"
+        )
 
     lines.append("")
     lines.append("---")
@@ -337,27 +365,39 @@ def generate_spec():
         "- **핵심 발현 지표**: `problem_solving` (Q4: 75~90 매우 높음), `withdrawal` (Q1: 15~25 낮음 또는 Q4: 냉각기), `compliance` (Q1~Q2: 15~35 낮음)"
     )
     lines.append("- **대화 및 갈등 양식**: 감정적 호소보다 논리적 근거, 팩트 확인, 즉각적인 문제 해결을 선호.")
-    lines.append("- **남녀 화법 차이**: 남성 캐릭터는 직설적 평어 및 단문 종결, 여성 캐릭터는 명확하고 단호한 표준 반말/존대 구사.")
+    lines.append(
+        "- **남녀 화법 차이**: 남성 캐릭터는 직설적 평어 및 단문 종결, 여성 캐릭터는 명확하고 단호한 표준 반말/존대 구사."
+    )
     lines.append("")
     lines.append("### 5.2 NF 외교관형 (INFJ, INFP, ENFJ, ENFP) — 총 88명")
     lines.append(
         "- **핵심 발현 지표**: `ideal_warmth` (Q4: 80~95 매우 높음), `positivity` (Q3~Q4: 65~90 높음), `anxiety` (Q2~Q4 다양 분포)"
     )
-    lines.append("- **대화 및 갈등 양식**: 정서적 유대감과 상호 배려 최우선. 상대방의 서운한 감정을 먼저 보듬고 공감한 뒤 조율.")
-    lines.append("- **남녀 화법 차이**: 남성 캐릭터는 듬직하고 다정한 존대/반말, 여성 캐릭터는 살갑고 감성적인 어조와 풍부한 이모티콘.")
+    lines.append(
+        "- **대화 및 갈등 양식**: 정서적 유대감과 상호 배려 최우선. 상대방의 서운한 감정을 먼저 보듬고 공감한 뒤 조율."
+    )
+    lines.append(
+        "- **남녀 화법 차이**: 남성 캐릭터는 듬직하고 다정한 존대/반말, 여성 캐릭터는 살갑고 감성적인 어조와 풍부한 이모티콘."
+    )
     lines.append("")
     lines.append("### 5.3 SJ 관리자형 (ISTJ, ISFJ, ESTJ, ESFJ) — 총 88명")
     lines.append(
         "- **핵심 발현 지표**: `seriousness` (Q4: 78~92 매우 높음), `ideal_status` (Q3~Q4: 65~85 높음), `compliance` (ISFJ/ESFJ Q4: 75~88)"
     )
-    lines.append("- **대화 및 갈등 양식**: 약속, 책임, 규칙 및 현실적인 일정 준수 중시. 상호 신뢰와 안정적인 관계 유지를 지향.")
-    lines.append("- **남녀 화법 차이**: 남성 캐릭터는 단정하고 정중한 어조, 여성 캐릭터는 공손하고 세심하게 배려하는 완곡한 화법.")
+    lines.append(
+        "- **대화 및 갈등 양식**: 약속, 책임, 규칙 및 현실적인 일정 준수 중시. 상호 신뢰와 안정적인 관계 유지를 지향."
+    )
+    lines.append(
+        "- **남녀 화법 차이**: 남성 캐릭터는 단정하고 정중한 어조, 여성 캐릭터는 공손하고 세심하게 배려하는 완곡한 화법."
+    )
     lines.append("")
     lines.append("### 5.4 SP 탐험가형 (ISTP, ISFP, ESTP, ESFP) — 총 88명")
     lines.append(
         "- **핵심 발현 지표**: `avoidance` (ISTP/ISFP Q4: 75~88 거리두기 높음), `ideal_vitality` (ESTP/ESFP Q4: 80~95 활력 높음)"
     )
-    lines.append("- **대화 및 갈등 양식**: 즉각적인 감정 과열 시 침묵하거나 회피(ISTP/ISFP), 혹은 유쾌한 분위기 전환 및 즉흥적 해결(ESTP/ESFP).")
+    lines.append(
+        "- **대화 및 갈등 양식**: 즉각적인 감정 과열 시 침묵하거나 회피(ISTP/ISFP), 혹은 유쾌한 분위기 전환 및 즉흥적 해결(ESTP/ESFP)."
+    )
     lines.append("- **남녀 화법 차이**: 쿨하고 담백한 단문(남성) 및 활기차고 솔직담백한 리액션(여성).")
     lines.append("")
     lines.append("---")
@@ -366,7 +406,9 @@ def generate_spec():
     # Section 6: Real Practice Dialogue Verification
     lines.append("## 6. 실제 LLM 대화 엔진 1-Turn 검증 결과 비교")
     lines.append("")
-    lines.append("실제 OpenRouter API(`google/gemini-2.5-flash-lite`)를 연동하여, 동일한 사용자 발화에 대해 서로 다른 페르소나 캐릭터들이 어떻게 고유하게 반응하는지 검증을 완료하였습니다.")
+    lines.append(
+        "실제 OpenRouter API(`google/gemini-2.5-flash-lite`)를 연동하여, 동일한 사용자 발화에 대해 서로 다른 페르소나 캐릭터들이 어떻게 고유하게 반응하는지 검증을 완료하였습니다."
+    )
     lines.append("")
     lines.append("### 검증 시나리오: '퇴근하고 오늘 진짜 피곤하고 힘들었어...'")
     lines.append("")
@@ -400,18 +442,10 @@ def generate_spec():
     lines.append(
         "| **`페르소나 데이터/persona_cards_352.json`** | 352건 | **전수 통합 마스터 JSON 데이터셋** (32 + 64 + 256) |"
     )
-    lines.append(
-        "| **`페르소나 데이터/persona_cards.json`** | 352건 | 시스템 기본 로딩용 심볼릭/동기화 JSON 파일 |"
-    )
-    lines.append(
-        "| `페르소나 데이터/persona_cards_32.json` | 32건 | Batch 1 기준 데이터셋 보존본 |"
-    )
-    lines.append(
-        "| `페르소나 데이터/persona_cards_64.json` | 64건 | Batch 2 60슬롯 커버리지 데이터셋 보존본 |"
-    )
-    lines.append(
-        "| `페르소나 데이터/persona_cards_256.json` | 256건 | Batch 3 대규모 8변형 SFT 데이터셋 보존본 |"
-    )
+    lines.append("| **`페르소나 데이터/persona_cards.json`** | 352건 | 시스템 기본 로딩용 심볼릭/동기화 JSON 파일 |")
+    lines.append("| `페르소나 데이터/persona_cards_32.json` | 32건 | Batch 1 기준 데이터셋 보존본 |")
+    lines.append("| `페르소나 데이터/persona_cards_64.json` | 64건 | Batch 2 60슬롯 커버리지 데이터셋 보존본 |")
+    lines.append("| `페르소나 데이터/persona_cards_256.json` | 256건 | Batch 3 대규모 8변형 SFT 데이터셋 보존본 |")
     lines.append(
         "| **`페르소나 데이터/캐릭터_페르소나_통합_명세서.md`** | **본 문서** | **352종 전수 스펙을 집대성한 단일 통합 명세서** |"
     )

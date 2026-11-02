@@ -6,6 +6,7 @@ from pathlib import Path
 SRC_ROOT = Path("/Users/hrun/Documents/ktb4-17/KTB-17DEV")
 DST_ROOT = Path("/Users/hrun/persona_model")
 
+
 def copy_and_setup():
     print(f"Setting up persona_model project at {DST_ROOT}...")
 
@@ -19,16 +20,25 @@ def copy_and_setup():
         DST_ROOT / "evals" / "harness",
         DST_ROOT / "tools",
         DST_ROOT / "training" / "configs",
-        DST_ROOT / "export"
+        DST_ROOT / "export",
     ]
     for d in dirs:
         d.mkdir(parents=True, exist_ok=True)
 
     # 2. 페르소나 데이터 및 문서 복사
     shutil.copy2(SRC_ROOT / "페르소나 데이터" / "persona_cards.json", DST_ROOT / "data" / "persona_cards.json")
-    shutil.copy2(SRC_ROOT / "페르소나 데이터" / "AI_학습용_페르소나_시스템_기획서.md", DST_ROOT / "data" / "docs" / "AI_학습용_페르소나_시스템_기획서.md")
-    shutil.copy2(SRC_ROOT / "페르소나 데이터" / "캐릭터_페르소나_통합_명세서.md", DST_ROOT / "data" / "docs" / "캐릭터_페르소나_통합_명세서.md")
-    shutil.copy2(SRC_ROOT / "페르소나 데이터" / "페르소나_품질_검증_보고서.md", DST_ROOT / "data" / "docs" / "페르소나_품질_검증_보고서.md")
+    shutil.copy2(
+        SRC_ROOT / "페르소나 데이터" / "AI_학습용_페르소나_시스템_기획서.md",
+        DST_ROOT / "data" / "docs" / "AI_학습용_페르소나_시스템_기획서.md",
+    )
+    shutil.copy2(
+        SRC_ROOT / "페르소나 데이터" / "캐릭터_페르소나_통합_명세서.md",
+        DST_ROOT / "data" / "docs" / "캐릭터_페르소나_통합_명세서.md",
+    )
+    shutil.copy2(
+        SRC_ROOT / "페르소나 데이터" / "페르소나_품질_검증_보고서.md",
+        DST_ROOT / "data" / "docs" / "페르소나_품질_검증_보고서.md",
+    )
     print("Copied persona datasets and documents.")
 
     # 3. 평가 도구 (Evals) 복사
@@ -55,5 +65,6 @@ def copy_and_setup():
     # 4. 검증 스크립트 복사
     shutil.copy2(SRC_ROOT / "scripts" / "verify_persona_quality.py", DST_ROOT / "tools" / "verify_persona_quality.py")
     print("Copied verification tools.")
+
 
 copy_and_setup()

@@ -31,10 +31,10 @@ USER_TEST_MESSAGE = "너 요즘 왜 이렇게 연락이 뜸해? 나한테 서운
 
 
 async def run_practice_test_for_character(char_info: dict):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"👉 [테스트 캐릭터: {char_info['name']} ({char_info['mbti']})]")
     print(f"   성향 특징: {char_info['style']}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     async with SessionLocal() as db:
         service = PracticeService(db)
@@ -60,10 +60,10 @@ async def run_practice_test_for_character(char_info: dict):
                 print(f"❌ 오프닝 에러: {data.message}")
 
         print(f"\n💬 [{char_info['name']}의 첫 인사]")
-        print(f"   \"{opening_text.strip()}\"")
+        print(f'   "{opening_text.strip()}"')
 
         # 3. 사용자 발화 및 상대방 답변
-        print(f"\n👤 [지호 (사용자)]: \"{USER_TEST_MESSAGE}\"")
+        print(f'\n👤 [지호 (사용자)]: "{USER_TEST_MESSAGE}"')
 
         # 최신 세션 상태 로드
         session = await service.repo.get_session(session_id)
@@ -77,7 +77,7 @@ async def run_practice_test_for_character(char_info: dict):
                 print(f"❌ 답변 에러: {data.message}")
 
         print(f"\n💬 [{char_info['name']}의 답변]")
-        print(f"   \"{reply_text.strip()}\"")
+        print(f'   "{reply_text.strip()}"')
 
         # 세션 종료
         session = await service.repo.get_session(session_id)

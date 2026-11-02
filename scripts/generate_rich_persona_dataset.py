@@ -10,16 +10,40 @@ import json
 from pathlib import Path
 
 DIMENSIONS = [
-    "anxiety", "avoidance", "assurances", "compliance", "contact_rhythm",
-    "disclosure", "engagement", "openness", "positivity", "problem_solving",
-    "withdrawal", "seriousness", "ideal_status", "ideal_vitality", "ideal_warmth"
+    "anxiety",
+    "avoidance",
+    "assurances",
+    "compliance",
+    "contact_rhythm",
+    "disclosure",
+    "engagement",
+    "openness",
+    "positivity",
+    "problem_solving",
+    "withdrawal",
+    "seriousness",
+    "ideal_status",
+    "ideal_vitality",
+    "ideal_warmth",
 ]
 
 MBTI_LIST = [
-    "INTJ", "INTP", "ENTJ", "ENTP",
-    "INFJ", "INFP", "ENFJ", "ENFP",
-    "ISTJ", "ISFJ", "ESTJ", "ESFJ",
-    "ISTP", "ISFP", "ESTP", "ESFP"
+    "INTJ",
+    "INTP",
+    "ENTJ",
+    "ENTP",
+    "INFJ",
+    "INFP",
+    "ENFJ",
+    "ENFP",
+    "ISTJ",
+    "ISFJ",
+    "ESTJ",
+    "ESFJ",
+    "ISTP",
+    "ISFP",
+    "ESTP",
+    "ESFP",
 ]
 
 NAMES = {
@@ -77,7 +101,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "평균적인 관계 민감도",
             "약간 높음": "상대의 태도 변화를 조심스럽게 살핌",
             "높음": "관계 불안에 다소 민감하고 반응을 주시함",
-            "매우 높음": "관계의 사소한 신호에도 강한 불안과 확인 요구를 느낌"
+            "매우 높음": "관계의 사소한 신호에도 강한 불안과 확인 요구를 느낌",
         },
         "avoidance": {
             "매우 낮음": "정서적 유대와 친밀감을 매우 편안하게 느낌",
@@ -86,7 +110,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "평균적인 친밀도 거리감",
             "약간 높음": "자신만의 개인 시간을 침범받지 않길 원함",
             "높음": "사적 영역을 보호하며 감정적 밀착을 부담스러워함",
-            "매우 높음": "깊은 정서적 개입을 극단적으로 회피하고 독립성을 엄수함"
+            "매우 높음": "깊은 정서적 개입을 극단적으로 회피하고 독립성을 엄수함",
         },
         "assurances": {
             "매우 낮음": "관계의 확언이나 확인 표현을 거의 필요로 하지 않음",
@@ -95,7 +119,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "평균적인 확신 요구",
             "약간 높음": "가끔씩 다정한 확인의 말을 원함",
             "높음": "관계의 지속성에 대한 잦은 확신과 애정 표현을 원함",
-            "매우 높음": "끊임없는 확언과 미래에 대한 명확한 약속을 요구함"
+            "매우 높음": "끊임없는 확언과 미래에 대한 명확한 약속을 요구함",
         },
         "compliance": {
             "매우 낮음": "비효율이나 부당한 요구를 단호히 거절하고 원칙 고수",
@@ -104,7 +128,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "상황에 따라 유연하게 조율",
             "약간 높음": "상대의 기분을 배려해 맞추려 노력함",
             "높음": "상대 의견을 배려하여 기꺼이 양보하고 맞춤",
-            "매우 높음": "갈등을 피하기 위해 전적으로 상대에게 맞추는 경향"
+            "매우 높음": "갈등을 피하기 위해 전적으로 상대에게 맞추는 경향",
         },
         "contact_rhythm": {
             "매우 낮음": "불필요한 스몰토크나 일상 연락을 극도로 피함",
@@ -113,7 +137,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "평균적인 연락 주기",
             "약간 높음": "일과 중 틈틈이 안부를 주고받음",
             "높음": "일상의 사소한 순간도 자주 공유하고 연락함",
-            "매우 높음": "상시 연결되어 대화하는 것을 원함"
+            "매우 높음": "상시 연결되어 대화하는 것을 원함",
         },
         "disclosure": {
             "매우 낮음": "자신의 감정이나 속마음을 극단적으로 감춤",
@@ -122,7 +146,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "자연스러운 수준의 자기표현",
             "약간 높음": "편안해지면 일상과 생각을 공유함",
             "높음": "자신의 감정과 일상을 투명하게 먼저 표현함",
-            "매우 높음": "비밀 없이 모든 감정과 내면을 솔직하게 털어놓음"
+            "매우 높음": "비밀 없이 모든 감정과 내면을 솔직하게 털어놓음",
         },
         "engagement": {
             "매우 낮음": "대화에 거의 몰입하지 않고 형식적으로 반응",
@@ -131,7 +155,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "적당한 대화 참여도",
             "약간 높음": "흥미로운 화제에는 적극적으로 호응",
             "높음": "대화에 적극적이며 티키타카와 몰입도가 높음",
-            "매우 높음": "엄청난 에너지로 대화를 주도하고 반응함"
+            "매우 높음": "엄청난 에너지로 대화를 주도하고 반응함",
         },
         "openness": {
             "매우 낮음": "익숙한 방식만을 고집하고 새로운 것에 거부감",
@@ -140,7 +164,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "평균적인 수용성",
             "약간 높음": "새로운 관점에 유연하게 귀 기울임",
             "높음": "새로운 시도와 다양한 가치관을 유연하게 수용함",
-            "매우 높음": "파격적이고 독창적인 아이디어와 변화를 열광적으로 환영"
+            "매우 높음": "파격적이고 독창적인 아이디어와 변화를 열광적으로 환영",
         },
         "positivity": {
             "매우 낮음": "칭찬이나 감정 표현이 없고 무뚝뚝함",
@@ -149,7 +173,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "보통의 긍정 정서",
             "약간 높음": "따뜻하고 온화한 어조로 반응",
             "높음": "밝은 칭찬과 긍정적인 에너지를 아낌없이 표현함",
-            "매우 높음": "넘치는 활기와 유머로 상대의 기분을 완전히 북돋움"
+            "매우 높음": "넘치는 활기와 유머로 상대의 기분을 완전히 북돋움",
         },
         "problem_solving": {
             "매우 낮음": "갈등 시 문제 해결보다 감정적 위로만을 갈구함",
@@ -158,7 +182,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "감정과 논리의 중간 조율",
             "약간 높음": "원인을 찾고 현실적 대안을 모색함",
             "높음": "갈등 시 원인 분석과 실질적 해결책에 집중함",
-            "매우 높음": "감정을 완전히 배제하고 오직 팩트와 프로세스로 문제를 타결"
+            "매우 높음": "감정을 완전히 배제하고 오직 팩트와 프로세스로 문제를 타결",
         },
         "withdrawal": {
             "매우 낮음": "갈등이 생기면 자리를 피하지 않고 즉시 끝까지 대화",
@@ -167,7 +191,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "평균적인 대처",
             "약간 높음": "언쟁이 길어지면 잠시 생각을 정리하고 싶어함",
             "높음": "갈등 시 격앙을 피하고 혼자 생각할 시간을 가짐",
-            "매우 높음": "상황이 불편해지면 완전히 입을 닫거나 잠수함"
+            "매우 높음": "상황이 불편해지면 완전히 입을 닫거나 잠수함",
         },
         "seriousness": {
             "매우 낮음": "관계의 구속을 극도로 싫어하고 매우 가볍게 만남",
@@ -176,7 +200,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "보통 수준의 진지성",
             "약간 높음": "약속을 소중히 지키며 신뢰 축적",
             "높음": "관계에 대한 약속과 책임을 매우 무겁게 여김",
-            "매우 높음": "미래를 함께할 확고한 신뢰와 도덕적 헌신을 최우선시함"
+            "매우 높음": "미래를 함께할 확고한 신뢰와 도덕적 헌신을 최우선시함",
         },
         "ideal_status": {
             "매우 낮음": "상대의 사회적 조건이나 성취에 전혀 무관심",
@@ -185,7 +209,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "보통의 선호도",
             "약간 높음": "자기 분야에 성실한 사람 선호",
             "높음": "상대의 전문성과 사회적 역량을 높게 평가",
-            "매우 높음": "높은 사회적 성취와 야망을 가진 상대를 강력 선호"
+            "매우 높음": "높은 사회적 성취와 야망을 가진 상대를 강력 선호",
         },
         "ideal_vitality": {
             "매우 낮음": "극도로 정적이고 조용한 쉼을 함께할 상대 선호",
@@ -194,7 +218,7 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "보통의 활력 선호",
             "약간 높음": "가벼운 운동이나 산책을 즐기는 상대 선호",
             "높음": "활동적이고 유쾌한 에너지를 선호",
-            "매우 높음": "지치지 않는 열정과 액티브한 라이프스타일을 가진 사람 선호"
+            "매우 높음": "지치지 않는 열정과 액티브한 라이프스타일을 가진 사람 선호",
         },
         "ideal_warmth": {
             "매우 낮음": "과도한 다정함이나 감정 요구를 부담스러워함",
@@ -203,8 +227,8 @@ def make_interpretation(dim: str, score: int) -> str:
             "중립": "보통의 온기 선호",
             "약간 높음": "상처 주지 않는 은은한 배려 선호",
             "높음": "따뜻하고 상처 주지 않는 다정한 사람 선호",
-            "매우 높음": "무조건적인 정서적 지지와 지극한 배려를 베푸는 사람 선호"
-        }
+            "매우 높음": "무조건적인 정서적 지지와 지극한 배려를 베푸는 사람 선호",
+        },
     }
     return interps.get(dim, {}).get(lvl, f"{dim} {lvl} 성향")
 
@@ -216,10 +240,10 @@ def generate_64_characters() -> list[dict]:
     # 60개 슬롯 (15개 지표 x 4개 구간)을 고루 순환 배분하기 위한 헬퍼
     # Q1: 10~23, Q2: 28~46, Q3: 54~72, Q4: 78~92
     QUARTILE_VALS = {
-        0: [15, 18, 20, 22],   # Q1 (0~24)
-        1: [30, 35, 40, 45],   # Q2 (25~49)
-        2: [55, 62, 68, 72],   # Q3 (51~74)
-        3: [78, 82, 86, 90],   # Q4 (75~100)
+        0: [15, 18, 20, 22],  # Q1 (0~24)
+        1: [30, 35, 40, 45],  # Q2 (25~49)
+        2: [55, 62, 68, 72],  # Q3 (51~74)
+        3: [78, 82, 86, 90],  # Q4 (75~100)
     }
 
     slot_cycle = 0
@@ -305,7 +329,7 @@ def generate_64_characters() -> list[dict]:
                             "level": classify_level(s_val),
                             "quartile": get_quartile(s_val),
                             "status": "observed",
-                            "interpretation": make_interpretation(dim, s_val)
+                            "interpretation": make_interpretation(dim, s_val),
                         }
                     else:
                         traits[dim] = {
@@ -315,55 +339,69 @@ def generate_64_characters() -> list[dict]:
                             "level": "중립",
                             "quartile": "중립(50)",
                             "status": "imputed",
-                            "interpretation": "관측 정보가 없어 중간 기준값(50)으로 대체됨"
+                            "interpretation": "관측 정보가 없어 중간 기준값(50)으로 대체됨",
                         }
                         imputed.append(dim)
 
                 # 행동 특성 분류
                 primary = [f"{d}: {classify_level(s)}" for d, s in char_scores.items() if s <= 24 or s >= 75]
-                secondary = [f"{d}: {classify_level(s)}" for d, s in char_scores.items() if 25 <= s <= 49 or 51 <= s <= 74]
+                secondary = [
+                    f"{d}: {classify_level(s)}" for d, s in char_scores.items() if 25 <= s <= 49 or 51 <= s <= 74
+                ]
 
                 # 지표 기반 풍부한 정성 요약 (summaries: 3~4개 카테고리)
                 summaries = []
                 # 1. communication
-                comm_dims = [d for d in ["contact_rhythm", "disclosure", "engagement", "positivity", "openness"] if d in char_scores]
+                comm_dims = [
+                    d
+                    for d in ["contact_rhythm", "disclosure", "engagement", "positivity", "openness"]
+                    if d in char_scores
+                ]
                 if comm_dims:
                     comm_details = ", ".join([f"{d} {classify_level(char_scores[d])}" for d in comm_dims])
-                    summaries.append({
-                        "category": "communication",
-                        "title": f"{name}의 소통 패턴",
-                        "content": f"{name}은(는) 대화 시 {speech} 화법을 구사하며, {comm_details}의 특성을 보여 솔직하고 예측 가능한 소통을 선호합니다."
-                    })
+                    summaries.append(
+                        {
+                            "category": "communication",
+                            "title": f"{name}의 소통 패턴",
+                            "content": f"{name}은(는) 대화 시 {speech} 화법을 구사하며, {comm_details}의 특성을 보여 솔직하고 예측 가능한 소통을 선호합니다.",
+                        }
+                    )
 
                 # 2. conflict
                 conf_dims = [d for d in ["problem_solving", "withdrawal", "compliance"] if d in char_scores]
                 if conf_dims:
                     conf_details = ", ".join([f"{d} {classify_level(char_scores[d])}" for d in conf_dims])
-                    summaries.append({
-                        "category": "conflict",
-                        "title": f"{name}의 갈등 해결 전략",
-                        "content": f"갈등 상황에서 {conflict_strat} 성향을 띱니다 ({conf_details}). 감정적 충돌 시 무리하게 몰아붙이기보다 상황에 맞는 페이스를 지킵니다."
-                    })
+                    summaries.append(
+                        {
+                            "category": "conflict",
+                            "title": f"{name}의 갈등 해결 전략",
+                            "content": f"갈등 상황에서 {conflict_strat} 성향을 띱니다 ({conf_details}). 감정적 충돌 시 무리하게 몰아붙이기보다 상황에 맞는 페이스를 지킵니다.",
+                        }
+                    )
 
                 # 3. intimacy & orientation
                 int_dims = [d for d in ["anxiety", "avoidance", "seriousness"] if d in char_scores]
                 if int_dims:
                     int_details = ", ".join([f"{d} {classify_level(char_scores[d])}" for d in int_dims])
-                    summaries.append({
-                        "category": "intimacy",
-                        "title": f"{name}의 관계 거리감과 진지도",
-                        "content": f"친밀감 형성 과정에서 {int_details}을(를) 나타내며, 신뢰와 독립성의 균형을 중요시합니다."
-                    })
+                    summaries.append(
+                        {
+                            "category": "intimacy",
+                            "title": f"{name}의 관계 거리감과 진지도",
+                            "content": f"친밀감 형성 과정에서 {int_details}을(를) 나타내며, 신뢰와 독립성의 균형을 중요시합니다.",
+                        }
+                    )
 
                 # 4. ideal
                 ideal_dims = [d for d in ["ideal_warmth", "ideal_vitality", "ideal_status"] if d in char_scores]
                 if ideal_dims:
                     ideal_details = ", ".join([f"{d} {classify_level(char_scores[d])}" for d in ideal_dims])
-                    summaries.append({
-                        "category": "ideal",
-                        "title": f"{name}의 파트너 선호 기준",
-                        "content": f"선호하는 파트너의 성향으로 {ideal_details}을(를) 긍정적으로 바라보며, 상호 보완적인 관계에서 안정감을 느낍니다."
-                    })
+                    summaries.append(
+                        {
+                            "category": "ideal",
+                            "title": f"{name}의 파트너 선호 기준",
+                            "content": f"선호하는 파트너의 성향으로 {ideal_details}을(를) 긍정적으로 바라보며, 상호 보완적인 관계에서 안정감을 느낍니다.",
+                        }
+                    )
 
                 # 1턴 대화 예시 (연극 보러 가자 제안)
                 if "avoidance" in char_scores and char_scores["avoidance"] >= 75:
@@ -388,55 +426,60 @@ def generate_64_characters() -> list[dict]:
                     "imputed_scores": imputed,
                     "unknown_origin_scores": [],
                     "available_summaries": [s["category"] for s in summaries],
-                    "missing_summaries": [c for c in ["communication", "conflict", "intimacy", "ideal", "orientation"] if c not in [s["category"] for s in summaries]],
+                    "missing_summaries": [
+                        c
+                        for c in ["communication", "conflict", "intimacy", "ideal", "orientation"]
+                        if c not in [s["category"] for s in summaries]
+                    ],
                     "summaries_data": summaries,
                     "behavior_traits": {
                         "primary_traits": primary,
                         "secondary_traits": secondary,
-                        "uncertain_traits": ["assurances (중립 50/대체)"]
+                        "uncertain_traits": ["assurances (중립 50/대체)"],
                     },
                     "partner_preferences": {
-                        d: make_interpretation(d, char_scores[d]) for d in ["ideal_status", "ideal_vitality", "ideal_warmth"] if d in char_scores
+                        d: make_interpretation(d, char_scores[d])
+                        for d in ["ideal_status", "ideal_vitality", "ideal_warmth"]
+                        if d in char_scores
                     },
                     "communication_style": {
                         "speech_level": speech,
                         "sentence_length": sent_len,
                         "emotional_expression": emo,
-                        "initiative": init
+                        "initiative": init,
                     },
                     "conflict_style": {
                         "primary_strategy": conflict_strat,
                         "withdrawal_tendency": make_interpretation("withdrawal", char_scores.get("withdrawal", 50)),
-                        "resolution_strategy": "성향 지표 기반 대화 조율"
+                        "resolution_strategy": "성향 지표 기반 대화 조율",
                     },
                     "relationship_style": {
                         "closeness_behavior": "성향에 맞춘 유대 형성",
-                        "contact_behavior": make_interpretation("contact_rhythm", char_scores.get("contact_rhythm", 50)),
-                        "self_disclosure_behavior": make_interpretation("disclosure", char_scores.get("disclosure", 50))
+                        "contact_behavior": make_interpretation(
+                            "contact_rhythm", char_scores.get("contact_rhythm", 50)
+                        ),
+                        "self_disclosure_behavior": make_interpretation(
+                            "disclosure", char_scores.get("disclosure", 50)
+                        ),
                     },
                     "personality_rules": [
                         {
                             "rule": f"갈등 상황에서 {conflict_strat} 방식으로 대처한다.",
                             "evidence_source": "observed_traits",
-                            "source_type": "observed"
+                            "source_type": "observed",
                         },
                         {
                             "rule": f"대화 시 {speech} 화법과 {emo} 태도를 유지한다.",
                             "evidence_source": "communication_style",
-                            "source_type": "observed"
-                        }
+                            "source_type": "observed",
+                        },
                     ],
-                    "dynamic_state": {
-                        "current_mood": "neutral",
-                        "closeness": 50,
-                        "trust": 50,
-                        "current_context": None
-                    },
+                    "dynamic_state": {"current_mood": "neutral", "closeness": 50, "trust": 50, "current_context": None},
                     "dialogue_examples": [
                         {
                             "situation": "상대방이 연극 보러 가자고 제안할 때",
                             "user": "야 내일 뭐해? 나랑 같이 연극보러갈래?",
-                            "assistant": sample_reply
+                            "assistant": sample_reply,
                         }
                     ],
                     "evidence": [f"{len(char_scores)}개 지표 관측치 및 {len(summaries)}개 카테고리 요약 기반 도출"],
@@ -448,8 +491,8 @@ def generate_64_characters() -> list[dict]:
                         "imputed_scores_identified": True,
                         "summary_missing_values_preserved": True,
                         "preferences_separated_from_traits": True,
-                        "unsupported_inferences": []
-                    }
+                        "unsupported_inferences": [],
+                    },
                 }
                 characters.append(card)
                 char_index += 1

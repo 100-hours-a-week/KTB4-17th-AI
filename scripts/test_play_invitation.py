@@ -50,13 +50,13 @@ async def test_character(char_info: dict) -> str:
 
 async def main():
     print("\n==================================================")
-    print(f"👤 사용자: \"{USER_PROMPT}\"")
+    print(f'👤 사용자: "{USER_PROMPT}"')
     print("==================================================\n")
 
     for char in CHARACTERS:
         reply = await test_character(char)
         print(f"🎭 [{char['name']} ({char['mbti']} / {char['archetype']})]")
-        print(f"👉 \"{reply}\"\n")
+        print(f'👉 "{reply}"\n')
 
 
 if __name__ == "__main__":
