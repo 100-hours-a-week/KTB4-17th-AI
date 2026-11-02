@@ -19,7 +19,13 @@ def test_manifest_freeze_and_verify(tmp_path):
     assert "version" in data
     assert "git_commit_short" in data
     assert data["total_files"] > 100
-    assert data["total_goldset_cases"] == 720
+추    # 기능 삭제·추가에 따른 고정 건수 대신 실제 JSON 레코드 수와 매니페스트 집계를 비교한다.
+    expected_cases = sum(
+        len([json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()])
+        for path in M.EVALS.glob("f*/goldset.jsonl")
+    )
+    assert expected_cases > 0
+    assert data["total_goldset_cases"] == expected_cases
 
     ok, errors = M.verify_manifest(manifest_p)
     assert ok is True

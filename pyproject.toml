@@ -43,6 +43,8 @@ vision-demo = [
 ]
 [tool.pytest.ini_options]
 pythonpath = ["."]
+# scripts/의 수동 DB·LLM 실행 도구는 pytest 테스트가 아니다.
+testpaths = ["tests", "evals/quality_datasets"]
 
 [tool.ruff]
 line-length = 120
