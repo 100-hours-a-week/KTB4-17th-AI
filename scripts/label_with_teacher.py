@@ -183,7 +183,7 @@ def synthetic_items(path: Path) -> tuple[list[TagItem], list[ExtractItem]]:
                         family,
                         t["question"],
                         t["reask"]["offTopicAnswer"],
-                        context={"mode": "off_topic", "intendedOffTopic": True},
+                        context={"mode": t["mode"], "intendedOffTopic": True},
                     )
                 )
         extracts.append(

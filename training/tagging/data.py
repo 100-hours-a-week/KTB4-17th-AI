@@ -36,6 +36,8 @@ class TagExample(BaseModel):
     reviewed_by: str | None = None
     # production_consented 일 때 학습 활용 동의 근거(약관 버전 등)
     consent_basis: str | None = None
+    # 같은 사람(합성 세션·시드)에서 나온 예시 묶음. train/val 을 이 단위로 나눠야 val 이 처음 보는 사용자를 잰다
+    group: str | None = None
 
     def labels(self) -> dict:
         """모델이 출력해야 할 JSON. TAG_PROMPT 의 출력 예시와 같은 키 순서를 쓴다."""
