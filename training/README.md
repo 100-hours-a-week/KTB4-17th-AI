@@ -85,6 +85,21 @@ python training/tagging/train_lora.py --base-model <HF 모델 id> \
 - 기본 모델은 한국어 성능과 **상업 이용 가능한 라이선스**를 함께 본다. 상업 이용이 제한된 라이선스도 있다.
 - `trl` 은 1.14.0 으로 고정했다. 1.15 는 Triton 커널을 무조건 써서 CUDA 가 없으면 돌지 않는다. `--max-steps 4` 로 노트북에서도 파이프라인을 점검할 수 있다.
 
+### 추출 어댑터 (`training/extraction/`)
+
+teacher 의 `extraction.jsonl` 을 운영과 같은 프롬프트(`RUBRIC` + 대화 + 답한 항목)의 학습 파일로 바꾼다. 어떤 행을 왜 빼는지는 `build_sft.py` 머리말과 `manifest.json` 의 `skipped` 에 있다.
+
+```bash
+uv run python training/extraction/build_sft.py data/teacher/qwen-fp8-sub1000/extraction.jsonl --allow-unreviewed
+python training/tagging/train_lora.py --base-model kakaocorp/kanana-2-3b-instruct \
+    --data-dir training/extraction/out --output-dir training/extraction/adapters/extraction-v1 \
+    --max-length 4096 --batch-size 4 --grad-accum 4
+```
+
+- 추출 예시는 입력과 정답을 합쳐 최대 약 3,350 토큰이다. `--max-length` 기본값(2048)이면 정답이 잘려 학습이 망가진다.
+- 입력이 길어 메모리를 많이 쓰므로 배치를 줄이고 `--grad-accum` 으로 같은 업데이트 크기를 유지한다.
+- `--base-model` 에는 로컬 경로가 아니라 HF ID 를 넘긴다. `serving/vllm/start.sh` 가 어댑터의 기본 모델 이름을 검사한다.
+
 ## 3. 서빙과 평가
 
 기본 모델은 `kakaocorp/kanana-2-3b-instruct` 다. 학습(`--base-model`)과 서빙(`serving/vllm/config.yaml`)이 같아야 한다.

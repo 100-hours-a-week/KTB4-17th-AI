@@ -13,6 +13,8 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+from collections.abc import Iterable
+from itertools import chain
 from pathlib import Path
 
 
@@ -38,6 +40,21 @@ def _arguments() -> argparse.Namespace:
     parser.add_argument("--max-steps", type=int, default=-1, help="파이프라인 점검용으로 몇 스텝만 돌릴 때")
     parser.add_argument("--seed", type=int, default=42)
     return parser.parse_args()
+
+
+def assert_fits(rows: Iterable[dict], tokenizer, *, max_length: int) -> None:
+    """TRL 은 max_length 를 넘는 예시의 뒤쪽을 경고 없이 자른다. 뒤쪽이 정답 JSON 이라 잘리면 학습이 망가진 채 끝까지 돈다."""
+    longest = max(
+        len(
+            tokenizer(
+                tokenizer.apply_chat_template(row["prompt"] + row["completion"], tokenize=False),
+                add_special_tokens=False,
+            )["input_ids"]
+        )
+        for row in rows
+    )
+    if longest > max_length:
+        raise SystemExit(f"가장 긴 예시가 {longest} 토큰인데 --max-length 는 {max_length} 입니다. 값을 올리세요.")
 
 
 def main() -> None:
@@ -68,6 +85,7 @@ def main() -> None:
             bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
         )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model)
+    assert_fits(chain.from_iterable(dataset.values()), tokenizer, max_length=args.max_length)
     model = AutoModelForCausalLM.from_pretrained(args.base_model, **model_kwargs)
 
     config = SFTConfig(
