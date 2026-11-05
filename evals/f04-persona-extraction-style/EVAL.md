@@ -28,7 +28,7 @@
 | Langfuse 호출 이름 | `persona-extraction-style` |
 | 엔드포인트 | POST /ai/api/v1/persona-extraction/conversation<br>POST /ai/api/v1/persona-extraction/practice |
 | 진입 함수 | `app/features/persona_extraction/agents.py:84` `StyleAgent.analyze`<br>`app/features/persona_extraction/service.py` |
-| 사용 모델 | SLM(`persona-extraction-style` → extraction 라우트) 1회 → 실패 시 `LLM_MODEL` = `google/gemini-2.5-flash-lite` (.env 기준, `app/core/config.py:65`) |
+| 사용 모델 | `LLM_MODEL` = `google/gemini-2.5-flash-lite` (.env 기준, `app/core/config.py:65`). SLM 으로 보내지 않는다 (2026-11-05, 추출 어댑터가 학습하지 않은 프롬프트) |
 | max_tokens | 1200 |
 | temperature | 미지정 (코드에 `temperature` 인자 없음 → 제공자 기본값) |
 | 타임아웃 | `extraction_timeout_s` 30.0s |
@@ -110,7 +110,7 @@ data = await _call_json(system=STYLE_RUBRIC, messages=[...], max_tokens=1200,
                         timeout=get_settings().extraction_timeout_s, name="persona-extraction-style", ...)
 except LLMError → ExtractionFailed;  ValidationError → ExtractionFailed   # 작업 failed, 발화는 미반영으로 남음
 ```
-- 라우팅: SLM(`SLM_EXTRACTION_MODEL`, kanana) 1회 → 실패·JSON 깨짐이면 `LLM_MODEL` (`slm.py:35-39`). temperature 미지정. 타임아웃 30.0s.
+- 라우팅: `LLM_MODEL` (`slm.py` 의 `TASKS` 에 없다). temperature 미지정. 타임아웃 30.0s.
 
 #### (5) 후처리 — `app/features/persona_extraction/service.py`
 
@@ -153,7 +153,7 @@ narrative_contradiction(scores, narrative) → 서술 버림           # :476-47
 2. **50점 의미가 기능 3과 반대다.** 여기서는 "50점이 보통/중간"(`agents.py:58`)이고, 기능 3은 "50은 근거 부족 기본값"(`persona/agents.py:767`)이다. 둘이 같은 점수 칸(`blend_scores`)에 섞인다.
 3. **`ground_style`이 모델 실수를 크게 가린다.** 5회·5% 미만 문구, 실제로 없는 문장부호 서술을 코드가 지운다(`service.py:92-112`). C2(지어낸 말투)는 모델 점수에서만 보이므로 ground_style 전 원본을 저장해야 한다. 반대로 발화가 5~10개뿐이면 5회 기준 때문에 정상 습관도 대부분 지워진다. 경계 케이스로 넣을 대상이다.
 4. **PII 필터는 숫자·@·URL만 본다.** 이름·장소·회사·학교가 들어간 문구는 내 닉네임 외에는 코드로 거르지 않는다(`service.py:40`, `:66`). R-04의 이 부분은 Judge 또는 개체명 사전이 필요하다.
-5. **SLM과 메인 LLM 결과를 나눠 봐야 한다.** 기능 2·3과 같은 SLM 라우팅이다.
+5. **이전 결과는 SLM 과 메인 LLM 이 섞였을 수 있다.** 2026-11-05 부터 메인 LLM 만 쓴다. 그 전 실행은 기능 2·3과 같은 SLM 라우팅이었다.
 6. **v1과 v2(기능 5)가 같은 페르소나 말투 칸을 채운다.** 비교 평가 시 같은 입력으로 두 경로를 함께 돌리면 회귀 비교가 쉽다.
 
 ---

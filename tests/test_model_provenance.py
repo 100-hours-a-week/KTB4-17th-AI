@@ -322,7 +322,7 @@ def test_other_schema_validators_do_not_adopt_rejected_model(monkeypatch, events
     from app.v2.persona.agents import PersonaMemoryExtractor, PersonaMemoryReconcileJudge
 
     if kind == "style":
-        wire(monkeypatch, v1, small=[('{"style": "invalid"}', "small")])
+        wire(monkeypatch, v1, main=[('{"style": "invalid"}', "main")])
         operation = StyleAgent().analyze(["synthetic"], previous=None)
     else:
         wire(monkeypatch, v2, main=[('{"facts": "invalid", "decisions": "invalid"}', "main")])
