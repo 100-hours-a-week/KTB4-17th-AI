@@ -402,9 +402,22 @@ def read_done(path: Path) -> dict[str, dict]:
     for line in path.read_text(encoding="utf-8").splitlines():
         if line.strip():
             row = json.loads(line)
-            if "error" not in row:  # 실패한 건은 이어서 실행할 때 다시 시도한다
+            if "error" not in row and not has_call_failure(row):  # 실패한 건은 이어서 실행할 때 다시 시도한다
                 done[row["id"]] = row
     return done
+
+
+def has_call_failure(row: dict) -> bool:
+    """샘플 중 호출 자체가 실패한 것이 있는가. 파싱 실패는 teacher 품질 지표라 다시 뽑지 않는다."""
+    return any(str(s.get("error", "")).startswith("call:") for s in row.get("samples", []))
+
+
+def rewrite_rows(path: Path, rows: dict[str, dict]) -> None:
+    """다시 시도할 행을 지운다. 남겨 두면 재시도한 행과 같은 id 가 두 줄이 되어 학습 데이터에 중복으로 들어간다."""
+    if path.exists():
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows.values()), encoding="utf-8")
+        tmp.replace(path)
 
 
 def append_line(path: Path, row: dict) -> None:
@@ -432,6 +445,14 @@ async def run(
             p.unlink(missing_ok=True)
     done_tags = read_done(tag_path) if resume else {}
     done_extracts = read_done(extract_path) if resume else {}
+    if resume:
+        # 허용 차원(answered)은 태깅 다수결로 정해진다. 태깅을 다시 하면 그 세션의 추출도 입력이 달라진다
+        retried = {item.id for item in tag_items} - done_tags.keys()
+        for item in extract_items:
+            if item.answered is None and retried.intersection(item.tag_ids):
+                done_extracts.pop(item.id, None)
+        rewrite_rows(tag_path, done_tags)
+        rewrite_rows(extract_path, done_extracts)
 
     meta = teacher_meta | {
         "labelerVersion": LABELER_VERSION,
