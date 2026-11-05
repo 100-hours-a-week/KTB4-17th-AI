@@ -8,7 +8,7 @@ from app.features.persona.agents import RUBRIC, ExtractionAgent
 from app.features.persona.schemas import RawExtraction
 from training.extraction.build_sft import gold_answers, has_gold_answer, main, prompt_sha256, skip_reason, to_record
 from training.tagging.data import normalize
-from training.tagging.train_lora import assert_fits
+from training.tagging.fit_check import assert_fits
 
 HISTORY = [
     {"role": "assistant", "content": "연락은 얼마나 자주 하세요?"},
