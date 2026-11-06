@@ -35,7 +35,6 @@ logger = logging.getLogger(__name__)
 TASKS = {
     "persona-tagging": "tagging",
     "persona-extraction": "extraction",
-    "persona-extraction-style": "extraction",
 }
 
 # 서버가 없거나 아직 안 떴다는 신호. 이런 실패면 SLM 을 내려감으로 표시한다.

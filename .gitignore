@@ -52,6 +52,8 @@ trouble
 # 파인튜닝 산출물 (학습 파일·어댑터·평가 결과). 어댑터는 모델 저장소(HF Hub·S3)에 버전으로 올린다
 training/tagging/out/
 training/tagging/adapters/
+training/extraction/out/
+training/extraction/adapters/
 evals/results/
 
 # 증류 데이터 (scripts/generate_synthetic_onboarding.py · label_with_teacher.py 출력). 크고 다시 만들 수 있다

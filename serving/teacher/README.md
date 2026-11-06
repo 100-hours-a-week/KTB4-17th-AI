@@ -88,4 +88,4 @@ uv run python scripts/check_synthetic_labels.py data/teacher/qwen-sub1000 \
 
 - RunPod 에서 Pod 를 **Stop** 한다 (볼륨은 남겨 두면 다음 기동이 빠르다. 다시 안 쓰면 볼륨도 지운다).
 - 태깅: `training/tagging/from_teacher.py` → `build_sft.py` (`training/README.md` 1절).
-- 추출: 학습 데이터 변환 코드(`training/extraction/`)가 아직 없다.
+- 추출: `training/extraction/build_sft.py` (`training/README.md` 2절).

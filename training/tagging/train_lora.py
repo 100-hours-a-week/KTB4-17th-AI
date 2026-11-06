@@ -14,6 +14,7 @@ import argparse
 import json
 import shutil
 import sys
+from itertools import chain
 from pathlib import Path
 
 # [산출물 보관 추가] 이 파일을 경로로 직접 실행해도 저장소 루트의 training.artifacts를
@@ -23,6 +24,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from training.artifacts import manifest as artifacts  # noqa: E402
 from training.artifacts.__main__ import upload_from_env  # noqa: E402
 from training.artifacts.errors import error_code  # noqa: E402
+from training.tagging.fit_check import assert_fits  # noqa: E402
 
 
 def _arguments() -> argparse.Namespace:
@@ -93,6 +95,7 @@ def main() -> None:
             bnb_4bit_compute_dtype=torch.bfloat16 if bf16 else torch.float16,
         )
     tokenizer = AutoTokenizer.from_pretrained(args.base_model, revision=args.revision)
+    assert_fits(chain.from_iterable(dataset.values()), tokenizer, max_length=args.max_length)
     model = AutoModelForCausalLM.from_pretrained(args.base_model, revision=args.revision, **model_kwargs)
     # [산출물 보관 추가] main 같은 변경 가능한 이름 대신 실제 로드한 원본 commit을 기록한다.
     # 원본 revision을 확인할 수 없으면 아래 manifest 확정 단계가 실패하여 게시를 막는다.

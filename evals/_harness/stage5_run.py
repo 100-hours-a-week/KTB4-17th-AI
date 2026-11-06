@@ -103,9 +103,10 @@ import stage3_types as S  # noqa: E402
 import stage5_checks as K  # noqa: E402
 import stage5_judges as J  # noqa: E402
 import uvicorn  # noqa: E402
-from common import body, client, read_jsonl, timed  # noqa: E402
+from common import body, client, read_jsonl, slm_provenance, timed  # noqa: E402
 from openai.resources.chat.completions import AsyncCompletions  # noqa: E402
 
+from app.core.config import get_settings  # noqa: E402
 from app.main import app  # noqa: E402  (앱이 langfuse openai 래퍼를 먼저 건다)
 
 # ── LLM 원문 기록 ──────────────────────────────────────────────────
@@ -247,6 +248,12 @@ def out_of(r: dict | None):
     return None if r is None else r.get("output")
 
 
+def _slm_extraction_model() -> str:
+    """앱이 추출을 SLM 으로 보내는 설정일 때의 모델 이름. SLM 을 안 쓰는 설정이면 빈 문자열."""
+    settings = get_settings()
+    return settings.slm_extraction_model if settings.slm_base_url else ""
+
+
 # ── 픽스처 ───────────────────────────────────────────────────────
 def uid(kind: str) -> str:
     return f"eval-s5-{kind}-{uuid.uuid4().hex[:8]}"
@@ -352,6 +359,7 @@ def run_onboarding(case: dict) -> dict:
         "build_ms": bms,
         "conv_records": w.by("persona-conversation"),
         "extract_raw": out_of(w.last("persona-extraction")),
+        "extract_provenance": slm_provenance(w.by("persona-extraction"), _slm_extraction_model()),
         "error": error,
     }
     SESSION_CACHE[key] = res
@@ -387,6 +395,7 @@ def exec_f03(case):
         "output_parsed": r["persona"] or {},
         "raw_latency_ms": r["build_ms"],
         "error": r["build_error"] or r["error"],
+        **r["extract_provenance"],
     }
 
 
@@ -1236,7 +1245,8 @@ def main() -> None:
             with ckpt.open("a", encoding="utf-8") as f:
                 f.write(json.dumps(rows[-1], ensure_ascii=False) + "\n")
             print(
-                f"{slug} {c['id']} app={app_elapsed}s judge={judge_elapsed}s err={str(sample.get('error'))[:60]}",
+                f"{slug} {c['id']} app={app_elapsed}s judge={judge_elapsed}s model={sample.get('model')} "
+                f"fallback={sample.get('fallback_used')} err={str(sample.get('error'))[:60]}",
                 flush=True,
             )
         outd = J.folder(slug) / "results"

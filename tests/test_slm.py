@@ -73,13 +73,21 @@ def test_tagging_goes_to_slm_with_its_model(monkeypatch):
     assert main_calls == []
 
 
-def test_extraction_calls_use_extraction_model(monkeypatch):
-    slm_calls, _ = _wire(monkeypatch, ["a", "b"], [])
+def test_extraction_call_uses_extraction_model(monkeypatch):
+    slm_calls, _ = _wire(monkeypatch, ["a"], [])
 
     asyncio.run(_call("persona-extraction"))
-    asyncio.run(_call("persona-extraction-style"))
 
-    assert [c["model"] for c in slm_calls] == ["kanana", "kanana"]
+    assert [c["model"] for c in slm_calls] == ["kanana"]
+
+
+def test_style_call_stays_on_main_llm(monkeypatch):
+    # 추출 어댑터는 RUBRIC 입력으로 학습한다. 다른 프롬프트인 스타일 분석을 받으면 출력이 망가진다
+    slm_calls, main_calls = _wire(monkeypatch, [], ["gemini 답"])
+
+    assert asyncio.run(_call("persona-extraction-style")) == "gemini 답"
+    assert slm_calls == []
+    assert main_calls[0]["model"] == "google/gemini-2.5-flash-lite"
 
 
 def test_conversation_stays_on_main_llm(monkeypatch):

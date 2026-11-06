@@ -113,6 +113,16 @@ def body(resp) -> Any:
         return None
 
 
+def slm_provenance(records: list[dict], slm_model: str) -> dict[str, Any]:
+    """호출 기록(오래된 순) → 실제로 답한 모델과 SLM 을 벗어났는지. stage6_scorecard 가 이 두 필드를 집계한다.
+
+    SLM 이 실패하거나 내려감으로 표시되면 앱은 메인 LLM 으로 넘긴다. 이걸 구분하지 못하면 Gemini 점수가 SLM 점수로 집계된다.
+    slm_model 이 비어 있으면 SLM 을 쓰지 않는 평가라 폴백이 아니다."""
+    answered = [r for r in records if not r.get("error")]
+    model = answered[-1]["model"] if answered else None
+    return {"model": model, "fallback_used": bool(slm_model) and model != slm_model}
+
+
 # ── Langfuse ─────────────────────────────────────────────
 def langfuse_api():
     from dotenv import load_dotenv
