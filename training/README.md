@@ -114,6 +114,16 @@ uv run python scripts/eval_tagging.py --slm --model tagging-v1 \
 평가 스크립트는 운영 `TaggingAgent` 를 그대로 호출하므로 프롬프트·타임아웃(15초)·JSON 파싱·차원 필터가 운영과 같다.
 기본은 regression split 이다. `blind_holdout` 은 최종 판정 때만 `--allow-holdout` 으로 본다.
 
+점수를 Langfuse 에서 실행끼리 비교하려면 결과 파일을 올린다. `.env` 에 `LANGFUSE_PUBLIC_KEY`·`LANGFUSE_SECRET_KEY` 가 있어야 한다.
+
+```bash
+uv run python scripts/upload_eval_scores.py evals/results/tagging-v1.json --dry-run
+uv run python scripts/upload_eval_scores.py evals/results/tagging-v1.json
+```
+
+세션 `eval-<실행 이름>`, 환경 `eval-results` 로 올라간다. 케이스 점수는 trace 에, 요약 점수는 세션에 붙는다. 다시 올리면 덮어쓴다.
+`evals/_harness/stage5_run.py` 결과도 같은 명령으로 올린다. 입력·출력·Judge 근거는 올리지 않는다.
+
 ### 전환 기준 (제안)
 
 - regression 완전 일치가 기준선(23.4%)보다 높고, off_topic 양성을 모두 잡고, JSON 실패 1% 이하
