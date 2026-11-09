@@ -109,6 +109,12 @@ from openai.resources.chat.completions import AsyncCompletions  # noqa: E402
 from app.core.config import get_settings  # noqa: E402
 from app.main import app  # noqa: E402  (앱이 langfuse openai 래퍼를 먼저 건다)
 
+# FORCE_CELL=high_anx1 → 연습대화 9칸 세션을 페르소나 점수와 상관없이 이 칸으로 (불안 칸 평가용)
+if os.environ.get("FORCE_CELL"):
+    from app.v2.practice import cells as _cells
+
+    _cells.cell_for = lambda _persona: os.environ["FORCE_CELL"]
+
 # ── LLM 원문 기록 ──────────────────────────────────────────────────
 REC: list[dict] = []
 _orig_create = AsyncCompletions.create
@@ -460,6 +466,9 @@ def practice_session(partner: str, history: list[dict], ver: str = "v2") -> str:
 def set_speech(sid: str, mode: str | None) -> None:
     if not mode:
         return
+    # 말 놓기 판정은 앱에서 제거됐다 (f27a1ef, 마이그레이션 v2e3f4a5b6c7) — 테이블이 없으면 건너뛴다
+    if psql("select to_regclass('v2_practice_speech_state') is not null") != "t":
+        return
     m = mode.split("→")[0]  # 'asked→declined' 은 '허락을 물은 상태'에서 이번 메시지가 답
     if m in ("asked", "casual", "declined", "formal"):
         psql(
@@ -483,7 +492,13 @@ def exec_f06(case):
     resp = body(r) if r is not None else {}
     return {
         "version": ver,
-        "output_raw": out_of(w.last("practice-reply")),
+        # 9칸 세션은 practice-reply-slm, 메인 LLM 은 practice-reply (9칸 실패 시 같은 턴이 메인 LLM 으로 다시 간다)
+        "output_raw": out_of(w.last("practice-reply-slm") or w.last("practice-reply")),
+        "engine": psql(
+            f"select reply_engine || ':' || coalesce(slm_cell, '') from practice_sessions where id = '{sid}'"
+        )
+        if ver == "v2"
+        else "v1",
         "output_parsed": (resp or {}).get("content"),
         "latency_ms": ms,
         "fallback_used": (resp or {}).get("source") == "fallback",
@@ -1193,6 +1208,8 @@ def main() -> None:
 
     for slug in slugs:
         cases = [c for c in read_jsonl(J.folder(slug) / "goldset.jsonl") if c["split"] == a.split]
+        if os.environ.get("SKIP_V1"):  # 9칸 평가: v1 연습대화는 9칸 경로가 없다
+            cases = [c for c in cases if not c["id"].startswith("06-v1-")]
         if a.cases:
             want = set(a.cases.split(","))
             cases = [c for c in cases if c["id"] in want]

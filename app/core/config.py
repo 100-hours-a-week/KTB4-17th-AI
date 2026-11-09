@@ -94,6 +94,15 @@ class Settings(BaseSettings):
     # SLM 이 내려간 동안(콜드 스타트 등) /health 를 다시 확인하는 간격
     slm_probe_interval_s: float = Field(default=15.0, gt=0, validation_alias="SLM_PROBE_INTERVAL_S")
 
+    # ── 연습대화 애착 9칸 모델 (RunPod vLLM, persona_model 9칸_서버_실행_설명서) ─────────────
+    # 비워 두면 연습대화는 메인 LLM(llm_model_v2)만 쓴다. 태깅 SLM 과 다른 서버라 변수를 따로 둔다
+    practice_slm_base_url: str = Field(default="", validation_alias="PRACTICE_SLM_BASE_URL")
+    practice_slm_api_key: str = Field(default="", validation_alias="PRACTICE_SLM_API_KEY")
+    # 첫 글자까지 기다리는 시간. 넘기면 같은 턴을 메인 LLM 으로 다시 보낸다 (사용자가 오래 기다리지 않게)
+    practice_slm_first_chunk_timeout_s: float = Field(
+        default=3.0, gt=0, validation_alias="PRACTICE_SLM_FIRST_CHUNK_TIMEOUT_S"
+    )
+
     # 시뮬레이션 동시 실행 최대 수 (과도한 부하 방지용 세마포어 한도)
     simulation_max_inflight: int = Field(
         default=20,
