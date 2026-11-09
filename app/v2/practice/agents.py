@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 
 from langfuse import get_client
@@ -22,6 +23,8 @@ from app.core.config import get_settings
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.schemas import PersonaResponse
 from app.v2.persona.profile import describe
+
+from . import cells
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,13 @@ class LLMError(Exception):
 
 # OpenAI 호환(OpenRouter 및 로컬 vLLM/Ollama 등) 스트리밍 호출 함수.
 # Anthropic의 messages.stream 대신 OpenAI 규격의 chat.completions.create(stream=True)를 사용합니다.
+@dataclass(frozen=True)
+class SlmRoute:
+    """애착 9칸 서버로 보낼 때. 없으면 메인 LLM (app/v2/practice/cells.py)."""
+
+    cell: str
+
+
 async def _stream(
     *,
     system: str,
@@ -52,10 +62,27 @@ async def _stream(
     max_tokens: int,
     timeout: float | None = None,
     metadata: LangfuseMetadata | None = None,
+    slm: SlmRoute | None = None,
 ) -> AsyncIterator[str]:
-    """텍스트 조각을 비동기 스트림으로 낸다. timeout 은 첫 조각이 아니라 전체 스트림 완료 기준."""
+    """텍스트 조각을 비동기 스트림으로 낸다. timeout 은 첫 조각이 아니라 전체 스트림 완료 기준.
+
+    slm 이면 9칸 서버에 칸 이름을 model 로 보낸다. 재시도하지 않고, 첫 조각을 짧게만 기다린다 —
+    실패하면 호출부(service)가 같은 턴을 메인 LLM 으로 다시 보낸다."""
     settings = get_settings()
-    client = _get_client()
+    if slm is not None:
+        client = cells.get_client()
+        model = slm.cell
+        extra: dict = {"temperature": cells.TEMPERATURE}
+        first_chunk_timeout: float | None = settings.practice_slm_first_chunk_timeout_s
+        name = "practice-reply-slm"
+        total = 1
+    else:
+        client = _get_client()
+        model = settings.llm_model_v2  # v2 전용 모델 (config.llm_model_v2)
+        extra = {}
+        first_chunk_timeout = None
+        name = "practice-reply"
+        total = llm_retry.attempts()
 
     # 인자로 넘어온 timeout이 없으면 app/core/config.py 에 정의된 practice_timeout_s(기본 12초) 적용
     stream_timeout = timeout if timeout is not None else settings.practice_timeout_s
@@ -64,24 +91,30 @@ async def _stream(
     payload_messages = [{"role": "system", "content": system}, *messages]
 
     # 재시도는 첫 조각을 내보내기 전까지만 — 이미 사용자에게 보낸 글자를 다시 보내면 답변이 겹친다
-    total = llm_retry.attempts()
     for attempt in range(1, total + 1):
         sent = False
         try:
-            async with asyncio.timeout(stream_timeout):
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + stream_timeout
+            # 9칸이면 첫 조각까지는 짧게, 첫 조각이 오면 전체 기한으로 늘린다
+            first_deadline = min(deadline, loop.time() + first_chunk_timeout) if first_chunk_timeout else deadline
+            async with asyncio.timeout_at(first_deadline) as limit:
                 # OpenRouter 및 로컬 서버로 스트리밍 요청 전송
                 stream = await client.chat.completions.create(
-                    name="practice-reply",
-                    model=settings.llm_model_v2,  # v2 전용 모델 (config.llm_model_v2)
+                    name=name,
+                    model=model,
                     messages=payload_messages,  # type: ignore[arg-type]
                     max_tokens=max_tokens,
                     stream=True,
                     stream_options={"include_usage": True},
                     metadata=metadata,
+                    **extra,
                 )
                 # 스트림에서 청크를 받아 텍스트 조각을 yield
                 async for chunk in stream:
                     if chunk.choices and chunk.choices[0].delta.content:
+                        if not sent:
+                            limit.reschedule(deadline)
                         sent = True
                         yield chunk.choices[0].delta.content
             return
@@ -95,8 +128,8 @@ async def _stream(
                 # 모델 서버 연결 거부, 유효하지 않은 모델명, API Key 인증 실패 등 모든 예외를 LLMError로 통일
                 error = LLMError(str(e))
             if not sent and attempt < total and llm_retry.is_retryable(e):
-                logger.warning("practice-reply attempt %d failed (%s), retrying", attempt, error)
-                llm_retry.record_retry(name="practice-reply", attempt=attempt, reason=str(error))
+                logger.warning("%s attempt %d failed (%s), retrying", name, attempt, error)
+                llm_retry.record_retry(name=name, attempt=attempt, reason=str(error))
                 await asyncio.sleep(llm_retry.RETRY_BACKOFF_S)
                 continue
             if error is e:
@@ -224,6 +257,7 @@ class PartnerAgent:
         history: list[dict],
         opening: bool = False,
         trace_metadata: LangfuseMetadata | None = None,
+        slm: SlmRoute | None = None,
     ) -> AsyncIterator[str]:
         """텍스트 조각 스트림. 실패는 LLMError — 호출부(service)가 폴백을 낸다.
 
@@ -243,8 +277,10 @@ class PartnerAgent:
                 async for chunk in _stream(
                     system=system,
                     messages=messages,
-                    max_tokens=300,  # 1~3문장. 넉넉히
+                    # 메인 LLM 은 1~3문장에 넉넉히. 9칸은 학습·평가 기준 160 (칸 평균 답 20~37토큰)
+                    max_tokens=cells.MAX_TOKENS if slm is not None else 300,
                     timeout=None,
                     metadata=trace_metadata,
+                    slm=slm,
                 ):
                     yield chunk

@@ -27,7 +27,7 @@ class CapturingAgent(PartnerAgent):
     def __init__(self) -> None:
         self.systems: list[str] = []
 
-    async def reply(self, *, system, history, opening=False, trace_metadata=None):
+    async def reply(self, *, system, history, opening=False, trace_metadata=None, slm=None):
         self.systems.append(system)
         yield "부산에서 주말마다 등산 다니시는군요!"
 

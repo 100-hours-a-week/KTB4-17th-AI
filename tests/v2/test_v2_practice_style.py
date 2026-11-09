@@ -28,7 +28,7 @@ class ScriptedPartner(PartnerAgent):
     def __init__(self):
         self.systems: list[str] = []
 
-    async def reply(self, *, system, history, opening=False, trace_metadata=None):
+    async def reply(self, *, system, history, opening=False, trace_metadata=None, slm=None):
         self.systems.append(system)
         yield "오 그렇군요 ㅎㅎ"
 

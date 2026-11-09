@@ -40,6 +40,7 @@ from app.v2.persona.api import router as v2_persona_router
 from app.v2.persona.embedder import get_embedder
 from app.v2.persona.service import idle_sweeper_loop
 from app.v2.persona_extraction.api import router as v2_persona_extraction_router
+from app.v2.practice import cells as practice_cells
 from app.v2.practice.api import router as v2_practice_router
 from app.v2.simulation.api import router as v2_simulation_router
 
@@ -82,9 +83,10 @@ async def _warmup_embedder() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """시작 시 태깅·추출 SLM 상태를 확인하고 v2 메모리 스위퍼/워밍업을 띄우며, 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
+    """시작 시 태깅·추출 SLM·연습대화 9칸 서버 상태를 확인하고 v2 메모리 스위퍼/워밍업을 띄우며, 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
 
     await slm.start()
+    await practice_cells.start()
     background = [asyncio.create_task(idle_sweeper_loop()), asyncio.create_task(_warmup_embedder())]
     yield
     for task in background:
@@ -93,6 +95,7 @@ async def lifespan(_: FastAPI):
             await task
     try:
         await slm.stop()
+        await practice_cells.stop()
         await get_run_manager().shutdown()
     finally:
         get_client().shutdown()
