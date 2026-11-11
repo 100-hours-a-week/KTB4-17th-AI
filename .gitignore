@@ -63,6 +63,8 @@ data/simfid/
 
 # 골드셋 초안 작업 파일(scripts/gold_drafts.py). 확정 골드셋은 evals/quality_datasets/human/ 에 남긴다
 data/gold_work/
+# 문장 판정 카드 DISAGREE 검수 시트(scripts/review_disagreements.py). 운영 답변으로 만든 다수결이 들어 있다
+data/review/
 .grok/skills/flow-code-diagram/SKILL.md
 .grok/skills/flow-code-diagram/assets/shell.html
 .grok/skills/flow-code-diagram/references/layers.md
