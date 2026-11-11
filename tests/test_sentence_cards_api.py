@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import logging
 import random
 import uuid
 from datetime import UTC, datetime, timedelta
@@ -293,3 +294,62 @@ def test_same_batch_id_with_different_payload_is_409(env):
 def test_batch_rejects_bad_shape_with_422_and_saves_nothing(env, answers):
     res = env.client.post("/v1/sentence-cards/answers/batch", json={"batch_id": str(uuid.uuid4()), "answers": answers})
     assert res.status_code == 422
+
+
+# ── 로그 (BE 연동 확인용) ─────────────────────────────────
+
+LOGGER = "app.features.sentence_cards.service"
+
+
+def _messages(caplog, level: int = logging.INFO) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.name == LOGGER and r.levelno == level]
+
+
+def test_issue_skip_and_replay_are_logged(env, caplog):
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    assert env.next().status_code == 204
+    env.seed(direction())
+    rid = str(uuid.uuid4())
+    card = env.next(request_id=rid).json()["card_id"]
+    env.next(request_id=rid)
+    env.next(user_id="B", request_id=rid)
+
+    info = _messages(caplog)
+    assert info[0] == "sentence card skipped: user=1001 reason=no_sentence"
+    assert (
+        info[1].startswith(f"sentence card issued: card={card} user=1001 ") and "type=DIRECTION check=False" in info[1]
+    )
+    assert info[2] == f"sentence card replayed: card={card} user=1001"
+    assert _messages(caplog, logging.WARNING) == [
+        f"sentence card request_id conflict: request_id={rid} card_user=1001 request_user=B"
+    ]
+
+
+def test_daily_limit_skip_is_logged(env, caplog):
+    env.seed(*[direction(f"문장 {i}") for i in range(DAILY_LIMIT + 1)])
+    for _ in range(DAILY_LIMIT):
+        env.next()
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    env.next()
+    assert _messages(caplog) == ["sentence card skipped: user=1001 reason=daily_limit"]
+
+
+def test_batch_results_are_logged_with_rejection_counts(env, caplog):
+    env.seed(direction())
+    card = env.next().json()["card_id"]
+    caplog.set_level(logging.INFO, logger=LOGGER)
+    ok_id, bad_id = str(uuid.uuid4()), str(uuid.uuid4())
+    env.batch([answer(card, "high")], ok_id)
+    env.batch([answer(card, "high")], ok_id)  # 재전송
+    env.batch([answer(card, "low")], ok_id)  # 같은 batch_id, 다른 내용
+    env.batch([answer("sc_missing", "high"), answer("sc_gone", "low"), answer(card, "low")], bad_id)
+
+    assert _messages(caplog) == [
+        f"sentence card batch accepted: batch={ok_id} received=1 accepted=1",
+        f"sentence card batch replayed: batch={ok_id}",
+    ]
+    assert _messages(caplog, logging.WARNING) == [
+        f"sentence card batch conflict: batch={ok_id} (same batch_id, different payload)",
+        f"sentence card batch rejected: batch={bad_id} received=3 accepted=0 "
+        "rejected={'CARD_NOT_FOUND': 2, 'ALREADY_ANSWERED': 1}",
+    ]

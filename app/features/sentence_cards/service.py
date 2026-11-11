@@ -5,13 +5,19 @@
 (그건 BE 가 한다) 그 유저가 아직 받지 않은 문장으로 새 카드를 만든다.
 
 만료 판정은 도착 시각이 아니라 answered_at 기준이다. 늦게 도착해도 만료 전에 누른 답변은 유효하다.
+
+로그 (BE 연동 확인용, `docker compose logs ai | grep "sentence card"`):
+  sentence card issued / replayed / skipped(reason=daily_limit|no_sentence) / request_id conflict
+  sentence card batch accepted (모두 저장) · rejected (거절 사유별 건수, WARNING) · replayed · conflict (WARNING)
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import random
+from collections import Counter
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -49,6 +55,8 @@ AXIS_CHOICES = [
     (ChoiceId.NONE, "관련 없어요"),
 ]
 UNSURE = (ChoiceId.UNSURE, "판단하기 어려워요")
+
+logger = logging.getLogger(__name__)
 
 
 class RequestIdConflict(Exception):
@@ -107,12 +115,14 @@ class SentenceCardService:
         now = self._now()
         day_start = now.astimezone(DAY_TZ).replace(hour=0, minute=0, second=0, microsecond=0).astimezone(UTC)
         if await self.repo.count_cards_since(req.user_id, day_start) >= DAILY_LIMIT:
+            logger.info("sentence card skipped: user=%s reason=daily_limit", req.user_id)
             return None
 
         # 같은 유저의 요청 두 개가 동시에 같은 문장을 고르면 (sentence_id, user_id) 유니크에 걸린다. 다시 고른다
         for _ in range(3):
             sentence = await self._pick(req.user_id)
             if sentence is None:
+                logger.info("sentence card skipped: user=%s reason=no_sentence", req.user_id)
                 return None
             question, choices = build_question(sentence, self._rng)
             card = SentenceCard(
@@ -133,7 +143,16 @@ class SentenceCardService:
                 if replay is not None:
                     return replay
                 continue
+            logger.info(
+                "sentence card issued: card=%s user=%s sentence=%s type=%s check=%s",
+                card.id,
+                req.user_id,
+                sentence.id,
+                sentence.question_type,
+                sentence.is_check,
+            )
             return self._to_response(card, sentence)
+        logger.warning("sentence card skipped: user=%s reason=pick_conflict", req.user_id)
         return None
 
     async def _replay_card(self, request_id: str, user_id: str) -> SentenceCardResponse | None:
@@ -141,7 +160,14 @@ class SentenceCardService:
         if card is None:
             return None
         if card.user_id != user_id:
+            logger.warning(
+                "sentence card request_id conflict: request_id=%s card_user=%s request_user=%s",
+                request_id,
+                card.user_id,
+                user_id,
+            )
             raise RequestIdConflict
+        logger.info("sentence card replayed: card=%s user=%s", card.id, user_id)
         sentence = await self.repo.get_sentence(card.sentence_id)
         return self._to_response(card, sentence)
 
@@ -200,12 +226,30 @@ class SentenceCardService:
         )
         batch.response = response.model_dump(mode="json")
         await self.db.flush()
+        if rejected:
+            reasons = dict(Counter(r.reason.value for r in rejected))
+            logger.warning(
+                "sentence card batch rejected: batch=%s received=%d accepted=%d rejected=%s",
+                batch_id,
+                response.received,
+                response.accepted,
+                reasons,
+            )
+        else:
+            logger.info(
+                "sentence card batch accepted: batch=%s received=%d accepted=%d",
+                batch_id,
+                response.received,
+                response.accepted,
+            )
         return response
 
     @staticmethod
     def _replay_batch(batch: SentenceAnswerBatch, digest: str) -> SentenceCardAnswerBatchResponse:
         if batch.payload_hash != digest or batch.response is None:
+            logger.warning("sentence card batch conflict: batch=%s (same batch_id, different payload)", batch.batch_id)
             raise BatchConflict
+        logger.info("sentence card batch replayed: batch=%s", batch.batch_id)
         return SentenceCardAnswerBatchResponse.model_validate(batch.response)
 
     @staticmethod
