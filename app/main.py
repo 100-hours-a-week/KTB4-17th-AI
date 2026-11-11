@@ -32,6 +32,7 @@ from app.features.persona.api import router as persona_router
 from app.features.persona_extraction.api import router as persona_extraction_router
 from app.features.practice.api import router as practice_router
 from app.features.primary_photo.api import router as primary_photo_router
+from app.features.sentence_cards.api import router as sentence_cards_router
 from app.features.simulation.api import router as simulation_router
 from app.features.simulation_migration.api import get_run_manager
 from app.features.simulation_migration.api import router as simulation_migration_router
@@ -68,6 +69,7 @@ TAGS_METADATA = [
     {"name": "primary-photo", "description": "대표사진의 정면·품질을 검사합니다."},
     {"name": "synthetic-detection", "description": "대표사진의 AI 생성 위험을 검사합니다."},
     {"name": "face-verification", "description": "라이브니스와 동일인 여부를 확인합니다."},
+    {"name": "sentence-cards", "description": "문장 판정 카드를 발급하고 BE 가 모아 보낸 답변 묶음을 받습니다."},
 ]
 
 
@@ -124,6 +126,7 @@ api_router.include_router(simulation_migration_router)
 api_router.include_router(primary_photo_router)
 api_router.include_router(synthetic_detection_router)
 api_router.include_router(face_verification_router)
+api_router.include_router(sentence_cards_router)
 
 # v2
 api_router.include_router(v2_persona_router)

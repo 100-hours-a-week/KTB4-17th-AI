@@ -24,6 +24,7 @@ import app.features.chat_end.models  # noqa: E402, F401
 import app.features.persona.models  # noqa: E402, F401
 import app.features.persona_extraction.models  # noqa: E402, F401
 import app.features.practice.models  # noqa: E402, F401
+import app.features.sentence_cards.models  # noqa: E402, F401
 import app.features.simulation.models  # noqa: E402, F401
 import app.features.simulation_migration.models  # noqa: E402, F401
 import app.v2.persona.models  # noqa: F401
