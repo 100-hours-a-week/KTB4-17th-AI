@@ -38,6 +38,13 @@ class CardStatus(StrEnum):
     ANSWERED = "ANSWERED"
 
 
+class Verdict(StrEnum):
+    PENDING = "PENDING"
+    AGREE = "AGREE"
+    DISAGREE = "DISAGREE"
+    AMBIGUOUS = "AMBIGUOUS"
+
+
 class RejectReason(StrEnum):
     DUPLICATE_IN_BATCH = "DUPLICATE_IN_BATCH"
     CARD_NOT_FOUND = "CARD_NOT_FOUND"

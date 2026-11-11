@@ -94,6 +94,10 @@ class Settings(BaseSettings):
     # SLM 이 내려간 동안(콜드 스타트 등) /health 를 다시 확인하는 간격
     slm_probe_interval_s: float = Field(default=15.0, gt=0, validation_alias="SLM_PROBE_INTERVAL_S")
 
+    # ── 문장 판정 카드 학습 후보 알림 (Discord 웹훅) ──────────────────────
+    # 비워 두면 알림은 로그로만 남고, 설정한 뒤 다음 묶음 때 밀린 알림을 보낸다
+    training_discord_webhook_url: str = Field(default="", validation_alias="TRAINING_DISCORD_WEBHOOK_URL")
+
     # ── 연습대화 애착 9칸 모델 (RunPod vLLM, persona_model 9칸_서버_실행_설명서) ─────────────
     # 비워 두면 연습대화는 메인 LLM(llm_model_v2)만 쓴다. 태깅 SLM 과 다른 서버라 변수를 따로 둔다
     practice_slm_base_url: str = Field(default="", validation_alias="PRACTICE_SLM_BASE_URL")

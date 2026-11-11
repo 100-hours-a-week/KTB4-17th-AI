@@ -9,6 +9,10 @@
 로그 (BE 연동 확인용, `docker compose logs ai | grep "sentence card"`):
   sentence card issued / replayed / skipped(reason=daily_limit|no_sentence) / request_id conflict
   sentence card batch accepted (모두 저장) · rejected (거절 사유별 건수, WARNING) · replayed · conflict (WARNING)
+  sentence verdicts changed (판정이 바뀐 문장 수) · sentence training trigger (학습 후보, 알림은 notify.py)
+
+묶음을 받으면 새 답이 들어온 문장만 다수결로 다시 판정하고 (규칙: verdict.py), 직전 학습 후보 이후
+AGREE · 확인된 DISAGREE 가 충분히 늘었으면 학습 후보(sentence_training_triggers)를 만든다. 야간 배치는 없다.
 """
 
 from __future__ import annotations
@@ -17,7 +21,7 @@ import hashlib
 import json
 import logging
 import random
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
@@ -27,7 +31,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.features.persona.schemas import SCORED, TEXTUAL
 
-from .models import Sentence, SentenceAnswerBatch, SentenceCard
+from .models import Sentence, SentenceAnswerBatch, SentenceCard, SentenceTrainingTrigger
 from .repository import SentenceCardRepository
 from .schemas import (
     CardStatus,
@@ -42,6 +46,7 @@ from .schemas import (
     SentenceCardNextRequest,
     SentenceCardResponse,
 )
+from .verdict import MIN_VOTERS, judge, trigger_due, unreliable_users
 
 DAILY_LIMIT = 3  # 유저당 하루 발급 상한 (초안)
 CARD_TTL = timedelta(hours=24)
@@ -218,6 +223,12 @@ class SentenceCardService:
             if reason is not None:
                 rejected.append(RejectedAnswer(card_id=answer.card_id, reason=reason))
 
+        # 이번 묶음으로 새로 답이 들어온 문장만 다시 판정한다 (같은 값 재전송은 batch_id 가 바뀌지 않는다)
+        touched = {card.sentence_id for card in cards.values() if card.batch_id == batch_id}
+        if touched:
+            await self._judge(touched)
+            await self.check_trigger(f"batch:{batch_id}")
+
         response = SentenceCardAnswerBatchResponse(
             batch_id=req.batch_id,
             received=len(req.answers),
@@ -243,6 +254,68 @@ class SentenceCardService:
                 response.accepted,
             )
         return response
+
+    # ── 다수결 판정 · 학습 트리거 ─────────────────────────
+    async def _judge(self, sentence_ids: set[str]) -> None:
+        sentences = await self.repo.sentences_for_update(sentence_ids)
+        votes = await self.repo.answered_votes(sentence_ids)
+        excluded = unreliable_users(await self.repo.check_results({user_id for _, user_id, _ in votes}))
+        by_sentence: dict[str, list[str]] = defaultdict(list)
+        for sentence_id, user_id, choice in votes:
+            if user_id not in excluded:
+                by_sentence[sentence_id].append(choice)
+
+        changed: Counter[str] = Counter()
+        for sentence in sentences:
+            expected = sentence.check_answer if sentence.is_check else sentence.expected_champion
+            result = judge(by_sentence[sentence.id], expected)
+            if (result.verdict.value, result.consensus) != (sentence.verdict, sentence.consensus):
+                sentence.reviewed_by = None  # 사람 확인은 그 판정에 대한 것이다. 판정이 바뀌면 다시 확인한다
+                if result.verdict.value != sentence.verdict:
+                    changed[result.verdict.value] += 1
+            sentence.verdict = result.verdict.value
+            sentence.consensus = result.consensus
+            sentence.agreement = result.agreement
+            sentence.matches_teacher = (
+                result.consensus == sentence.expected_teacher
+                if sentence.expected_teacher and result.consensus and result.voters >= MIN_VOTERS
+                else None
+            )
+        if changed:
+            logger.info(
+                "sentence verdicts changed: %s sentences=%d excluded_users=%d",
+                dict(changed),
+                len(sentences),
+                len(excluded),
+            )
+
+    async def check_trigger(self, source: str) -> SentenceTrainingTrigger | None:
+        """직전 학습 후보 이후 AGREE · 확인된 DISAGREE 가 충분히 늘었으면 새 후보를 만든다. 묶음 수신 · 검수 반영 때 부른다."""
+        current = await self.repo.trainable_counts()
+        last = await self.repo.last_trigger()
+        if not trigger_due(current, (last.agree, last.disagree_reviewed) if last else (0, 0)):
+            return None
+        trigger = SentenceTrainingTrigger(
+            seq=last.seq + 1 if last else 1,
+            source=source,
+            agree=current[0],
+            disagree_reviewed=current[1],
+            created_at=self._now(),
+        )
+        try:
+            async with self.db.begin_nested():
+                await self.repo.add_trigger(trigger)
+        except IntegrityError:  # 동시에 들어온 다른 묶음이 같은 번호로 먼저 만들었다
+            logger.info("sentence training trigger already created: seq=%d", trigger.seq)
+            return None
+        logger.info(
+            "sentence training trigger: seq=%d source=%s agree=%d disagree_reviewed=%d",
+            trigger.seq,
+            source,
+            trigger.agree,
+            trigger.disagree_reviewed,
+        )
+        return trigger
 
     @staticmethod
     def _replay_batch(batch: SentenceAnswerBatch, digest: str) -> SentenceCardAnswerBatchResponse:

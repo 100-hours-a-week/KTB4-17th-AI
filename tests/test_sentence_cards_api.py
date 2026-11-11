@@ -9,7 +9,9 @@ import logging
 import random
 import uuid
 from datetime import UTC, datetime, timedelta
+from functools import partial
 
+import httpx
 import pytest
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
@@ -20,8 +22,9 @@ from sqlalchemy.pool import StaticPool
 from app.core.config import get_settings
 from app.core.db import Base, get_db
 from app.features.persona.schemas import SCORED
-from app.features.sentence_cards import api
-from app.features.sentence_cards.models import Sentence, SentenceCard
+from app.features.sentence_cards import api, verdict
+from app.features.sentence_cards.models import Sentence, SentenceCard, SentenceTrainingTrigger
+from app.features.sentence_cards.notify import notify_pending
 from app.features.sentence_cards.service import DAILY_LIMIT, SentenceCardService
 
 T0 = datetime(2026, 11, 11, 3, 0, tzinfo=UTC)  # KST 12:00
@@ -32,6 +35,18 @@ class Env:
         self.client = client
         self.factory = factory
         self.clock = clock
+        self.sent: list[str] = []  # 학습 후보 알림 (가짜 Discord)
+        self.send_error: Exception | None = None
+        self.webhook = True
+
+    async def send(self, content: str) -> None:
+        if self.send_error is not None:
+            error, self.send_error = self.send_error, None
+            raise error
+        self.sent.append(content)
+
+    def notifier(self):
+        return partial(notify_pending, self.factory, self.send if self.webhook else None, now=lambda: self.clock[0])
 
     def seed(self, *rows: dict) -> list[str]:
         async def insert() -> list[str]:
@@ -49,6 +64,40 @@ class Env:
                 return list((await db.execute(select(SentenceCard).order_by(SentenceCard.shown_at))).scalars())
 
         return self.client.portal.call(fetch)
+
+    def sentence(self, sentence_id: str) -> Sentence:
+        async def fetch() -> Sentence:
+            async with self.factory() as db:
+                return await db.get(Sentence, sentence_id)
+
+        return self.client.portal.call(fetch)
+
+    def update_sentence(self, sentence_id: str, **values) -> None:
+        async def update() -> None:
+            async with self.factory() as db:
+                sentence = await db.get(Sentence, sentence_id)
+                for key, value in values.items():
+                    setattr(sentence, key, value)
+                await db.commit()
+
+        self.client.portal.call(update)
+
+    def triggers(self) -> list[SentenceTrainingTrigger]:
+        async def fetch() -> list[SentenceTrainingTrigger]:
+            async with self.factory() as db:
+                stmt = select(SentenceTrainingTrigger).order_by(SentenceTrainingTrigger.seq)
+                return list((await db.execute(stmt)).scalars())
+
+        return self.client.portal.call(fetch)
+
+    def vote(self, choices: list[str], *, users: list[str] | None = None):
+        """사용자마다 카드를 한 장씩 받아 choices 순서대로 답하고 한 묶음으로 보낸다."""
+        users = users or [f"u{i}" for i in range(len(choices))]
+        answers = []
+        for user, choice in zip(users, choices, strict=True):
+            card = self.next(user).json()
+            answers.append(answer(card["card_id"], choice, user_id=user, at=self.clock[0]))
+        return self.batch(answers)
 
     def next(self, user_id: str = "1001", request_id: str | None = None):
         return self.client.post(
@@ -86,7 +135,9 @@ def env(monkeypatch):
     app.dependency_overrides[api.get_service] = service
     with TestClient(app) as client:
         client.portal.call(create_tables)
-        yield Env(client, factory, clock)
+        env = Env(client, factory, clock)
+        app.dependency_overrides[api.get_notifier] = env.notifier
+        yield env
     get_settings.cache_clear()
 
 
@@ -353,3 +404,99 @@ def test_batch_results_are_logged_with_rejection_counts(env, caplog):
         f"sentence card batch rejected: batch={bad_id} received=3 accepted=0 "
         "rejected={'CARD_NOT_FOUND': 2, 'ALREADY_ANSWERED': 1}",
     ]
+
+
+# ── 다수결 판정 · 학습 트리거 ─────────────────────────────
+
+
+def test_batch_judges_agree_when_majority_matches_champion(env):
+    (sid,) = env.seed(axis(expected_champion="direct", expected_teacher="inferred"))
+    assert env.vote(["direct", "direct", "direct", "direct"]).status_code == 200
+    assert env.sentence(sid).verdict == "PENDING"  # 4명 — 아직 표 부족
+
+    env.vote(["none"], users=["u9"])
+    s = env.sentence(sid)
+    assert (s.verdict, s.consensus, s.agreement, s.matches_teacher) == ("AGREE", "direct", 0.8, False)
+
+
+def test_batch_judges_disagree_and_resets_review_when_verdict_changes(env):
+    (sid,) = env.seed(axis(expected_champion="direct"))
+    env.vote(["none"] * 5)
+    s = env.sentence(sid)
+    assert (s.verdict, s.consensus, s.reviewed_by) == ("DISAGREE", "none", None)
+
+    env.update_sentence(sid, reviewed_by="lena")  # 사람 확인
+    env.vote(["none"], users=["u5"])
+    assert env.sentence(sid).reviewed_by == "lena"  # 판정이 그대로면 확인도 유지
+
+    env.vote(["direct", "direct", "inferred"], users=["u6", "u7", "u8"])  # 6/9 = 0.67
+    s = env.sentence(sid)
+    assert (s.verdict, s.reviewed_by) == ("AMBIGUOUS", None)
+
+
+@pytest.mark.parametrize(
+    "choices",
+    [
+        ["unsure", "unsure", "unsure", "unsure", "direct"],  # 판단 어려움이 최다
+        ["direct", "direct", "none", "none", "inferred"],  # 동률
+    ],
+)
+def test_batch_judges_ambiguous(env, choices):
+    (sid,) = env.seed(axis(expected_champion="direct"))
+    env.vote(choices)
+    assert env.sentence(sid).verdict == "AMBIGUOUS"
+
+
+def test_votes_from_users_failing_check_items_are_excluded(env):
+    checks = env.seed(*[axis(f"검증 문장 {i}", is_check=True, check_answer="direct") for i in range(3)])
+    for _ in checks:
+        env.vote(["none"], users=["careless"])  # 뻔한 문장 3개를 모두 틀림
+    assert all(env.sentence(c).verdict == "PENDING" for c in checks)  # 검증 문항도 표가 모이면 판정한다
+
+    (sid,) = env.seed(axis(expected_champion="direct"))
+    env.clock[0] += timedelta(days=1)  # careless 의 하루 상한(3장)이 풀린 다음 날
+    env.vote(["direct"] * 4 + ["none"], users=["u0", "u1", "u2", "u3", "careless"])
+    s = env.sentence(sid)
+    assert (s.verdict, s.agreement) == ("PENDING", 1.0)  # careless 를 빼면 4명
+
+
+def test_trigger_created_once_and_notified(env, monkeypatch):
+    monkeypatch.setattr(verdict, "TRIGGER_AGREE", 1)
+    monkeypatch.setattr(verdict, "TRIGGER_DISAGREE_REVIEWED", 1)
+    users = [f"u{i}" for i in range(5)]
+    (disagree_id,) = env.seed(axis("다들 아니라고 하는 문장", expected_champion="direct"))
+    env.vote(["none"] * 5, users=users)
+    (agree_id,) = env.seed(axis("다들 맞다고 하는 문장이에요", expected_champion="none"))
+    env.vote(["none"] * 5, users=users)  # 다섯 명 모두 앞 문장은 받았으니 이 문장을 받는다
+    assert (env.sentence(disagree_id).verdict, env.sentence(agree_id).verdict) == ("DISAGREE", "AGREE")
+    assert env.triggers() == [] and env.sent == []  # DISAGREE 는 사람 확인 전이라 세지 않는다
+
+    env.update_sentence(disagree_id, reviewed_by="lena")
+    env.vote(["none"], users=["late"])  # 어느 문장에 답하든 판정은 그대로, 트리거는 전체 수로 본다
+    (trigger,) = env.triggers()
+    assert (trigger.seq, trigger.agree, trigger.disagree_reviewed) == (1, 1, 1)
+    assert trigger.notified_at is not None
+    assert len(env.sent) == 1 and "학습 후보 #1" in env.sent[0] and "AGREE 1개" in env.sent[0]
+
+    env.vote(["none"], users=["late2"])  # 직전 후보 이후 늘어난 게 없으면 새 후보는 없다
+    assert len(env.triggers()) == 1 and len(env.sent) == 1
+
+
+def test_failed_or_unconfigured_notification_is_retried_on_next_batch(env, monkeypatch, caplog):
+    monkeypatch.setattr(verdict, "TRIGGER_AGREE", 1)
+    monkeypatch.setattr(verdict, "TRIGGER_DISAGREE_REVIEWED", 0)
+    env.seed(axis(expected_champion="direct"))
+    caplog.set_level(logging.WARNING, logger="app.features.sentence_cards.notify")
+
+    env.webhook = False
+    env.vote(["direct"] * 5)
+    assert len(env.triggers()) == 1 and env.sent == []
+    assert "TRAINING_DISCORD_WEBHOOK_URL is empty" in caplog.text
+
+    env.webhook = True
+    env.send_error = httpx.ConnectError("discord down")
+    env.vote(["direct"], users=["x"])
+    assert env.sent == [] and env.triggers()[0].notified_at is None
+
+    env.vote(["direct"], users=["y"])
+    assert len(env.sent) == 1 and env.triggers()[0].notified_at is not None
