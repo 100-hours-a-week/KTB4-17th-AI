@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Path
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.db import get_db
+from app.core.security import require_internal_key
 from app.v2.persona.service import run_onboarding_memory_update
 
 from .agents import BuildFailed
+from .lookup import load_persona
 from .repository import PersonaRepository, SessionBusy
 from .schemas import (
     REQUEST_IN_PROGRESS,
@@ -17,6 +19,7 @@ from .schemas import (
     AnswerRequest,
     ConfirmPersonaRequest,
     ConfirmPersonaResponse,
+    PersonaRef,
     PersonaResponse,
     StartRequest,
     SupplementRequest,
@@ -213,9 +216,25 @@ async def _session_or_404(service: OnboardingService, session_id: str):
     return session
 
 
+@router.get(
+    "/users/{user_id}",
+    response_model=PersonaResponse,
+    dependencies=[Depends(require_internal_key)],
+)
+async def get_user_persona(
+    user_id: str = Path(min_length=1, max_length=64),
+    db: AsyncSession = Depends(get_db),
+) -> PersonaResponse:
+    """그 사용자가 마지막으로 확정한 페르소나 (마이페이지용). 미확정 초안만 있으면 404."""
+    loaded = await load_persona(db, PersonaRef(user_id=user_id))
+    if loaded is None:
+        raise HTTPException(404, "persona not found")
+    return loaded.response
+
+
 @router.get("/{session_id}", response_model=PersonaResponse)
 async def get_persona(session_id: str, service: OnboardingService = Depends(get_service)) -> PersonaResponse:
-    """최신 페르소나. (user_id 가 붙으면 /users/{user_id} 로도 열 것)"""
+    """그 온보딩 세션의 최신 페르소나 (초안 포함). 유저 기준 확정본은 /users/{user_id}."""
     session = await _session_or_404(service, session_id)
     try:
         return await service.get_latest(session)
