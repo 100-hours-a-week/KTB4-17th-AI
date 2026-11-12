@@ -234,7 +234,7 @@ async def get_user_persona(
 
 @router.get("/{session_id}", response_model=PersonaResponse)
 async def get_persona(session_id: str, service: OnboardingService = Depends(get_service)) -> PersonaResponse:
-    """최신 페르소나. (user_id 가 붙으면 /users/{user_id} 로도 열 것)"""
+    """그 온보딩 세션의 최신 페르소나 (초안 포함). 유저 기준 확정본은 /users/{user_id}."""
     session = await _session_or_404(service, session_id)
     try:
         return await service.get_latest(session)
