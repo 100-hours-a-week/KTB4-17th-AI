@@ -1,5 +1,5 @@
 // Private EC2 runner: Docker CLI on host; Python/uv/app checks in containers.
-// Existing GitHub Actions remain active until this pipeline is validated.
+// Server flags enable automatic dev -> staging and main -> prod after cutover.
 pipeline {
     agent { label 'linux && docker' }
     options {
@@ -12,13 +12,14 @@ pipeline {
         booleanParam(name: 'PUSH_IMAGE', defaultValue: false,
             description: 'Publish the validated GIT_COMMIT image to star23/ai in ECR.')
         booleanParam(name: 'CREATE_GITOPS_PR', defaultValue: false,
-            description: 'main + PUSH_IMAGE only: create a CLOUD branch/commit/PR. Merging it starts prod Argo CD rollout.')
+            description: 'Auxiliary manual prod PR mode; main + PUSH_IMAGE and automatic prod deployment disabled.')
     }
     environment {
         AWS_REGION = 'ap-northeast-2'
         AWS_ACCOUNT_ID = '975779326240'
         ECR_REGISTRY = '975779326240.dkr.ecr.ap-northeast-2.amazonaws.com'
         ECR_REPOSITORY = 'star23/ai'
+        SOURCE_REPOSITORY = '100-hours-a-week/KTB4-17th-AI'
     }
     stages {
         stage('Checkout') {
@@ -29,8 +30,15 @@ pipeline {
                     if (!(env.GIT_COMMIT ==~ /[0-9a-f]{40}/)) {
                         error('checkout scm did not return a full commit SHA')
                     }
-                    if (!(env.BRANCH_NAME in ['main', 'dev']) || env.CHANGE_ID) {
+                    if (!(env.BRANCH_NAME in ['main', 'dev']) || env.CHANGE_ID || env.CHANGE_FORK) {
                         error('This credentialed EC2 runner accepts only main/dev branch builds')
+                    }
+                    if (!(revision.GIT_URL in [
+                        'https://github.com/100-hours-a-week/KTB4-17th-AI.git',
+                        'https://github.com/100-hours-a-week/KTB4-17th-AI',
+                        'git@github.com:100-hours-a-week/KTB4-17th-AI.git'
+                    ])) {
+                        error('checkout scm must use the original AI repository')
                     }
                     if (params.CREATE_GITOPS_PR && (env.BRANCH_NAME != 'main' || !params.PUSH_IMAGE)) {
                         error('CREATE_GITOPS_PR requires main and PUSH_IMAGE=true')
@@ -44,6 +52,27 @@ pipeline {
         stage('Build CI environment') {
             steps {
                 sh 'docker build --platform linux/amd64 --file Dockerfile.ci --tag "$CI_IMAGE" .'
+            }
+        }
+        stage('Deployment policy') {
+            steps {
+                script {
+                    def manual = (params.PUSH_IMAGE ? ' --manual-push' : '') +
+                        (params.CREATE_GITOPS_PR ? ' --manual-pr' : '')
+                    def policy = sh(returnStdout: true, script: '''#!/usr/bin/env bash
+set -euo pipefail
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --volume "$PWD:/workspace" --workdir /workspace --env HOME=/tmp \
+  --env AWS_EC2_METADATA_DISABLED=true --env BRANCH_NAME --env CHANGE_ID --env CHANGE_FORK \
+  --env SOURCE_REPOSITORY --env AI_STAGING_AUTO_DEPLOY_ENABLED --env AI_PROD_AUTO_DEPLOY_ENABLED \
+  "$CI_IMAGE" python -m scripts.jenkins.deployment_policy''' + manual).trim().split(' ')
+                    if (policy.size() != 4) { error('Invalid deployment policy output') }
+                    env.DEPLOY_ENVIRONMENT = policy[0]
+                    env.AUTO_DEPLOY = policy[1]
+                    env.PUBLISH_IMAGE = policy[2]
+                    env.MANUAL_GITOPS_PR = policy[3]
+                    echo "Deployment environment: ${env.DEPLOY_ENVIRONMENT}; automatic: ${env.AUTO_DEPLOY}"
+                }
             }
         }
         stage('Lint') {
@@ -96,31 +125,80 @@ asyncio.run(check())
 '''
             }
         }
+        stage('Resolve existing release version') {
+            when { expression { env.PUBLISH_IMAGE == 'true' } }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'github-app-star23',
+                    usernameVariable: 'SOURCE_APP_ID', passwordVariable: 'SOURCE_GITHUB_TOKEN')]) {
+                    script {
+                        env.VERSION_IMAGE_TAG = sh(returnStdout: true, script: '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --volume "$PWD:/workspace" --workdir /workspace --env HOME=/tmp \
+  --env AWS_EC2_METADATA_DISABLED=true --env SOURCE_GITHUB_TOKEN \
+  --env BRANCH_NAME --env CHANGE_ID --env CHANGE_FORK \
+  "$CI_IMAGE" python -m scripts.jenkins.release_version --source-sha "$GIT_COMMIT" --output-dir .ci-reports
+''').trim()
+                    }
+                }
+            }
+        }
         stage('Publish ECR image') {
-            when { expression { params.PUSH_IMAGE } }
+            when { expression { env.PUBLISH_IMAGE == 'true' } }
             steps { sh 'bash scripts/jenkins/push_image.sh' }
         }
-        stage('Create production GitOps PR') {
+        stage('Publish environment GitOps commit') {
+            when { expression { env.AUTO_DEPLOY == 'true' } }
+            steps {
+                withCredentials([
+                    usernamePassword(credentialsId: 'github-app-star23',
+                        usernameVariable: 'SOURCE_APP_ID', passwordVariable: 'SOURCE_GITHUB_TOKEN'),
+                    usernamePassword(credentialsId: 'github-app-star23-gitops',
+                        usernameVariable: 'GITOPS_APP_ID', passwordVariable: 'GITHUB_TOKEN')
+                ]) {
+                    sh '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+digest=$(cat .ci-reports/image-digest.txt)
+tag=$(cat .ci-reports/image-tag.txt)
+docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+  --volume "$PWD:/workspace" --workdir /workspace --env HOME=/tmp \
+  --env AWS_EC2_METADATA_DISABLED=true --env BRANCH_NAME --env CHANGE_ID --env CHANGE_FORK \
+  --env GITHUB_TOKEN --env SOURCE_GITHUB_TOKEN \
+  "$CI_IMAGE" python -m scripts.jenkins.gitops_release \
+  --source-sha "$GIT_COMMIT" --digest "$digest" --image-tag "$tag" --apply --output-dir .ci-reports
+'''
+                }
+            }
+        }
+        stage('Prepare manual production GitOps PR') {
             when {
                 allOf {
                     branch 'main'
-                    expression { params.PUSH_IMAGE && params.CREATE_GITOPS_PR && !env.CHANGE_ID }
+                    expression { env.MANUAL_GITOPS_PR == 'true' && !env.CHANGE_ID }
                 }
             }
             steps {
                 // Separate App: statically scoped to CLOUD, Contents/PR write.
                 // The source-checkout credential github-app-star23 stays read-only.
-                withCredentials([usernamePassword(credentialsId: 'github-app-star23-gitops',
-                    usernameVariable: 'GITOPS_APP_ID', passwordVariable: 'GITHUB_TOKEN')]) {
+                withCredentials([
+                    usernamePassword(credentialsId: 'github-app-star23-gitops',
+                        usernameVariable: 'GITOPS_APP_ID', passwordVariable: 'GITHUB_TOKEN'),
+                    usernamePassword(credentialsId: 'github-app-star23',
+                        usernameVariable: 'SOURCE_APP_ID', passwordVariable: 'SOURCE_GITHUB_TOKEN')
+                ]) {
                     sh '''#!/usr/bin/env bash
 set +x
 set -euo pipefail
 digest=$(cat .ci-reports/image-digest.txt)
+tag=$(cat .ci-reports/image-tag.txt)
 docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
   --volume "$PWD:/workspace" --workdir /workspace --env HOME=/tmp \
-  --env GITHUB_TOKEN --env BRANCH_NAME --env CHANGE_ID \
-  "$CI_IMAGE" python scripts/jenkins/gitops_release.py \
-  --source-sha "$GIT_COMMIT" --digest "$digest" --create-pr --output-dir .ci-reports
+  --env AWS_EC2_METADATA_DISABLED=true --env GITHUB_TOKEN --env SOURCE_GITHUB_TOKEN \
+  --env BRANCH_NAME --env CHANGE_ID --env CHANGE_FORK \
+  "$CI_IMAGE" python -m scripts.jenkins.gitops_release \
+  --source-sha "$GIT_COMMIT" --digest "$digest" --image-tag "$tag" --create-pr --output-dir .ci-reports
 '''
                 }
             }
