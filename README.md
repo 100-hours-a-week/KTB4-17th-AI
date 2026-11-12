@@ -210,9 +210,9 @@ uv run python scripts/load_feedback_cards.py cards.jsonl
 
 ## 개발 도구
 
-### Jenkins prod CI/CD
+### Jenkins staging / prod CI/CD
 
-Private EC2 Jenkins용 [Jenkinsfile](Jenkinsfile)과 [실행·credential·GitOps 배포 안내](scripts/jenkins/README.md)를 추가했다. 기본값은 검사와 이미지 빌드이며 ECR push와 CLOUD 배포 PR은 각각 명시적으로 켠다. DEV CD는 중단하고, 나머지 기존 GitHub Actions는 별도 전환 전까지 유지한다.
+Private EC2 Jenkins용 [Jenkinsfile](Jenkinsfile)과 [활성화·credential·GitOps 배포 안내](scripts/jenkins/README.md)를 사용한다. 환경별 서버 flag를 한 번 활성화하면 dev는 staging, main은 prod tag와 digest 5개를 CLOUD/main에 자동 반영한다. 초기 flag는 false이며 인프라·schema·credential 연결 후 활성화한다. DEV CD는 중단 상태를 유지하고 기존 ECS prod CD에는 명시적인 전환용 repository variable을 추가했다.
 
 ### Lint / Format (ruff)
 

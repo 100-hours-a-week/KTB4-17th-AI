@@ -37,6 +37,8 @@ env:
 jobs:
     # environment 없이 실행되므로 OIDC sub는 ref:refs/heads/main 기준으로 발급된다.
     promote_image:
+        # Empty retains legacy behavior until the reviewed EKS cutover.
+        if: ${{ vars.AI_LEGACY_ECS_CD_ENABLED != 'false' }}
         name: Promote AI DEV Image
         runs-on: ubuntu-latest
 
@@ -149,6 +151,7 @@ jobs:
     # IAM trust policy에 해당 sub가 등록되어 있어야 한다.
     # (docs/v2docs/ai-prod-cd-iam-permissions.md 참고)
     deploy:
+        if: ${{ vars.AI_LEGACY_ECS_CD_ENABLED != 'false' }}
         name: Deploy AI to ECS
         needs: promote_image
         runs-on: ubuntu-latest
