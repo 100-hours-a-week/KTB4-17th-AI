@@ -54,6 +54,8 @@ EXPECTED_DOCUMENTED_ENDPOINTS = {
     ("POST", "/ai/api/v1/profile-trust/verifications/complete"),
     ("POST", "/ai/api/v1/sentence-cards/next"),
     ("POST", "/ai/api/v1/sentence-cards/answers/batch"),
+    ("POST", "/ai/api/v1/feedback-cards/next"),
+    ("POST", "/ai/api/v1/feedback-cards/{card_id}/answer"),
     ("GET", "/ai/api/v2/persona/memory/{user_id}"),
     ("POST", "/ai/api/v2/persona/memory/{user_id}/sync"),
     ("POST", "/ai/api/v2/persona/memory/cleanup-tentative"),

@@ -28,6 +28,7 @@ from app.core import slm
 from app.core.http_metrics import setup_http_metrics
 from app.features.chat_end.api import router as chat_end_router
 from app.features.face_verification.api import router as face_verification_router
+from app.features.feedback_cards.api import router as feedback_cards_router
 from app.features.persona.api import router as persona_router
 from app.features.persona_extraction.api import router as persona_extraction_router
 from app.features.practice.api import router as practice_router
@@ -126,6 +127,7 @@ api_router.include_router(simulation_migration_router)
 api_router.include_router(primary_photo_router)
 api_router.include_router(synthetic_detection_router)
 api_router.include_router(face_verification_router)
+api_router.include_router(feedback_cards_router)
 api_router.include_router(sentence_cards_router)
 
 # v2
