@@ -1,0 +1,4 @@
+﻿번호,문항 ID,질문,사용자 답변,off_topic,검수 상태,검수 기준 버전,차원별 근거 원문,메모,avoidance (거리 두기),anxiety (관계 불안),disclosure (자기·감정 표현),openness (솔직한 관계 대화),positivity (긍정적 상호작용),assurances (관계 확신 표현),contact_rhythm (연락 빈도),problem_solving (문제 해결),withdrawal (회피·철수),engagement (감정적 맞대응),compliance (일방적 수용),ideal_warmth (신뢰·배려),ideal_vitality (매력·활발함),ideal_status (능력·안정성),seriousness (관계 진지도),interests (관심사),routine (일상),date_prefer (선호 데이트),date_avoid (피하고 싶은 것),입력확인(필수항목)
+1,persona_onboarding_tagging-011,마음에 담긴 이야기를 나누는 편이에요?,몰라,,,,,,,,,,,,,,,,,,,,,,,,,
+2,persona_onboarding_tagging-019,평소 연인에게 어떤 말투로 이야기해요?,음,,,,,,,,,,,,,,,,,,,,,,,,,
+3,persona_onboarding_tagging-063,요즘 즐기는 취미가 있어요?,응,,,,,,,,,,,,,,,,,,,,,,,,,

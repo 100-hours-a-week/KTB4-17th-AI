@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATOR_VERSION = "synthetic-onboarding/2.1"
+GENERATOR_VERSION = "synthetic-onboarding/2.2"
 SCHEMA_VERSION = 1
 DEFAULT_OUT = ROOT / "data" / "synthetic" / "onboarding_sessions.jsonl"
 DEFAULT_SIM_MODEL = "google/gemini-3.8-flash"
@@ -47,7 +47,9 @@ GOLD_DIR = ROOT / "evals" / "quality_datasets"
 CONVERSATION_AVG_TOKENS = {"prompt": 1213, "completion": 83}
 
 Level = Literal["low", "mid", "high", "unanswered"]
-Mode = Literal["normal", "short", "joke", "off_topic"]
+Mode = Literal["normal", "short", "joke", "off_topic", "deflect", "rude"]
+# 운영이 되묻는 무관 답변. 원래 답은 저장하지 않고 같은 주제를 한 번 더 묻는다
+REASK_MODES: tuple[Mode, ...] = ("off_topic", "rude")
 
 # ══ 시드 프로필 ════════════════════════════════════════════
 
@@ -94,6 +96,9 @@ class AnswerStyle:
     off_topic_rate: float
     joke_rate: float
     short_rate: float
+    # 2.2: 답이 한 조각도 없는 비답변. joke 는 진짜 답을 섞어서 "태그를 비워야 하는 답" 예시가 모자랐다 (문서 11 4.1절)
+    deflect_rate: float = 0.0
+    rude_rate: float = 0.0
 
 
 @dataclass
@@ -128,6 +133,8 @@ def sample_profile(rng: random.Random, seed_id: str) -> SeedProfile:
         off_topic_rate=rng.choice((0.0, 0.0, 0.05, 0.1)),
         joke_rate=rng.choice((0.0, 0.05, 0.1)),
         short_rate=rng.choice((0.0, 0.1, 0.2)),
+        deflect_rate=rng.choice((0.0, 0.05, 0.1)),
+        rude_rate=rng.choice((0.0, 0.0, 0.05)),
     )
     return SeedProfile(
         seed_id=seed_id,
@@ -155,6 +162,12 @@ def pick_mode(rng: random.Random, style: AnswerStyle, *, closing: bool) -> Mode:
     r -= style.joke_rate
     if r < style.short_rate:
         return "short"
+    r -= style.short_rate
+    if r < style.deflect_rate:
+        return "deflect"
+    r -= style.deflect_rate
+    if r < style.rude_rate:
+        return "rude"
     return "normal"
 
 
@@ -201,6 +214,8 @@ MODE_INSTRUCTION: dict[str, str] = {
     "short": "이번 질문에는 귀찮은 듯 아주 짧게(한두 마디, 15자 이내) 답하세요. 그래도 질문에 대한 답이어야 합니다.",
     "joke": "이번 질문에는 농담 섞어 가볍게 받아치되, 진짜 답도 슬쩍 한 조각 섞으세요.",
     "off_topic": "이번 질문은 흘려듣고, 질문과 전혀 상관없는 딴소리(배고프다, 방금 본 영상, 날씨 등)만 하세요. 질문에 답하지 마세요.",
+    "deflect": "이번 질문에는 답하지 말고 농담이나 말장난으로만 받아넘기세요. 내 성향·경험·선호를 짐작할 수 있는 말은 하나도 넣지 마세요.",
+    "rude": "이번 질문이 귀찮다는 듯 짜증 섞인 거친 말 한마디만 하세요. 욕이 섞여도 됩니다. 질문에 답하지 마세요.",
 }
 
 
@@ -426,7 +441,7 @@ class UserSimulator:
         user = (
             f"[지금까지 대화]\n{transcript}\n\n" if transcript else ""
         ) + f"[하루의 이번 말]\n{question}\n\n[이번 답변 방식]\n{MODE_INSTRUCTION[mode]}"
-        if self.prompt_version != "v1" and focus and mode != "off_topic":
+        if self.prompt_version != "v1" and focus and mode in ("normal", "short", "joke"):
             user += "\n\n" + focus_section(profile, focus)
         from openai import BadRequestError
 
@@ -495,6 +510,8 @@ class FakeSimulator:
             "short": "음 글쎄요",
             "joke": "그건 비밀인데요 ㅋㅋ 사실 별거 없어요",
             "off_topic": "아 근데 갑자기 배고프네요",
+            "deflect": "그걸 알면 제가 여기 있겠어요 ㅋㅋ",
+            "rude": "아 귀찮게 왜 자꾸 물어요",
         }[mode]
 
 
@@ -573,7 +590,7 @@ async def run_session(
         answer = await simulator.answer(profile, history, question, mode, result.usage, focus)
 
         reask = None
-        if mode == "off_topic":
+        if mode in REASK_MODES:
             # 운영: 무관한 답이면 턴을 소모하지 않고 LLM 없이 그 주제의 시드 질문으로 한 번만 되묻는다
             reask_question = f"{REASK_PREFIX} {topic.seed}"
             reask = {"offTopicAnswer": answer, "question": reask_question}

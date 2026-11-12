@@ -384,3 +384,119 @@ def test_confirmation_persists_mbti_on_confirmed_persona_atomically():
     assert stored_at == NOW
     assert stored.mbti == "INTP"
     assert latest.id == "persona-123"
+
+
+def test_confirm_api_triggers_onboarding_memory_update_in_background(monkeypatch):
+    triggered = []
+
+    async def fake_onboarding_memory(user_id: str, session_id: str | None = None) -> bool:
+        triggered.append(user_id)
+        return True
+
+    monkeypatch.setattr(api, "run_onboarding_memory_update", fake_onboarding_memory)
+    client, calls = _client()
+
+    response = client.post(
+        "/v1/persona/persona-123/confirm",
+        json={
+            "persona_id": "persona-123",
+            "is_confirmed": True,
+            "mbti": "intp",
+            "confirmed_at": "2026-09-26T12:30:00Z",
+        },
+    )
+
+    assert response.status_code == 200
+    assert calls == [("persona-123", "INTP", NOW), ("commit",)]
+    assert triggered == ["user-1"]
+
+
+def test_run_onboarding_memory_update_embeds_turns_and_is_idempotent(monkeypatch):
+    from sqlalchemy import select
+
+    from app.features.persona.models import OnboardingTurn
+    from app.v2.persona import service as v2_service
+    from app.v2.persona.models import UserPersonaCore, UserPersonaFact
+    from app.v2.persona.schemas import ExtractedFactItem, ExtractionOutput
+    from tests.conftest import with_db
+
+    vec = [1.0, 0.0] + [0.0] * 1022
+    extract_calls = []
+
+    class FakeEmbedder:
+        async def encode_query(self, text: str) -> list[float]:
+            return vec
+
+        async def encode(self, text: str) -> list[float]:
+            return vec
+
+        async def encode_batch(self, texts: list[str]) -> list[list[float]]:
+            return [vec for _ in texts]
+
+    class FakeExtractor:
+        async def extract(self, *, pairs, current_date, current_core):
+            extract_calls.append(pairs)
+            return ExtractionOutput(
+                core_updates={"job": "백엔드 개발자"},
+                facts=[
+                    ExtractedFactItem(
+                        category="취미",
+                        fact="주말마다 러닝을 한다",
+                        confidence=0.95,
+                        source_message_id=pairs[0]["message_id"],
+                    )
+                ],
+            )
+
+    class FakeJudge:
+        async def judge_batch(self, items):
+            return [{"action": "ADD", "target_id": None, "updated_fact": None} for _ in items]
+
+    async def scenario(factory):
+        monkeypatch.setattr(v2_service, "SessionLocal", factory)
+        monkeypatch.setattr(v2_service, "get_embedder", lambda: FakeEmbedder())
+        monkeypatch.setattr(v2_service, "PersonaMemoryExtractor", FakeExtractor)
+        monkeypatch.setattr(v2_service, "PersonaMemoryReconcileJudge", FakeJudge)
+
+        async with factory() as db:
+            onboarding = OnboardingSession(
+                id="session-ob-1",
+                user_id="user-ob-1",
+                nickname="민수",
+                total_turns=10,
+                turn_index=10,
+                pending_topic_id=None,
+                used_topic_ids=["interests"],
+                coverage={},
+                status="completed",
+                turns=[
+                    OnboardingTurn(
+                        turn_index=0,
+                        topic_id="interests",
+                        question="요즘 뭐 하면서 지내요?",
+                        answer="주말마다 러닝하고 평일엔 백엔드 개발자로 일해요",
+                        skipped=False,
+                        tags={"primary": ["interests"], "secondary": [], "off_topic": False},
+                    )
+                ],
+            )
+            db.add(onboarding)
+            await db.commit()
+
+        first = await v2_service.run_onboarding_memory_update("user-ob-1")
+        second = await v2_service.run_onboarding_memory_update("user-ob-1")
+
+        async with factory() as db:
+            facts = list(
+                (await db.execute(select(UserPersonaFact).where(UserPersonaFact.user_id == "user-ob-1"))).scalars()
+            )
+            core = await db.get(UserPersonaCore, "user-ob-1")
+        return first, second, facts, core
+
+    first, second, facts, core = asyncio.run(with_db(scenario))
+    assert first is True and second is True
+    assert len(extract_calls) == 1
+    assert len(facts) == 1
+    assert facts[0].fact == "주말마다 러닝을 한다"
+    assert facts[0].source_type == "onboarding"
+    assert core is not None and core.profile.get("job") == "백엔드 개발자"

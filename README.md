@@ -143,6 +143,10 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 | GET | `/v1/simulation?user_id=…` | 내 시뮬레이션 목록. |
 | POST | `/v1/simulation/{id}/resume` | 멈춘 실행을 다시 시작. 202 `{simulation_id}`. |
 
+대사 응답은 단일 JSON 객체에서 `text`를 읽습니다. 코드펜스·주변 설명과 부가 필드는 제거하고, `message`·`content`·`utterance`도 대사가 명확히 하나면 복구합니다. 서로 다른 대사 필드, 여러 객체, 중복 키, 빈 값과 300자 초과는 그대로 저장하지 않습니다. 형식 재시도 때는 실패 조건과 300자 제한을 전달하며, 기존의 형식 재시도 1회·내용 재생성 1회·총 3회 호출 제한을 유지합니다. 복구한 대사도 기존 내용 검사를 거칩니다.
+
+재시도 후에도 실패하면 503의 `detail.reason`으로 원인을 구분합니다. 형식 검증 실패는 `invalid_json`, 공급자가 길이 제한으로 생성을 중단한 경우는 `truncated`, 빈 응답은 `empty_response`입니다. 형식 오류의 세부 사유는 `simulation speaker format failed` 경고 로그에서 확인할 수 있으며 대사 원문은 기록하지 않습니다.
+
 예전 한 호출 시뮬레이션은 `/v1/simulation_old` 입니다.
 
 연습대화 API:
@@ -175,7 +179,40 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 - 모델 파일은 Git 에 없습니다. 로컬에서는 `uv run python scripts/download_models.py` 로 받고, Docker 이미지는 빌드 때 받습니다.
 - 백엔드 연동 계약: [docs/v2docs/backend-api-contract.md](docs/v2docs/backend-api-contract.md), 스키마 [docs/v2docs/openapi.json](docs/v2docs/openapi.json) (`uv run python scripts/export_profile_trust_openapi.py` 로 재생성). 설계 결정은 [docs/v2docs/adr/](docs/v2docs/adr/).
 
+## 본인 확인 피드백 카드
+
+`POST /ai/api/v1/feedback-cards/next`는 `{ "user_id": "1001" }`을 받아 카드 한 장을 반환하며,
+카드가 없으면 본문 없는 204를 반환합니다. 응답 전·만료 전 노출 카드가 있으면 그 카드를 다시 반환합니다.
+`POST /ai/api/v1/feedback-cards/{card_id}/answer`는 `user_id`, `answer`(`YES`/`NO`),
+`answered_at`(타임존 포함 ISO 8601), `consent_version`을 받습니다. `NO`에는 선택적으로
+`correction_text`(1~200자)를 보낼 수 있습니다. 미입력은 null 또는 생략하며, 빈 문자열은 422입니다.
+같은 카드에 정규화된 요청 내용이 같으면 200, 다르면 409(`card already answered`)입니다.
+성공한 답변의 재전송은 카드 만료 뒤에도 200입니다. 새 답변의 만료는 서버 시각으로 판정합니다.
+
+운영 적용 시 `uv run alembic upgrade head`로 테이블을 만들고 `INTERNAL_API_KEY`를 설정합니다.
+두 API 모두 `X-Internal-Api-Key`를 요구하며, 서버에 키 설정이 없어도 401을 반환합니다.
+후보의 기존 만료 시각과 최초 노출 후 24시간 중 이른 시각이 응답의 `expires_at`입니다.
+
+카드 후보는 소유자·개인정보 검토를 마친 JSONL로 적재합니다. 한 줄의 형식은 다음과 같습니다.
+`expires_at`은 적재 시점보다 미래여야 하며, 맥락 질문을 안전하게 제공하기 어려우면 null을 씁니다.
+
+```json
+{"card_id":"fc_example_1","user_id":"1001","context_question":"빵 좋아하세요?","utterance":"저는 소금빵을 좋아해요","expires_at":"2027-01-01T00:00:00+09:00"}
+```
+
+```bash
+uv run python scripts/load_feedback_cards.py cards.jsonl --dry-run
+uv run python scripts/load_feedback_cards.py cards.jsonl
+```
+
+`card_id`를 유지하면 재적재 시 기존 카드를 건너뜁니다. 같은 ID의 소유자·문장·맥락 질문이 다르면
+전체 적재를 롤백합니다. 기존 카드의 노출 상태와 만료 시각은 유지됩니다.
+
 ## 개발 도구
+
+### Jenkins prod CI/CD
+
+Private EC2 Jenkins용 [Jenkinsfile](Jenkinsfile)과 [실행·credential·GitOps 배포 안내](scripts/jenkins/README.md)를 추가했다. 기본값은 검사와 이미지 빌드이며 ECR push와 CLOUD 배포 PR은 각각 명시적으로 켠다. DEV CD는 중단하고, 나머지 기존 GitHub Actions는 별도 전환 전까지 유지한다.
 
 ### Lint / Format (ruff)
 

@@ -14,7 +14,7 @@ from langfuse import observe
 from pydantic import ValidationError
 
 from app.core.config import get_settings
-from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
+from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata, track_model_selection
 from app.features.persona.agents import LLMError, _call_json
 from app.features.persona.schemas import REFLECTED_SCORES, SCORED, ConversationStyle, StyleExtraction
 
@@ -59,7 +59,6 @@ STYLE_RUBRIC = f"""\
 # 점수 키(disclosure, positivity, openness, assurances)는 대화에서 명확히 드러나 측정 가능한 항목만 포함하세요. 측정할 수 없는 항목은 키를 아예 넣지 마세요.
 {{
   "style": {{
-    "speech_level": "존댓말 | 반말 | 혼용",
     "frequent_phrases": ["..."],
     "endings": ["~..."],
     "interjections": ["..."],
@@ -81,6 +80,7 @@ STYLE_RUBRIC = f"""\
 class StyleAgent:
     # 발화 묶음(오래된 순) + 이전 스타일 → 대화 스타일 + 점수 관찰값
     @observe(name="persona-extraction-style", capture_input=False, capture_output=False)
+    @track_model_selection("persona-extraction-style")
     async def analyze(
         self,
         utterances: list[str],

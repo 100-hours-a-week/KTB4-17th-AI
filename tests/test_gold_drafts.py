@@ -243,3 +243,59 @@ def test_build_end_to_end(tmp_path):
     }
     e = score_extraction([teacher_row], gold_builds)
     assert e["inRange"] == "1/1" and e["hallucinationRate"] == 0.0
+
+
+def test_export_existing_gold_hides_draft_labels_and_round_trips(tmp_path):
+    from scripts.label_with_teacher import gold_items
+    from scripts.score_teacher_gold import load_gold
+
+    work, out = tmp_path / "work", tmp_path / "human"
+    assert main(["export", "--kind", "tagging", "--work-dir", str(work)]) == 0
+    items = [json.loads(x) for x in (work / "tagging" / "items.jsonl").read_text().splitlines()]
+    # blind_holdout·code_behavior 는 빠진다
+    assert len(items) == 63 and {i["split"] for i in items} == {"calibration", "regression"}
+    first = next(i for i in items if i["answer"] == GOLD_ANSWER)
+    assert first["caseId"] == "persona_onboarding_tagging-001"  # teacher 실행 id 와 맞물리게 그대로
+    assert first["hidden"]["draftLabels"]["primary"] == ["avoidance"]
+    with (work / "tagging" / "sheet.csv").open(encoding="utf-8-sig", newline="") as f:
+        sheet_rows = list(csv.DictReader(f))
+    assert len(sheet_rows) == 63 and all(r["primary"] == "" for r in sheet_rows)  # 초안 라벨은 라벨러에게 숨긴다
+
+    a, b = tmp_path / "A.csv", tmp_path / "B.csv"
+    label = {first["caseId"]: {"primary": "avoidance", "secondary": "", "off_topic": "false"}}
+    _fill(work / "tagging" / "sheet.csv", a, label)
+    _fill(work / "tagging" / "sheet.csv", b, label)
+    args = ["build", "--kind", "tagging", "--labels", str(a), str(b), "--work-dir", str(work), "--out-dir", str(out)]
+    assert main(args) == 0
+    row = json.loads((out / "persona_onboarding_tagging.jsonl").read_text().splitlines()[0])
+    assert row["metadata"]["caseId"] == first["caseId"] and row["input"] == first["input"]
+    assert row["metadata"]["generationMethod"] == f"llm-draft:{first['author']}"
+    assert "dual_human_reviewed" in row["metadata"]["reviewFlags"]
+    # 초안 라벨은 metadata 에 남겨 사람 라벨과 나중에 비교할 수 있게 한다
+    assert row["metadata"]["draft"]["draftLabels"]["primary"] == ["avoidance"]
+    assert f"gold:{first['caseId']}" in load_gold(out)[0]
+    tags, _ = gold_items(out, include_holdout=False)
+    assert [t.id for t in tags] == [f"gold:{first['caseId']}"]
+
+
+def test_export_existing_build_keeps_session_input(tmp_path):
+    from scripts.label_with_teacher import gold_items
+
+    work, out = tmp_path / "work", tmp_path / "human"
+    assert main(["export", "--kind", "build", "--work-dir", str(work)]) == 0
+    items = [json.loads(x) for x in (work / "build" / "items.jsonl").read_text().splitlines()]
+    assert len(items) == 24
+    sheet = (work / "build" / "sheet.csv").read_text(encoding="utf-8-sig")
+    assert "사용자:" in sheet and "astra" not in sheet
+
+    cid = items[0]["caseId"]
+    a, b = tmp_path / "A.csv", tmp_path / "B.csv"
+    _fill(work / "build" / "sheet.csv", a, {cid: {"avoidance": "high", "done": "y"}})
+    _fill(work / "build" / "sheet.csv", b, {cid: {"avoidance": "높음", "done": "y"}})
+    args = ["build", "--kind", "build", "--labels", str(a), str(b), "--work-dir", str(work), "--out-dir", str(out)]
+    assert main(args) == 0
+    row = json.loads((out / "persona_build.jsonl").read_text().splitlines()[0])
+    assert row["input"] == items[0]["input"]
+    assert row["expectedOutput"]["autoMetrics"]["scoreInRange"] == {"avoidance": [65, 100]}
+    _, extracts = gold_items(out, include_holdout=False)
+    assert extracts[0].answered == list(items[0]["input"]["answeredDimensions"])

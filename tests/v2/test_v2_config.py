@@ -7,7 +7,7 @@ def test_v2_memory_rag_default_settings():
     assert settings.embedding_dim == 1024
     assert settings.embedding_pooling_mode == "cls"
     assert settings.memory_top_k == 5
-    assert settings.memory_max_cosine_distance == 0.65
+    assert settings.memory_max_cosine_distance == 0.5
     assert settings.practice_v2_history_window == 20
     assert settings.memory_trigger_turn_count == 8
     assert settings.memory_trigger_idle_minutes == 20

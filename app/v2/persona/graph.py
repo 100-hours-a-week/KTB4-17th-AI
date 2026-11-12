@@ -29,6 +29,26 @@ class MemState(TypedDict, total=False):
     reconcile_plan: list[dict[str, Any]]
 
 
+def _resolve_target_conflicts(plan: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """한 배치에서 같은 기존 사실을 두 번 이상 UPDATE/DELETE 하지 않게 정리한다.
+
+    새 사실마다 따로 판정하므로 두 사실이 같은 target_id 를 고를 수 있다. 그대로 저장하면 뒤의 UPDATE 가
+    앞의 UPDATE 를 덮어쓰거나, DELETE 뒤의 UPDATE 가 대상 없음으로 버려져 정보가 사라진다.
+    먼저 온 액션이 대상을 차지하고, 뒤에 온 UPDATE 는 새 행(ADD)으로, 뒤에 온 DELETE 는 NOOP 으로 바꾼다.
+    """
+    claimed: set[int] = set()
+    resolved: list[dict[str, Any]] = []
+    for item in plan:
+        action, target_id = item.get("action"), item.get("target_id")
+        if action in ("UPDATE", "DELETE") and target_id is not None:
+            if target_id in claimed:
+                item = {**item, "action": "ADD" if action == "UPDATE" else "NOOP", "target_id": None}
+            else:
+                claimed.add(target_id)
+        resolved.append(item)
+    return resolved
+
+
 def create_memory_graph(
     *,
     repo: PersonaMemoryRepository,
@@ -128,7 +148,7 @@ def create_memory_graph(
                         "target_id": decision.get("target_id"),
                     }
                 )
-        return {"reconcile_plan": plan}
+        return {"reconcile_plan": _resolve_target_conflicts(plan)}
 
     async def save_node(state: MemState) -> dict[str, Any]:
         user_id = state["user_id"]

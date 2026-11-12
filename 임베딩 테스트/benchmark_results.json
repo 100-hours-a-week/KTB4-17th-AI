@@ -1,0 +1,371 @@
+[
+  {
+    "name": "KURE-v1 ONNX int8 (1024d, CLS)",
+    "dim": 1024,
+    "recall_at_1": 0.94,
+    "recall_at_3": 1.0,
+    "recall_at_5": 1.0,
+    "mrr_at_5": 0.97,
+    "pos_dist_mean": 0.3099,
+    "neg_min_dist_mean": 0.4271,
+    "dist_margin": 0.1172,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.815,
+        "min_sim": 0.7396,
+        "max_sim": 0.9558
+      },
+      "update_contradict": {
+        "mean_sim": 0.6981,
+        "min_sim": 0.5287,
+        "max_sim": 0.9493
+      },
+      "unrelated": {
+        "mean_sim": 0.3936,
+        "min_sim": 0.3424,
+        "max_sim": 0.5203
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.4214,
+    "latency_single_p50_ms": 16.63,
+    "latency_single_p95_ms": 23.58,
+    "latency_single_mean_ms": 18.35,
+    "latency_batch8_p50_ms": 138.75,
+    "misses_outside_top5": []
+  },
+  {
+    "name": "KURE-v1 ONNX int8 (1024d, Mean)",
+    "dim": 1024,
+    "recall_at_1": 0.94,
+    "recall_at_3": 1.0,
+    "recall_at_5": 1.0,
+    "mrr_at_5": 0.97,
+    "pos_dist_mean": 0.1414,
+    "neg_min_dist_mean": 0.2106,
+    "dist_margin": 0.0692,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.9108,
+        "min_sim": 0.8598,
+        "max_sim": 0.9782
+      },
+      "update_contradict": {
+        "mean_sim": 0.8278,
+        "min_sim": 0.7456,
+        "max_sim": 0.9394
+      },
+      "unrelated": {
+        "mean_sim": 0.6555,
+        "min_sim": 0.6237,
+        "max_sim": 0.722
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.2553,
+    "latency_single_p50_ms": 16.71,
+    "latency_single_p95_ms": 24.27,
+    "latency_single_mean_ms": 18.38,
+    "latency_batch8_p50_ms": 138.66,
+    "misses_outside_top5": []
+  },
+  {
+    "name": "EmbeddingGemma-2 ONNX int8 (768d, Prefix)",
+    "dim": 768,
+    "recall_at_1": 0.96,
+    "recall_at_3": 0.98,
+    "recall_at_5": 1.0,
+    "mrr_at_5": 0.975,
+    "pos_dist_mean": 0.2026,
+    "neg_min_dist_mean": 0.2767,
+    "dist_margin": 0.0741,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.9268,
+        "min_sim": 0.8891,
+        "max_sim": 0.9719
+      },
+      "update_contradict": {
+        "mean_sim": 0.8794,
+        "min_sim": 0.8152,
+        "max_sim": 0.9608
+      },
+      "unrelated": {
+        "mean_sim": 0.7513,
+        "min_sim": 0.7175,
+        "max_sim": 0.7863
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.1755,
+    "latency_single_p50_ms": 130.27,
+    "latency_single_p95_ms": 138.24,
+    "latency_single_mean_ms": 129.18,
+    "latency_batch8_p50_ms": 159.15,
+    "misses_outside_top5": []
+  },
+  {
+    "name": "EmbeddingGemma-2 ONNX int8 (512d MRL, Prefix)",
+    "dim": 512,
+    "recall_at_1": 0.98,
+    "recall_at_3": 0.98,
+    "recall_at_5": 0.98,
+    "mrr_at_5": 0.98,
+    "pos_dist_mean": 0.1999,
+    "neg_min_dist_mean": 0.2741,
+    "dist_margin": 0.0742,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.9283,
+        "min_sim": 0.8939,
+        "max_sim": 0.9729
+      },
+      "update_contradict": {
+        "mean_sim": 0.8804,
+        "min_sim": 0.8182,
+        "max_sim": 0.962
+      },
+      "unrelated": {
+        "mean_sim": 0.7501,
+        "min_sim": 0.719,
+        "max_sim": 0.786
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.1782,
+    "latency_single_p50_ms": 129.66,
+    "latency_single_p95_ms": 139.88,
+    "latency_single_mean_ms": 129.01,
+    "latency_batch8_p50_ms": 165.05,
+    "misses_outside_top5": [
+      {
+        "query": "연인이랑 다투거나 서운한 일이 생기면 어떻게 푸는 편이에요?",
+        "expected": "갈등이 생겼을 때 감정을 바로 쏟아내기보다 생각을 정리한 뒤 대화로 풀고 싶어 한다",
+        "rank": 6,
+        "top1_pred": "연인과는 하루에 서너 번 이상 일상 연락을 주고받는 것을 선호한다"
+      }
+    ]
+  },
+  {
+    "name": "EmbeddingGemma-2 ONNX int8 (256d MRL, Prefix)",
+    "dim": 256,
+    "recall_at_1": 0.94,
+    "recall_at_3": 0.98,
+    "recall_at_5": 0.98,
+    "mrr_at_5": 0.96,
+    "pos_dist_mean": 0.1846,
+    "neg_min_dist_mean": 0.253,
+    "dist_margin": 0.0683,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.932,
+        "min_sim": 0.8964,
+        "max_sim": 0.9768
+      },
+      "update_contradict": {
+        "mean_sim": 0.8851,
+        "min_sim": 0.8321,
+        "max_sim": 0.9654
+      },
+      "unrelated": {
+        "mean_sim": 0.7591,
+        "min_sim": 0.7174,
+        "max_sim": 0.788
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.1729,
+    "latency_single_p50_ms": 130.45,
+    "latency_single_p95_ms": 139.92,
+    "latency_single_mean_ms": 128.94,
+    "latency_batch8_p50_ms": 163.69,
+    "misses_outside_top5": [
+      {
+        "query": "연인이랑 다투거나 서운한 일이 생기면 어떻게 푸는 편이에요?",
+        "expected": "갈등이 생겼을 때 감정을 바로 쏟아내기보다 생각을 정리한 뒤 대화로 풀고 싶어 한다",
+        "rank": 6,
+        "top1_pred": "사람이 너무 많고 시끄러운 술집이나 클럽 데이트는 피하고 싶어 한다"
+      }
+    ]
+  },
+  {
+    "name": "EmbeddingGemma-2 ONNX int8 (768d, No Prefix)",
+    "dim": 768,
+    "recall_at_1": 0.92,
+    "recall_at_3": 0.98,
+    "recall_at_5": 0.98,
+    "mrr_at_5": 0.9467,
+    "pos_dist_mean": 0.1789,
+    "neg_min_dist_mean": 0.2404,
+    "dist_margin": 0.0615,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.899,
+        "min_sim": 0.8504,
+        "max_sim": 0.9661
+      },
+      "update_contradict": {
+        "mean_sim": 0.8273,
+        "min_sim": 0.7168,
+        "max_sim": 0.9584
+      },
+      "unrelated": {
+        "mean_sim": 0.6413,
+        "min_sim": 0.5707,
+        "max_sim": 0.6974
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.2577,
+    "latency_single_p50_ms": 115.44,
+    "latency_single_p95_ms": 127.84,
+    "latency_single_mean_ms": 116.81,
+    "latency_batch8_p50_ms": 150.09,
+    "misses_outside_top5": [
+      {
+        "query": "호불호 갈리는 고수나 민초 좋아하시는 편이에요?",
+        "expected": "민트초코 아이스크림과 고수가 들어간 쌀국수를 매우 좋아한다",
+        "rank": 14,
+        "top1_pred": "술은 거의 못 마셔서 회식 때도 논알콜 음료나 탄산수를 마신다"
+      }
+    ]
+  },
+  {
+    "name": "KURE-v2 (154M, Late-Interaction Multi-Vector 128d)",
+    "dim": 128,
+    "architecture": "Late-Interaction (ColBERT / MaxSim), token-level 128d",
+    "params": "154M",
+    "recall_at_1": 0.96,
+    "recall_at_3": 1.0,
+    "recall_at_5": 1.0,
+    "mrr_at_5": 0.98,
+    "pos_dist_mean": 42.0728,
+    "neg_min_dist_mean": 32.7944,
+    "dist_margin": 9.2784,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 43.568,
+        "min_sim": 39.3965,
+        "max_sim": 49.6133
+      },
+      "update_contradict": {
+        "mean_sim": 36.4285,
+        "min_sim": 25.6357,
+        "max_sim": 49.9375
+      },
+      "unrelated": {
+        "mean_sim": 14.3829,
+        "min_sim": 5.1227,
+        "max_sim": 20.7075
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 29.1851,
+    "latency_single_p50_ms": 20.77,
+    "latency_single_p95_ms": 27.74,
+    "latency_single_mean_ms": 21.01,
+    "latency_batch8_p50_ms": 30.22,
+    "misses_outside_top5": []
+  },
+  {
+    "name": "ko-embed-v0 (149M, 768d, skt/A.X-Encoder)",
+    "dim": 768,
+    "architecture": "Single-vector (Mean Pooling), 768d",
+    "params": "149M",
+    "recall_at_1": 0.88,
+    "recall_at_3": 1.0,
+    "recall_at_5": 1.0,
+    "mrr_at_5": 0.94,
+    "pos_dist_mean": 0.3241,
+    "neg_min_dist_mean": 0.4176,
+    "dist_margin": 0.0935,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.8203,
+        "min_sim": 0.7629,
+        "max_sim": 0.8881
+      },
+      "update_contradict": {
+        "mean_sim": 0.7661,
+        "min_sim": 0.59,
+        "max_sim": 0.9805
+      },
+      "unrelated": {
+        "mean_sim": 0.418,
+        "min_sim": 0.3925,
+        "max_sim": 0.4428
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.4023,
+    "latency_single_p50_ms": 12.24,
+    "latency_single_p95_ms": 13.3,
+    "latency_single_mean_ms": 17.36,
+    "latency_batch8_p50_ms": 23.49,
+    "misses_outside_top5": []
+  },
+  {
+    "name": "Qwen3-Embedding-4B (4.0B, 2560d)",
+    "dim": 2560,
+    "architecture": "LLM Decoder (Last Token Pooling, bfloat16)",
+    "params": "4.0B",
+    "recall_at_1": 1.0,
+    "recall_at_3": 1.0,
+    "recall_at_5": 1.0,
+    "mrr_at_5": 1.0,
+    "pos_dist_mean": 0.378,
+    "neg_min_dist_mean": 0.5834,
+    "dist_margin": 0.2054,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.7398999929428101,
+        "min_sim": 0.628600001335144,
+        "max_sim": 0.9275000095367432
+      },
+      "update_contradict": {
+        "mean_sim": 0.6186000108718872,
+        "min_sim": 0.3675000071525574,
+        "max_sim": 0.9207000136375427
+      },
+      "unrelated": {
+        "mean_sim": 0.21070000529289246,
+        "min_sim": 0.1550000011920929,
+        "max_sim": 0.265500009059906
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.5292,
+    "latency_single_p50_ms": 109.27,
+    "latency_single_p95_ms": 119.84,
+    "latency_single_mean_ms": 111.68,
+    "latency_batch8_p50_ms": 710.85,
+    "misses_outside_top5": []
+  },
+  {
+    "name": "comsat-embed-ko-8b-preview (8.0B, 4096d)",
+    "dim": 4096,
+    "architecture": "LLM Decoder (Qwen3-8B Fine-tuned, bfloat16)",
+    "params": "8.0B",
+    "recall_at_1": 0.98,
+    "recall_at_3": 1.0,
+    "recall_at_5": 1.0,
+    "mrr_at_5": 0.99,
+    "pos_dist_mean": 0.4518,
+    "neg_min_dist_mean": 0.6408,
+    "dist_margin": 0.1889,
+    "reconcile": {
+      "paraphrase": {
+        "mean_sim": 0.7364000082015991,
+        "min_sim": 0.6488000154495239,
+        "max_sim": 0.9452000260353088
+      },
+      "update_contradict": {
+        "mean_sim": 0.6295999884605408,
+        "min_sim": 0.4106999933719635,
+        "max_sim": 0.8959000110626221
+      },
+      "unrelated": {
+        "mean_sim": 0.2515999972820282,
+        "min_sim": 0.12319999933242798,
+        "max_sim": 0.3540000021457672
+      }
+    },
+    "reconcile_gap_para_vs_unrel": 0.4848,
+    "latency_single_p50_ms": 238.18,
+    "latency_single_p95_ms": 239.42,
+    "latency_single_mean_ms": 236.34,
+    "latency_batch4_p50_ms": 676.49,
+    "misses_outside_top5": []
+  }
+]

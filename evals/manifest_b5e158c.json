@@ -1,0 +1,1818 @@
+{
+  "version": "1.0.0",
+  "frozen_at": "2026-10-29T14:51:40.562183",
+  "git_commit": "b5e158c48acdf60fdda24c0ff97c23d3edcf0204",
+  "git_commit_short": "b5e158c",
+  "combined_hash": "fe96220bce8bb9736e1b4174dca61520ec5b913d19fd8001b207999bf0ab2364",
+  "total_files": 258,
+  "total_bytes": 3834991,
+  "total_goldset_cases": 720,
+  "files": [
+    {
+      "path": "app/core/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "lines": 0,
+      "cases": null
+    },
+    {
+      "path": "app/core/config.py",
+      "sha256": "9ed00a4f42d9eccab47add3a30d652d16f1d5302346857b2c0059a0952ac3e28",
+      "size_bytes": 21051,
+      "lines": 357,
+      "cases": null
+    },
+    {
+      "path": "app/core/db.py",
+      "sha256": "0c6925b2d8c3817a19e1b3f5f4053ff3fb4b464086631fc24dee051a29987f9a",
+      "size_bytes": 1076,
+      "lines": 33,
+      "cases": null
+    },
+    {
+      "path": "app/core/errors.py",
+      "sha256": "96b03c309aeb551e29a1acf2798f778c6a3ab09dcdb557d149465b5719d82451",
+      "size_bytes": 434,
+      "lines": 17,
+      "cases": null
+    },
+    {
+      "path": "app/core/guardrail/__init__.py",
+      "sha256": "c02bd1ee52c3ff5da077cf0d8ba3b4edf71e8206b895140cbf9c971ac1e9f6ec",
+      "size_bytes": 695,
+      "lines": 39,
+      "cases": null
+    },
+    {
+      "path": "app/core/guardrail/engine.py",
+      "sha256": "933df866dabf766df9631a2d74c4c16a42315983f0a41b3dae1065986d9f5061",
+      "size_bytes": 12107,
+      "lines": 307,
+      "cases": null
+    },
+    {
+      "path": "app/core/guardrail/models.py",
+      "sha256": "86aed5d937c75a7fdb2601906b4505ae32dbc4b46449bdc94f098046b6ffceff",
+      "size_bytes": 1496,
+      "lines": 67,
+      "cases": null
+    },
+    {
+      "path": "app/core/guardrail/rules.py",
+      "sha256": "ebe3d267c1bdbb00e031bbdd6877fa91a4a326b44acd634b9ddf1a1c64c96e85",
+      "size_bytes": 1966,
+      "lines": 43,
+      "cases": null
+    },
+    {
+      "path": "app/core/guardrail_trace.py",
+      "sha256": "c8b5e722dec1fa41865e68a7970b0e061e78e28cab3e0373f00f89dd8d015e9b",
+      "size_bytes": 2684,
+      "lines": 72,
+      "cases": null
+    },
+    {
+      "path": "app/core/llm_retry.py",
+      "sha256": "df57ebd56feb04d4699379f95aa35352a675400ac7916905ba0e98af2cbeaa34",
+      "size_bytes": 1912,
+      "lines": 48,
+      "cases": null
+    },
+    {
+      "path": "app/core/media.py",
+      "sha256": "a6719833cf4cfced6e23c421e78e3a4c9d1e0715750bc97d5709315f247677b6",
+      "size_bytes": 2405,
+      "lines": 62,
+      "cases": null
+    },
+    {
+      "path": "app/core/observability.py",
+      "sha256": "1de7e0acf3a089bc19971bae0cd884ea6d0b6cfd1efe6eff764d393fd41ab297",
+      "size_bytes": 2987,
+      "lines": 89,
+      "cases": null
+    },
+    {
+      "path": "app/core/security.py",
+      "sha256": "3c8b484b82f2f4d3ee50de23fa6117dabbf440763ac21c32ab8342e28d5ecf41",
+      "size_bytes": 371,
+      "lines": 11,
+      "cases": null
+    },
+    {
+      "path": "app/core/slm.py",
+      "sha256": "ae7efad3421c9058e0117de00aed0ab961c6ce3cca4307c819b9584d0878c334",
+      "size_bytes": 6650,
+      "lines": 177,
+      "cases": null
+    },
+    {
+      "path": "app/features/chat_end/__init__.py",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "size_bytes": 0,
+      "lines": 0,
+      "cases": null
+    },
+    {
+      "path": "app/features/chat_end/agents.py",
+      "sha256": "5c18a913f59c75321923dbec3e97a4b2a5e41dc9c5f5a2eab68167da1d25b28b",
+      "size_bytes": 22297,
+      "lines": 463,
+      "cases": null
+    },
+    {
+      "path": "app/features/chat_end/api.py",
+      "sha256": "b430fb8f6dee5d36969db75b077c7e023512573f48cc61bccd6b7ba795800891",
+      "size_bytes": 3759,
+      "lines": 98,
+      "cases": null
+    },
+    {
+      "path": "app/features/chat_end/models.py",
+      "sha256": "e2e6a3a34af71e05a0d280bf18bc61a9e331e1a2c479a7c5da3cbdc817cc5b81",
+      "size_bytes": 4166,
+      "lines": 79,
+      "cases": null
+    },
+    {
+      "path": "app/features/chat_end/repository.py",
+      "sha256": "35e57c06b450d58d8c4490c635917ca693ec9a9aa9466cb006768502873acac9",
+      "size_bytes": 5974,
+      "lines": 149,
+      "cases": null
+    },
+    {
+      "path": "app/features/chat_end/schemas.py",
+      "sha256": "ee4ad8dd00bb67b3cd4b9c3a7da3c31e394c323160c3c243d7b65410ba4def16",
+      "size_bytes": 6615,
+      "lines": 172,
+      "cases": null
+    },
+    {
+      "path": "app/features/chat_end/service.py",
+      "sha256": "11b395fc92ab7082d7718af9ca9d47522c533e17dbb6c9feb1f226cc667da621",
+      "size_bytes": 13946,
+      "lines": 316,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/__init__.py",
+      "sha256": "645782a04051ef3d9ae205dc652e05db7fcf57cedcbfecca21d004e594058f8f",
+      "size_bytes": 48,
+      "lines": 1,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/active_liveness.py",
+      "sha256": "154f38c31e637ccf4265c077eeef02f2b92bfcfca659691aeb71439f94733d90",
+      "size_bytes": 20679,
+      "lines": 427,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/api.py",
+      "sha256": "f13711a7eef5bf5916652ac33c4c0c4638098a7dbc56c951a4946690876a8e61",
+      "size_bytes": 2902,
+      "lines": 81,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/centering.py",
+      "sha256": "8fa9981d7d34ab3077ae97ea001cba638202bb4b8d15ed772a829e1450d6b26a",
+      "size_bytes": 2353,
+      "lines": 61,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/challenge.py",
+      "sha256": "4aa472edea270cce0eaff0237ba4ac14a7c8ec438417be3488f3e0d5216eaccb",
+      "size_bytes": 2969,
+      "lines": 86,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/continuous_hold.py",
+      "sha256": "7e0577f74d4b4ddcbd8d46c8679c4b1c4b152a2c37a6021cca5f0ccc73d032c5",
+      "size_bytes": 2859,
+      "lines": 66,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/dependencies.py",
+      "sha256": "d5da43f1d19548e4ca297e48df64140851d5496a74576668fc99301c6a23d200",
+      "size_bytes": 1021,
+      "lines": 30,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/gesture.py",
+      "sha256": "76156cd9c908dbde22794428d1305110d22c6e6727c255886ae978819a4146a1",
+      "size_bytes": 10176,
+      "lines": 257,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/hand.py",
+      "sha256": "9bccfa53b37530666e410bdeeeff408b038bb68c4d106aaf7d86dd4c0745d14f",
+      "size_bytes": 9065,
+      "lines": 209,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/head.py",
+      "sha256": "f27beb51a5b096673fe09d856db72a815321a9221eb9ecfbd338e3611b4a9c8e",
+      "size_bytes": 4685,
+      "lines": 121,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/live_face.py",
+      "sha256": "afac5b8f8581da6575355a27f315d749b7e0e094db84530fe5af5ea8ecb777dc",
+      "size_bytes": 4302,
+      "lines": 100,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/liveness.py",
+      "sha256": "a65d21aab6f61ddbe27955e4a18b7b087af78d3ce60cbf82872ddedb5e2c4113",
+      "size_bytes": 16693,
+      "lines": 385,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/matcher.py",
+      "sha256": "3847d0d461f61c1ccff5a242054ce9c71b82b33889115c1e4dae7231d4c1ed11",
+      "size_bytes": 5346,
+      "lines": 112,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/protocol.py",
+      "sha256": "29f192f4e3aeb95a0eb1b08d342a4af8a7112df6204a820668de7d6982b055cc",
+      "size_bytes": 1193,
+      "lines": 27,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/schemas.py",
+      "sha256": "3152403c61cb22bc34a8c550d50db7fbe353762f942c5a2b56fa29ea67a3cde0",
+      "size_bytes": 3719,
+      "lines": 125,
+      "cases": null
+    },
+    {
+      "path": "app/features/face_verification/service.py",
+      "sha256": "076ed7f5cf8a14adcd0edd315e2b0910dea3ef15478398ac19042ac72c16e7db",
+      "size_bytes": 5421,
+      "lines": 131,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona/agents.py",
+      "sha256": "46eea43019e04b53a9225c61510506f3a91d10d5cdf52ab730b3634048fbe77b",
+      "size_bytes": 45044,
+      "lines": 941,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona/api.py",
+      "sha256": "26b09cbb6f2cca8132590da28efe04637563ca5fb03386c4be19d2d387edcb48",
+      "size_bytes": 8945,
+      "lines": 245,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona/lookup.py",
+      "sha256": "0d7c2eb2d5c0a10e7eb4f6e455b7bb9daedf0fc18aedc16a90fe843975dbb7fe",
+      "size_bytes": 1977,
+      "lines": 53,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona/models.py",
+      "sha256": "f1b79f593f19960a756df92acf8d5811054ee11bc8dfd825c41a6b2d95209a22",
+      "size_bytes": 6187,
+      "lines": 130,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona/profile.py",
+      "sha256": "890b4ec9a1789c3818c8e3001e49174dcf86c610499ea715d036615c173e313a",
+      "size_bytes": 5362,
+      "lines": 109,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona/repository.py",
+      "sha256": "8331af14dae94607981a3913e101dd1e9be748f0353030d89380dc0a97545229",
+      "size_bytes": 14303,
+      "lines": 356,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona/schemas.py",
+      "sha256": "3ae7b50908f11dd7c5186e65ea99a375803472a843a2e40de0e2ca69e79ea5bb",
+      "size_bytes": 31454,
+      "lines": 757,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona/service.py",
+      "sha256": "ef76576deff6e3fa252092b1a28a73184a81033dacba665d7a418d2d5aa55c5a",
+      "size_bytes": 38536,
+      "lines": 848,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona_extraction/__init__.py",
+      "sha256": "c5acc1c2381bc5aaa702144c2001405878406ae245156d2c0fcd06e80a4c5c8a",
+      "size_bytes": 37,
+      "lines": 1,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona_extraction/agents.py",
+      "sha256": "ba13297b6aca367d86112a6c4a5ea2a296c3c40e18222e536060d0b33980d9b8",
+      "size_bytes": 6290,
+      "lines": 110,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona_extraction/api.py",
+      "sha256": "b42199291f48bc49569f2e04d3a51bbdac4e4648f7090b74ea25fe968e74517d",
+      "size_bytes": 7403,
+      "lines": 186,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona_extraction/models.py",
+      "sha256": "2d01aa9d33b80c8b6e73463e3031c4d9315ca0902bdabd7471dd3e012ff12733",
+      "size_bytes": 3921,
+      "lines": 79,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona_extraction/parsers.py",
+      "sha256": "23eab12a8f8384a9244fa7caba7c5d8295eb4925cef649191c58fb797108d6d3",
+      "size_bytes": 4403,
+      "lines": 116,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona_extraction/repository.py",
+      "sha256": "83e46fa3bc945b12c3471bd71ce1b21f9cffdf8a3b69f8376ede157c196c4cf5",
+      "size_bytes": 5324,
+      "lines": 109,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona_extraction/schemas.py",
+      "sha256": "0b2fbbcbf51e15167fdf7f52ec91874ef998f03e75a8dc3f2e2553b04771b92a",
+      "size_bytes": 1360,
+      "lines": 40,
+      "cases": null
+    },
+    {
+      "path": "app/features/persona_extraction/service.py",
+      "sha256": "e4253daf3132eb39047b038d72810cf4b6aa3d482ffdcf4edc1fcf32d693ec3d",
+      "size_bytes": 22285,
+      "lines": 499,
+      "cases": null
+    },
+    {
+      "path": "app/features/practice/agents.py",
+      "sha256": "ad05135eeca8855cf3aab37875e1cb5135e35d930d7573e2bea59ad959c0b533",
+      "size_bytes": 12803,
+      "lines": 251,
+      "cases": null
+    },
+    {
+      "path": "app/features/practice/api.py",
+      "sha256": "165898324917ab280d67f645d9a3c2e5cb2e3e3ca07576efd687e705e5a09ecc",
+      "size_bytes": 12019,
+      "lines": 271,
+      "cases": null
+    },
+    {
+      "path": "app/features/practice/models.py",
+      "sha256": "42bfcd3c9f462574ac0e4e075069eea342a242167cfff0c5f1021b16e6ba3a3a",
+      "size_bytes": 3837,
+      "lines": 79,
+      "cases": null
+    },
+    {
+      "path": "app/features/practice/repository.py",
+      "sha256": "4a2e79f855129d97b2316755f2d663e86160b4f0ac10125900a18f2f5e8c33eb",
+      "size_bytes": 2995,
+      "lines": 80,
+      "cases": null
+    },
+    {
+      "path": "app/features/practice/schemas.py",
+      "sha256": "131325894eab4a7400d2f2b39841323666739e2108c4087c6169f140efe1bba7",
+      "size_bytes": 4623,
+      "lines": 132,
+      "cases": null
+    },
+    {
+      "path": "app/features/practice/service.py",
+      "sha256": "5d0976c59207bef54eb97322110751b47c471bb6f41fcc62ebc74fa2fde97111",
+      "size_bytes": 17685,
+      "lines": 397,
+      "cases": null
+    },
+    {
+      "path": "app/features/primary_photo/__init__.py",
+      "sha256": "8fad6703d807188308a8cab015ecf21dd5d564cc6ae7ef03fa730d2aa1a5e6ae",
+      "size_bytes": 49,
+      "lines": 1,
+      "cases": null
+    },
+    {
+      "path": "app/features/primary_photo/analyzer.py",
+      "sha256": "4b1c4884e4d12a484f5f363caf968c3cd25a0e3b2e2375f1cb54623447c444f5",
+      "size_bytes": 16848,
+      "lines": 371,
+      "cases": null
+    },
+    {
+      "path": "app/features/primary_photo/api.py",
+      "sha256": "dc8c06d43514eb327e0805b196c336a7df4400d943b4bd6acb17338a142bc274",
+      "size_bytes": 1143,
+      "lines": 33,
+      "cases": null
+    },
+    {
+      "path": "app/features/primary_photo/dependencies.py",
+      "sha256": "6807499a3d731323e683859d97c3657fdea3dfdcadd672b0f9acf1184514d6a7",
+      "size_bytes": 421,
+      "lines": 18,
+      "cases": null
+    },
+    {
+      "path": "app/features/primary_photo/head_pose.py",
+      "sha256": "c8912822f057c4bb5737cf11c7d8e2d16d67e63f2e7e31683de1b11b3adf0cc7",
+      "size_bytes": 2189,
+      "lines": 49,
+      "cases": null
+    },
+    {
+      "path": "app/features/primary_photo/schemas.py",
+      "sha256": "77b43d6b1c76832e36c6c093965baa920311bebf1824c5c42445033ce9e82481",
+      "size_bytes": 1044,
+      "lines": 47,
+      "cases": null
+    },
+    {
+      "path": "app/features/primary_photo/service.py",
+      "sha256": "65147ac8d31c05864c109c689bec879ebf8c6a1fc6d84a17bec2236565c2f803",
+      "size_bytes": 673,
+      "lines": 20,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation/agents.py",
+      "sha256": "ff19bbf4d15bee50bd6bb6469553f704807df90ea78f9fe0acba030a1222c7c0",
+      "size_bytes": 29654,
+      "lines": 593,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation/api.py",
+      "sha256": "392fe85e560a86e82b1a1b97a57dea0cbf77e68eebb2fd69004552c3cc8baf52",
+      "size_bytes": 3890,
+      "lines": 94,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation/models.py",
+      "sha256": "7694ba68f3f3ef9ea63efda169d4b5bec7b63439daccec37321b77124b928dc5",
+      "size_bytes": 2021,
+      "lines": 48,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation/report.py",
+      "sha256": "99c55879828612fbdd84f4b63b72a3c575a48eb730d6334a4da3d78b38436b24",
+      "size_bytes": 7616,
+      "lines": 198,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation/repository.py",
+      "sha256": "cca6acd87564e14c6e57152120480d04b11f33446e891cf1b44f68a7bcd4c11e",
+      "size_bytes": 2200,
+      "lines": 65,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation/schemas.py",
+      "sha256": "4f9576323ea8ca36e9c2309c4a11009011768a724ba23b51ca3d2eb46b9c2a0e",
+      "size_bytes": 13562,
+      "lines": 359,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation/service.py",
+      "sha256": "3d91bd3ac91cc8ef5f40de5a0596858d52af1ee3dcd7406b692e7e65cf77ad16",
+      "size_bytes": 11684,
+      "lines": 294,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/__init__.py",
+      "sha256": "c86f1575b103b119ebe17359a93d84e7728a086b8bafd74adad74a7c55a818aa",
+      "size_bytes": 88,
+      "lines": 3,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/api.py",
+      "sha256": "c87b92fb6d454c667e9b25856e4da139dd338d53a805f2198040c555c1d17d80",
+      "size_bytes": 20915,
+      "lines": 502,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/graph.py",
+      "sha256": "22bbc018af77eb190db3aedb75be884d8d20e6784bc3105e98b053afb68d2285",
+      "size_bytes": 6571,
+      "lines": 176,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/llm.py",
+      "sha256": "bf40ec1a1d8f4075a954c4ef3b560c995922297573aef67d872eecf8186ca70e",
+      "size_bytes": 4973,
+      "lines": 120,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/manager.py",
+      "sha256": "08d4b4705f7920698644af50233d06db1968d444eb1beba7a3982aea8efe64eb",
+      "size_bytes": 26249,
+      "lines": 648,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/models.py",
+      "sha256": "1725eb03ba41c1a8980a71467bf3fc0fe5a56e288dae77a5eba6ee8c4a34be07",
+      "size_bytes": 3607,
+      "lines": 92,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/narrative.py",
+      "sha256": "57289de7cfeac41b57a88d4213ba627461b47841f77a5dd085338255f3cf5bc3",
+      "size_bytes": 10574,
+      "lines": 255,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/order.py",
+      "sha256": "2c1be4ba2ac11a167681fccc3092ad6294966de6fd8a7958892aca3b15abc56b",
+      "size_bytes": 5302,
+      "lines": 166,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/prompts.py",
+      "sha256": "3041e651774a038c84b4e11e307dfc57e8d52fe8173678dd88c764da2e242a0e",
+      "size_bytes": 10689,
+      "lines": 228,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/report_tool.py",
+      "sha256": "0b9c916293d7c3f18486625f7bb3f0a515a0a4677bfe3652979c3ff022f5a9b3",
+      "size_bytes": 4529,
+      "lines": 110,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/repository.py",
+      "sha256": "f2286bd89d4f48cfc296c94d3d1de311f061e121b41afb85b2fcb623841bc326",
+      "size_bytes": 10129,
+      "lines": 272,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/schemas.py",
+      "sha256": "d3e8b8d9570a8320ff41f15a804aa1054a63473ee865e583fd95f528bcec7b42",
+      "size_bytes": 4150,
+      "lines": 141,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/service.py",
+      "sha256": "d12ea6ddc9f86fa2517098682e49ef8538886977dde0c8310f61d2f39bf5f073",
+      "size_bytes": 5333,
+      "lines": 140,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/state.py",
+      "sha256": "69335e53c5f0d031165d0660d6cd65846cb3ded54eabe5d623ffe7f9945d6371",
+      "size_bytes": 631,
+      "lines": 24,
+      "cases": null
+    },
+    {
+      "path": "app/features/simulation_migration/tools.py",
+      "sha256": "d59e6ac52ad11c120033e86bbb10a2fbe0d6576d898d126be45bd567c5683680",
+      "size_bytes": 14155,
+      "lines": 390,
+      "cases": null
+    },
+    {
+      "path": "app/features/synthetic_detection/__init__.py",
+      "sha256": "7da86f33c1f448f7ed0841b59cc32bcbe967542b61f1ff90532be87db6d42a7c",
+      "size_bytes": 45,
+      "lines": 1,
+      "cases": null
+    },
+    {
+      "path": "app/features/synthetic_detection/api.py",
+      "sha256": "3557b09c8a406c79b5ae57c5f6a4a284b208df973761713d46a33d47bc55ad63",
+      "size_bytes": 1181,
+      "lines": 33,
+      "cases": null
+    },
+    {
+      "path": "app/features/synthetic_detection/dependencies.py",
+      "sha256": "0edd7b3827738e734a7ff6e9a6c37004569761484b18ea8714d3b6ebbefc45d5",
+      "size_bytes": 302,
+      "lines": 12,
+      "cases": null
+    },
+    {
+      "path": "app/features/synthetic_detection/schemas.py",
+      "sha256": "156b8dc001760ecf438904e213728110d82c960882c9de3dfb25299d37f3dab9",
+      "size_bytes": 480,
+      "lines": 19,
+      "cases": null
+    },
+    {
+      "path": "app/features/synthetic_detection/service.py",
+      "sha256": "2d7c75c2027d3bbaf033fc9a18c344a5e98f3d2a66975c5bde70f1c5c8c4a960",
+      "size_bytes": 8247,
+      "lines": 195,
+      "cases": null
+    },
+    {
+      "path": "app/main.py",
+      "sha256": "540441aa4c7f9af2455edddb71c8ca234224cf39ebb229fe63123f2edafdf3c3",
+      "size_bytes": 5894,
+      "lines": 138,
+      "cases": null
+    },
+    {
+      "path": "app/v2/llm.py",
+      "sha256": "de82ed69d3743fbebcea56d59ea02f3bb473d59f424b3b6e55ad300b9623a54b",
+      "size_bytes": 5814,
+      "lines": 165,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/agents.py",
+      "sha256": "c565ec0982cefb454671721aadb57864d490e8bbf10520c9ecf971a9af872240",
+      "size_bytes": 8524,
+      "lines": 176,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/api.py",
+      "sha256": "be56c7f8432c59b3bbf411ef78c47f664805465bfa8096d0ff4e54fb8c435352",
+      "size_bytes": 2101,
+      "lines": 63,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/embedder.py",
+      "sha256": "77d29756f036d129fe60fe3aba3b9d4ed0add668eeb5905a968ed5c966fd0dd1",
+      "size_bytes": 5683,
+      "lines": 153,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/graph.py",
+      "sha256": "f2362ed532d7e92e1c54b6d6b8650216e3ce87284ef1d29fc81f73dd0589fc79",
+      "size_bytes": 9073,
+      "lines": 206,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/models.py",
+      "sha256": "9d293a6207d0c515137c344767cf3c081993d7372dafdaefb45d1366f2d5f61f",
+      "size_bytes": 4317,
+      "lines": 90,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/pairs.py",
+      "sha256": "279f2222b1c25ef04b9160e75d3ecf168df7a050c0a2d4b48d5ec85fd54986d5",
+      "size_bytes": 2074,
+      "lines": 54,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/profile.py",
+      "sha256": "76d33e7180d2dd62a17276e36d9e3f33d67418dee13be1e135d0f700d90bacd9",
+      "size_bytes": 5081,
+      "lines": 107,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/repository.py",
+      "sha256": "90af3a5d2ed49a1061de35c0ed4b344ded26b970dc0c47fe9978b72a6bf14438",
+      "size_bytes": 9961,
+      "lines": 254,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/schemas.py",
+      "sha256": "2db16e9b1598eb9cd648fabdb379c55af4de9a50dff384f2ace20c33fac25282",
+      "size_bytes": 1872,
+      "lines": 58,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/service.py",
+      "sha256": "3d0f33c2e4d12f0a4325fc176b05299cafbda1ee76bf8c42b6f6cbdf7b17de15",
+      "size_bytes": 13493,
+      "lines": 313,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona/trigger.py",
+      "sha256": "3cc6b6c1f0bb665b7bf4c674c40c6c01339dcfe9759c61a8da4b67c3b8a07a45",
+      "size_bytes": 2840,
+      "lines": 69,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona_extraction/agents.py",
+      "sha256": "e52a8d279bf26adb9c342ce68b57268a8662804bbfd53d8dae3d58f9de5fc975",
+      "size_bytes": 6653,
+      "lines": 126,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona_extraction/api.py",
+      "sha256": "f4118ead9046b18f7373a755a22d26f31e759d7ee0f9d9271f3e0d398f90581a",
+      "size_bytes": 6390,
+      "lines": 163,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona_extraction/models.py",
+      "sha256": "de622fec056314c77ebd98a9878fe3a0e3db91e171430e03d2f855cbbef7727f",
+      "size_bytes": 4291,
+      "lines": 82,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona_extraction/parsers.py",
+      "sha256": "23eab12a8f8384a9244fa7caba7c5d8295eb4925cef649191c58fb797108d6d3",
+      "size_bytes": 4403,
+      "lines": 116,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona_extraction/repository.py",
+      "sha256": "652f50f03636a044d8d0656b6d93da7f31ed45615cc703f54fa94c94069c3cf1",
+      "size_bytes": 3620,
+      "lines": 77,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona_extraction/schemas.py",
+      "sha256": "889134684a09de474695199adcb1afc9cb3b4a96f6ba87820180e99464f2fbd1",
+      "size_bytes": 2570,
+      "lines": 70,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona_extraction/scoring.py",
+      "sha256": "c6c912593cfdc5c2087bfb1fff77c76bc055ef9aee8237e327afe0f01308aaaa",
+      "size_bytes": 2207,
+      "lines": 42,
+      "cases": null
+    },
+    {
+      "path": "app/v2/persona_extraction/service.py",
+      "sha256": "fb87965904ff19292d856011b49e7c1986fe9b376114254e9a05481fe57abb49",
+      "size_bytes": 25103,
+      "lines": 556,
+      "cases": null
+    },
+    {
+      "path": "app/v2/practice/agents.py",
+      "sha256": "e110be312d132eac1afa466089e4aa7dcf98681e26f0bacd03860d7753cf2f4f",
+      "size_bytes": 12751,
+      "lines": 250,
+      "cases": null
+    },
+    {
+      "path": "app/v2/practice/api.py",
+      "sha256": "e241352c4c423e24fbdc93807923c22b50c1acc4e9cbc55a3ededa450f020a15",
+      "size_bytes": 9027,
+      "lines": 234,
+      "cases": null
+    },
+    {
+      "path": "app/v2/practice/memory.py",
+      "sha256": "78f9d373042c9f7a6078ced1a31ec1a19d181205d0482970b49466ec18ca9d8a",
+      "size_bytes": 4580,
+      "lines": 117,
+      "cases": null
+    },
+    {
+      "path": "app/v2/practice/service.py",
+      "sha256": "6254a3df7c8957b40fbba494b79a4057de643ba56046fefdccd5ea7ebaded018",
+      "size_bytes": 20806,
+      "lines": 442,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/api.py",
+      "sha256": "30897e559722a86eda29135274485c96d4d4e429bc27d98ddaea2eb5fce02253",
+      "size_bytes": 5572,
+      "lines": 136,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/generator.py",
+      "sha256": "ee0758a4663e75230f04ad4fe66eaf30463875f39e48302c92e8b4969d0ff44b",
+      "size_bytes": 33351,
+      "lines": 657,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/graph.py",
+      "sha256": "6a0dc675304979b77afde68796062b3668b7faac6040e15d8e6676c9999219a0",
+      "size_bytes": 15135,
+      "lines": 369,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/llm.py",
+      "sha256": "d4c448205e7688524375f6a7e49019362c370332b2378a0a987e084c79e272d2",
+      "size_bytes": 11321,
+      "lines": 280,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/models.py",
+      "sha256": "04a116663af014ee5a4c77a3b90edc0427941b35247781d2448a6027048ed2cb",
+      "size_bytes": 3886,
+      "lines": 79,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/prompts.py",
+      "sha256": "dc759066b4a58e2ec0db60fc7a32e58a04dad44b2157a74be1febcc244710eb2",
+      "size_bytes": 3843,
+      "lines": 90,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/repair.py",
+      "sha256": "ede8c10a5bb98ccfa42860d70d3f18507943d4d473522c8d1d37c06cd82ad30c",
+      "size_bytes": 6411,
+      "lines": 143,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/report.py",
+      "sha256": "12c8ca144a1c3b174572d7fb0a70fa06b7daf88ec5c8d73d4a810b1d06166b24",
+      "size_bytes": 8426,
+      "lines": 199,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/repository.py",
+      "sha256": "690bb007983034466dafbfcf13d6926536b51ece7c0b86181518297fd3e0a504",
+      "size_bytes": 2894,
+      "lines": 71,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/schemas.py",
+      "sha256": "f7f85c6a6c6b871d6151f4da39d57e6dcecb1e38855353082293a8d53cde4ff5",
+      "size_bytes": 11203,
+      "lines": 299,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/scoring.py",
+      "sha256": "25a75d27bd9c1d4437cbb21e6867083e04cbeaede054843a95f7a986dec5e309",
+      "size_bytes": 9595,
+      "lines": 238,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/service.py",
+      "sha256": "03230455cc6ad5b5638eb19b0814403e4c1e0bb3aee884c43c5ed96d8f7fa90e",
+      "size_bytes": 13503,
+      "lines": 331,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/topics.py",
+      "sha256": "c36f8b74da79efbc974619d010891c8390d3cca3184e45e5a55075101dcbc5fb",
+      "size_bytes": 9454,
+      "lines": 230,
+      "cases": null
+    },
+    {
+      "path": "app/v2/simulation/verifier.py",
+      "sha256": "e80684afbd04c3fe5920aef0413e5dc5b513e2a1736c5926c36d9fd4c46d5000",
+      "size_bytes": 27679,
+      "lines": 615,
+      "cases": null
+    },
+    {
+      "path": "docs/성능평가_v2/00_v2_평가체계_및_기능별_평가기준서.md",
+      "sha256": "b25c3cc4df6255747c8203873feb09fdaca13e3dc4598143bd157b3b6810ff67",
+      "size_bytes": 96610,
+      "lines": 813,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/attach_raw.py",
+      "sha256": "e8c9a06d29ce2c1fe6a0cb9393729173bf83373f8fd276750e50317152fc0d2d",
+      "size_bytes": 8556,
+      "lines": 254,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/auto_checks.py",
+      "sha256": "ec4a272fc213a4bea73a8ce7950a5add1fe2a62fbc7fdfbbdb20bb5c1392ed44",
+      "size_bytes": 35125,
+      "lines": 817,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/build_sim_samples.py",
+      "sha256": "deda845cb5ba33902b7ce2109839c6b78dce019c9de31760e55f5b79b1282942",
+      "size_bytes": 10867,
+      "lines": 248,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/cards.py",
+      "sha256": "50e58d0e6572d47b30c599fb55acffc3e9ba6689e1db4f6753f8a5b8e9bf06b8",
+      "size_bytes": 17913,
+      "lines": 313,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/common.py",
+      "sha256": "e47cf1e318fe3db93f83b5a3cb52b0620ddca571dcca864d3860ceb5eabc1100",
+      "size_bytes": 5744,
+      "lines": 169,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/inputs_chat_end.py",
+      "sha256": "aa4faa85651df3a3db44cb1c4b72a57031e3deb46c00bcc015d22cf051945317",
+      "size_bytes": 4367,
+      "lines": 120,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/inputs_kakao.py",
+      "sha256": "638c89cf9fc1be9d757ae319f144eb21d056bfff15d1dc6f321db1ceb627d7e6",
+      "size_bytes": 9361,
+      "lines": 255,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/inputs_onboarding.py",
+      "sha256": "ce19ddc09cc890ddc539f85e3f6fa0c74f952945552c6d470db9d040d5e7c9cc",
+      "size_bytes": 5460,
+      "lines": 150,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/inputs_practice.py",
+      "sha256": "dfef9b880915a6b054526de93afec0081bf93bdd5fb4711e6fa7249e86a8672a",
+      "size_bytes": 8555,
+      "lines": 199,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/record.py",
+      "sha256": "25c9627427fb49925c6f32ea289e7a04ded7c79108db0ef3c5df5a18a5ba1b67",
+      "size_bytes": 975,
+      "lines": 31,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/rerun_f03_clean.py",
+      "sha256": "24fb4536bb21d1e7aae1d55a4b1a89a72fff80f82bd6f00fcb0aaf4810fec5ab",
+      "size_bytes": 3065,
+      "lines": 56,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/run_chat_end.py",
+      "sha256": "6459f7e1c1ebe0112bc720447122ec77a249f8e50ffd9ae5963c20e154b54233",
+      "size_bytes": 5438,
+      "lines": 152,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/run_kakao.py",
+      "sha256": "2a5fb05ca76f4990397d21013014d17b386b54b7301bf9b6c6a48a0964227ae3",
+      "size_bytes": 4667,
+      "lines": 123,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/run_memory.py",
+      "sha256": "40ae7b944457f6a60b643a7f297a81a0d82c28704595dd26dfd8414c9b0c957d",
+      "size_bytes": 7098,
+      "lines": 167,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/run_onboarding.py",
+      "sha256": "83151f9f9f5804c2aeec36f87f7c0a0cc9a63f2dbaf60e3f7d91246d1bef4507",
+      "size_bytes": 8264,
+      "lines": 198,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/run_practice.py",
+      "sha256": "ef81b59bfeb150b39d06912019aab3e684688c4f440e6af7b5b1951f72587f80",
+      "size_bytes": 8073,
+      "lines": 200,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/run_simulation.py",
+      "sha256": "37820d62722de58807719e408043e00371c95208e9bfd91c3d4e63224bd9af98",
+      "size_bytes": 3006,
+      "lines": 88,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/run_v1_extra.py",
+      "sha256": "b0c607609fd20c4568c0f317201622b8b70cf39a2d616f14d32f01bdbcdc993d",
+      "size_bytes": 850,
+      "lines": 22,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/run_v2_extra.py",
+      "sha256": "8b5dd02e054556063e19d6080c1f5975b7e8605ad5d12f4cb5a1f5250cd49bfc",
+      "size_bytes": 843,
+      "lines": 22,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/runctx.py",
+      "sha256": "249648c1a2d0e247dc2889d5d1200129a33a21f383981c0bb9bbbb799ba27992",
+      "size_bytes": 1020,
+      "lines": 23,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage3_types.py",
+      "sha256": "b630a6ef4af87f78b8d4ece3b683789fc29f92c79ce155cf44f048dcd0141833",
+      "size_bytes": 62205,
+      "lines": 1583,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage4_goldset.py",
+      "sha256": "5959d20702f30eeb8b637c2f52697b93856b6cf5fffd2a54cb92f7e1910f3828",
+      "size_bytes": 57814,
+      "lines": 1190,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage4_new_cases.py",
+      "sha256": "1490140ff585c90aa75a8b287063fd7a04396e0861c44098c4a25db7d6164b53",
+      "size_bytes": 113608,
+      "lines": 2682,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage5_checks.py",
+      "sha256": "485190d4f8743a96d41c15d1343dc9a8be30d9ce665185c0c9b74afcad84be3e",
+      "size_bytes": 21345,
+      "lines": 447,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage5_judges.py",
+      "sha256": "3dfdd95868ea0ab30ba77e28cf981f5271bb38089a60d90b679c7db68aaea24d",
+      "size_bytes": 28574,
+      "lines": 575,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage5_label_page.py",
+      "sha256": "ddf3dae0932344cb0cf275963aa7f3fd1a27cc2476b3b4a0bae75d40d932e6a2",
+      "size_bytes": 17439,
+      "lines": 324,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage5_labels.py",
+      "sha256": "9e7081a9a9dbdba7f270be5ce854c82e0755413945b02dbadcfa8c77cb2e6f78",
+      "size_bytes": 20995,
+      "lines": 500,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage5_rejudge.py",
+      "sha256": "1317b8d698bfba54b3dc4f5384f02cb6911281faa540d6ca915470cfbf285171",
+      "size_bytes": 17094,
+      "lines": 431,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage5_rescore.py",
+      "sha256": "dd2d15487a43a5c27672b57dc2073f465cccfd0bb62a6589db6031a41cf43524",
+      "size_bytes": 1542,
+      "lines": 45,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage5_run.py",
+      "sha256": "0d6f33aac30599831d68286efc87c163fb478f85013816b9215330994903f204",
+      "size_bytes": 51570,
+      "lines": 1286,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage5_supplement.py",
+      "sha256": "7b07279aa197da499a94615de1ede965214e88027a113cb49232e67bf3c0d650",
+      "size_bytes": 14758,
+      "lines": 358,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage6_baseline.py",
+      "sha256": "09800081dcfff8e9447ffd8172f75b6e986c9e84b1031084a6bdb7d770d9792d",
+      "size_bytes": 9277,
+      "lines": 224,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage6_cli.py",
+      "sha256": "b7573a5fd31297e26fcf609d198c7729d4281666e097a658c881007c4df84b09",
+      "size_bytes": 13495,
+      "lines": 354,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage6_compare.py",
+      "sha256": "f0f1ad972f87007bea4e1a3d5ff2ff6c4b1f4bb26f90f52cc4ed9cf66548ca26",
+      "size_bytes": 11182,
+      "lines": 238,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage6_gate.py",
+      "sha256": "4ec3a16e59c04aca16156d90be7f3a83cb486ed95efb8bae8f957de92f6d7e3f",
+      "size_bytes": 5336,
+      "lines": 129,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage6_holdout.py",
+      "sha256": "51a63ae004ce8e6ff3c37152eb01125084209e8d34d7daecc5723aa7ea4c6e48",
+      "size_bytes": 4823,
+      "lines": 116,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage6_manifest.py",
+      "sha256": "6535db8b6d23a788a68682522e15532f10a81a36a316a93f710c7b7059d9d6bc",
+      "size_bytes": 8430,
+      "lines": 239,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage6_preflight.py",
+      "sha256": "f575ce91eaadf99d71e08b2e2321e8f5e2d693fd9107942afdd9614e6ff094a9",
+      "size_bytes": 21065,
+      "lines": 543,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/stage6_scorecard.py",
+      "sha256": "24b341f1abfb2f4121367bb0d49fa7842ba181f822a1228664535ae8aefe7854",
+      "size_bytes": 21188,
+      "lines": 503,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/topup_onboarding.py",
+      "sha256": "ef44ec574339f7975141792c74b158db4a29ac7cab150a43ccd95ceca0802b62",
+      "size_bytes": 2758,
+      "lines": 72,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/view.py",
+      "sha256": "3b4ef76e15bc3b4df3a8aca736935daf6fbe70c6d3c1d233e4d7aeb257258ad1",
+      "size_bytes": 3831,
+      "lines": 84,
+      "cases": null
+    },
+    {
+      "path": "evals/_harness/xreview_packets.py",
+      "sha256": "91f5272044a52d149ffb14c750dca87002b91c03d6809f38078d0e9a70a9d282",
+      "size_bytes": 3549,
+      "lines": 68,
+      "cases": null
+    },
+    {
+      "path": "evals/f01-persona-conversation/calibration_supplement.jsonl",
+      "sha256": "7db91aff8b7b463ff496a3e897d5f031b6d6d5f9a32d3f4f6eeda131799ddffd",
+      "size_bytes": 3684,
+      "lines": 4,
+      "cases": null
+    },
+    {
+      "path": "evals/f01-persona-conversation/goldset.jsonl",
+      "sha256": "51c7f3642f9cf7eca10ecf2ef53b3f42ab9178a666c37b7b0b625a20e674d719",
+      "size_bytes": 109323,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f01-persona-conversation/judges/F-01.md",
+      "sha256": "148de6a90b51a228915d1c72052cd1070f7fd5e57c369b9b8278c780d0a3bef9",
+      "size_bytes": 8255,
+      "lines": 153,
+      "cases": null
+    },
+    {
+      "path": "evals/f01-persona-conversation/judges/F-02.md",
+      "sha256": "f7926e4c14c05f5c7873524039599dce950e916deebdcbaca1c0a13d9fc12e57",
+      "size_bytes": 6211,
+      "lines": 107,
+      "cases": null
+    },
+    {
+      "path": "evals/f01-persona-conversation/judges/F-03.md",
+      "sha256": "626e8803e3bdc770dad68b771608dca167f1d0f303d95b5f96209ddb3455cc62",
+      "size_bytes": 11680,
+      "lines": 185,
+      "cases": null
+    },
+    {
+      "path": "evals/f01-persona-conversation/judges/F-04.md",
+      "sha256": "7f4f38b9b03ba206da57ab3a3a43493a01367df5b2a8460cf63da6693593fd40",
+      "size_bytes": 8046,
+      "lines": 131,
+      "cases": null
+    },
+    {
+      "path": "evals/f01-persona-conversation/judges/F-08.md",
+      "sha256": "fb239858bf12161916834af6332bdaaf7c20f902e2661fbc90f2e80571557b27",
+      "size_bytes": 3883,
+      "lines": 64,
+      "cases": null
+    },
+    {
+      "path": "evals/f01-persona-conversation/judges/F-09.md",
+      "sha256": "40fed2e6237e7a58177ad11ae856ce7c6e38a71108826fe9442560bded8e439f",
+      "size_bytes": 4364,
+      "lines": 65,
+      "cases": null
+    },
+    {
+      "path": "evals/f01-persona-conversation/labels/calibration_final.csv",
+      "sha256": "80a71778e4293d50949c6e96e936543138db61ea772beb66de5909f68aef8bed",
+      "size_bytes": 970,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f02-persona-tagging/goldset.jsonl",
+      "sha256": "8be45d17fcae3e25278e284edb4d9a0e45e471aa2e9b1e73196d06605e307f12",
+      "size_bytes": 60479,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f02-persona-tagging/labels/calibration_final.csv",
+      "sha256": "bdd543692e86906f593597bc74ad7c7e8ff897689685b2bfeded3c9e02cae5fb",
+      "size_bytes": 535,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f03-persona-extraction/goldset.jsonl",
+      "sha256": "11ff3618dc3afcab386d85d3178d0c902036d60043af4adf5d34215d26c3108a",
+      "size_bytes": 89794,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f03-persona-extraction/judges/F-01.md",
+      "sha256": "74481d5a77250a68a9444229923947cc19acc46d139245e8f22cf47f17d74fc5",
+      "size_bytes": 9491,
+      "lines": 247,
+      "cases": null
+    },
+    {
+      "path": "evals/f03-persona-extraction/judges/F-02.md",
+      "sha256": "d0eb657869bed518f1e6c895d5dd7954b999a96692074d80914648a1ff0dad0d",
+      "size_bytes": 12495,
+      "lines": 309,
+      "cases": null
+    },
+    {
+      "path": "evals/f03-persona-extraction/judges/F-03.md",
+      "sha256": "20e3cdd870b572a665cafb957e298bf25452301be4475f02021ac2a0bb33cc73",
+      "size_bytes": 10762,
+      "lines": 261,
+      "cases": null
+    },
+    {
+      "path": "evals/f03-persona-extraction/judges/F-04.md",
+      "sha256": "9d4352914ffb4adfefd9042a75f0aeb1cc528172b60726d05dfd67c7cc9173c1",
+      "size_bytes": 6500,
+      "lines": 140,
+      "cases": null
+    },
+    {
+      "path": "evals/f03-persona-extraction/judges/F-07.md",
+      "sha256": "c68a4bff8185b5db734e1728b9f204b0ce6aa0d9d8bed9b28f89669e13546da4",
+      "size_bytes": 3690,
+      "lines": 62,
+      "cases": null
+    },
+    {
+      "path": "evals/f03-persona-extraction/labels/calibration_final.csv",
+      "sha256": "6791e6d619c97094e223a4f5d59ca8fe67867ed049413cc415d046679356247c",
+      "size_bytes": 1122,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f04-persona-extraction-style/goldset.jsonl",
+      "sha256": "41269d93fe7118d06676779dea7a4a5132a0f8599aed857d894e06690eb98ed8",
+      "size_bytes": 162888,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f04-persona-extraction-style/judges/F-05.md",
+      "sha256": "017a71cfbe4abd98f481b9a256e0ca14b9fbabd2e78cdef7c0b70ad66cbd1032",
+      "size_bytes": 3524,
+      "lines": 61,
+      "cases": null
+    },
+    {
+      "path": "evals/f04-persona-extraction-style/labels/calibration_final.csv",
+      "sha256": "d1f14327dbbd1ed61b44bcc635e050f50bbd21ef77c9815fc8ca07ed904bfc35",
+      "size_bytes": 810,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f05-v2-persona-extraction/goldset.jsonl",
+      "sha256": "3ca3dddf224467dce873ff36f3da4810cfd6a39c471a4768991f6f38da7f52c6",
+      "size_bytes": 161092,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f05-v2-persona-extraction/judges/F-04.md",
+      "sha256": "85307777b71e35c635ade7228fa444ba8c300e524614eb1d8c7692b2de9a1675",
+      "size_bytes": 3370,
+      "lines": 60,
+      "cases": null
+    },
+    {
+      "path": "evals/f05-v2-persona-extraction/labels/calibration_final.csv",
+      "sha256": "7dbaf6df66cc6f72172dffd8acf5d2227b977ca38b2612376f3fabe3eb0ea488",
+      "size_bytes": 760,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f06-practice-reply/calibration_supplement.jsonl",
+      "sha256": "795b7504032c748f0fc85ad1eac7942697f9a83edad69518e5aa2f6cdcdec1e3",
+      "size_bytes": 7761,
+      "lines": 8,
+      "cases": null
+    },
+    {
+      "path": "evals/f06-practice-reply/goldset.jsonl",
+      "sha256": "1b133a551994b2bd33970549ce311293e7848438a6137f1405511c0afe36d1d0",
+      "size_bytes": 82090,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f06-practice-reply/judges/F-01.md",
+      "sha256": "a2da3d46e384d5359647b1716bc418a32d4197a9695766eaa97708c66662569d",
+      "size_bytes": 7736,
+      "lines": 150,
+      "cases": null
+    },
+    {
+      "path": "evals/f06-practice-reply/judges/F-02.md",
+      "sha256": "8009548c4be97ab5c55ef420f49f514a0a8eeb529205d6922aef87c5e663ab91",
+      "size_bytes": 6495,
+      "lines": 114,
+      "cases": null
+    },
+    {
+      "path": "evals/f06-practice-reply/judges/F-06.md",
+      "sha256": "452fb0d8152b32a1472d2aa16a50dfa70dcef68b8e67c5c12989385ae56619d1",
+      "size_bytes": 3646,
+      "lines": 62,
+      "cases": null
+    },
+    {
+      "path": "evals/f06-practice-reply/judges/F-07.md",
+      "sha256": "4fe549a2cd5e4e337e03ffa57614c6310363dfa87752c3c80611743ed6b69b6d",
+      "size_bytes": 3962,
+      "lines": 63,
+      "cases": null
+    },
+    {
+      "path": "evals/f06-practice-reply/labels/calibration_final.csv",
+      "sha256": "b7ef5928c105a9c2c49dfb1d140fb5e5d97188126053196a1cb5970ccc6ada78",
+      "size_bytes": 856,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f07-v2-practice-speech-permission/goldset.jsonl",
+      "sha256": "8ce80d33e428ed630716e9250932bb105e7950ab3aad9dca12c8f92442e6e2ac",
+      "size_bytes": 20730,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f07-v2-practice-speech-permission/labels/calibration_final.csv",
+      "sha256": "b93e6164949269c18f3c825ca6a33588bc4984795c64ca7dcdacf13c373e7e8f",
+      "size_bytes": 431,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f08-v2-memory-extract/calibration_supplement.jsonl",
+      "sha256": "11a92c30f15426cd17e92aceaa56228dcfc34d7915df64691581fa59b5d93658",
+      "size_bytes": 3242,
+      "lines": 4,
+      "cases": null
+    },
+    {
+      "path": "evals/f08-v2-memory-extract/goldset.jsonl",
+      "sha256": "794488ac651cf97156fc1b3629541f900c307d827f958629d41902a7336fed5e",
+      "size_bytes": 105300,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f08-v2-memory-extract/judges/F-01.md",
+      "sha256": "4765d5a9df29b5188f66bd297c6b144f9373081fea2a3c9d48f4dbf656f32c32",
+      "size_bytes": 11852,
+      "lines": 404,
+      "cases": null
+    },
+    {
+      "path": "evals/f08-v2-memory-extract/judges/F-02.md",
+      "sha256": "6479a5373d0ff76cd8fedff28b1d892aab21778c22b26f055d15950915ba002f",
+      "size_bytes": 5082,
+      "lines": 127,
+      "cases": null
+    },
+    {
+      "path": "evals/f08-v2-memory-extract/judges/F-06.md",
+      "sha256": "907f8dd836c7b7cb22591a67d6d6c51bb08e835326af7dc03c824a655eb338a3",
+      "size_bytes": 4066,
+      "lines": 62,
+      "cases": null
+    },
+    {
+      "path": "evals/f08-v2-memory-extract/labels/calibration_final.csv",
+      "sha256": "814b5c48bc76decb2152ffe0c328bbcd6f3cbd8b05de92635a9cba57a1c764df",
+      "size_bytes": 806,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f09-v2-memory-reconcile/goldset.jsonl",
+      "sha256": "5f315735cf973871e7bd6f89be24b502048afe6c3cc65d8d375af5257268f8b3",
+      "size_bytes": 87819,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f09-v2-memory-reconcile/judges/F-01.md",
+      "sha256": "423bca6ca6998f3671fced3bbd4eb81b3f8fbd7c16346c9979aa4629bab72b15",
+      "size_bytes": 9892,
+      "lines": 343,
+      "cases": null
+    },
+    {
+      "path": "evals/f09-v2-memory-reconcile/judges/F-02.md",
+      "sha256": "0c001776a6c5f34758a74fdcd608e472ab59925b6b2bbff7cf03730d1b95888b",
+      "size_bytes": 6344,
+      "lines": 212,
+      "cases": null
+    },
+    {
+      "path": "evals/f09-v2-memory-reconcile/judges/F-03.md",
+      "sha256": "1d7ed73680680dd8598483e9ed3f76ecf4365e0123bb7d1db70fe82102f24891",
+      "size_bytes": 6371,
+      "lines": 200,
+      "cases": null
+    },
+    {
+      "path": "evals/f09-v2-memory-reconcile/labels/calibration_final.csv",
+      "sha256": "cc8f848a6fd127e57666c6e96fb3fae36c7044e9327154f6c58711fbedb2aaa6",
+      "size_bytes": 768,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f10-simulation-v1-speak/goldset.jsonl",
+      "sha256": "39cd40b3db4577be868ba247c43aa61ee8c2a01ff8b510558cd73cf9e7da86fe",
+      "size_bytes": 67889,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f10-simulation-v1-speak/judges/F-04.md",
+      "sha256": "a8614b8d56e68fdfadfe807343658b1a002bf83b122dbbbc92c49a288cd46080",
+      "size_bytes": 4331,
+      "lines": 100,
+      "cases": null
+    },
+    {
+      "path": "evals/f10-simulation-v1-speak/labels/calibration_final.csv",
+      "sha256": "595c722b33a1d948d990717cbb28f6d551334f7ce2635df6c4da6ae88bed794c",
+      "size_bytes": 700,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f11-simulation-migration-report/goldset.jsonl",
+      "sha256": "5717f58666051894ec435bbe6aabb84b693c4399c9f80538d9a5dedafa994fca",
+      "size_bytes": 78293,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f11-simulation-migration-report/labels/calibration_final.csv",
+      "sha256": "d0a0d85396e90de1cb8de83747d1aaaa182c30178585d79018c4fd0d8dd6abc9",
+      "size_bytes": 656,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f12-simulation-v2-generate/calibration_supplement.jsonl",
+      "sha256": "5a81fca1c7c1df3a68c79793f3acd6c2df57429cee1a71f67220133b4a694101",
+      "size_bytes": 18497,
+      "lines": 12,
+      "cases": null
+    },
+    {
+      "path": "evals/f12-simulation-v2-generate/goldset.jsonl",
+      "sha256": "f30affbe3ee03b54ede1c5636cbe506e8c5f017b6dc5570278aeda74d4d4e68c",
+      "size_bytes": 104567,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f12-simulation-v2-generate/judges/F-04.md",
+      "sha256": "9ca3659678108e20136e723d261e04b208f3df8324fd6334c03c1e378acd8003",
+      "size_bytes": 7048,
+      "lines": 115,
+      "cases": null
+    },
+    {
+      "path": "evals/f12-simulation-v2-generate/judges/F-05.md",
+      "sha256": "498d7a440ab5790ce46378e4440f91b9c5f49efdf3f1d3f02391a9c645553eeb",
+      "size_bytes": 8652,
+      "lines": 137,
+      "cases": null
+    },
+    {
+      "path": "evals/f12-simulation-v2-generate/judges/F-06.md",
+      "sha256": "65aa887bd0ee08dbc6fa70b4dd9cd45bbfd5d8c5173309bcfce1cdf631c3f795",
+      "size_bytes": 9233,
+      "lines": 141,
+      "cases": null
+    },
+    {
+      "path": "evals/f12-simulation-v2-generate/judges/F-07.md",
+      "sha256": "e48a6feb311331d1c0a13626a0286121526c1e7a9c7424c9768692280985b59c",
+      "size_bytes": 7540,
+      "lines": 136,
+      "cases": null
+    },
+    {
+      "path": "evals/f12-simulation-v2-generate/judges/F-10.md",
+      "sha256": "fdf5b10950af06f41ba7829f762fba7b185be59f9eedf95b1e51872a07c97594",
+      "size_bytes": 4019,
+      "lines": 65,
+      "cases": null
+    },
+    {
+      "path": "evals/f12-simulation-v2-generate/labels/calibration_final.csv",
+      "sha256": "098aea9ab545b2fb26d774463d14365ad2f173c4c05b11d15cef34720a348b46",
+      "size_bytes": 1167,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f13-simulation-v2-regenerate/goldset.jsonl",
+      "sha256": "cf7e1484b2a6b69bf4f69b379eefdbc9d5d421fd04d1f0e61a6dfdc55f845517",
+      "size_bytes": 88482,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f13-simulation-v2-regenerate/judges/F-04.md",
+      "sha256": "8d0fa97aff4a9035cf0c63c578349788306527d31cd259b165c7f12c0e30f469",
+      "size_bytes": 8964,
+      "lines": 130,
+      "cases": null
+    },
+    {
+      "path": "evals/f13-simulation-v2-regenerate/labels/calibration_final.csv",
+      "sha256": "a50952444b6588e822a3c40e7e1d4e141e8b0f1dbb2745271fc53c80490cb67a",
+      "size_bytes": 781,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f14-simulation-v2-judge/goldset.jsonl",
+      "sha256": "16178151c435274000f7b9954fb518e4b1586e781ed59faa8d6e8aa2ba98e8c3",
+      "size_bytes": 119518,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f14-simulation-v2-judge/labels/calibration_final.csv",
+      "sha256": "cd28c519a398f9524239025d1ca02292dfdf2f1a05078a8f84955fbd2d37744e",
+      "size_bytes": 859,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f15-simulation-v2-repair/goldset.jsonl",
+      "sha256": "6dcba577527e4ad27e87e51190b1739b7e267f0a689509653bed77857a47c28b",
+      "size_bytes": 113120,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f15-simulation-v2-repair/judges/F-02.md",
+      "sha256": "345afe0842a821d56994176c4444f21ec0dafab9a20a3c66a9a205c96ee3948a",
+      "size_bytes": 14340,
+      "lines": 176,
+      "cases": null
+    },
+    {
+      "path": "evals/f15-simulation-v2-repair/labels/calibration_final.csv",
+      "sha256": "d153576d2fa88f7fb1e81e2a7e3e2ecbb0fc66c94a962878a34a759bee113ba5",
+      "size_bytes": 657,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f16-simulation-v2-report/goldset.jsonl",
+      "sha256": "f03180c2b5a1d674a46f5f357c09f2a25485ddd893b5c8d075b6e5a13ac9dbf9",
+      "size_bytes": 96831,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f16-simulation-v2-report/judges/F-01.md",
+      "sha256": "d4656df887f62fca09c087609095fd2ca327e74ef7dc33d4914acd7e1f9589c3",
+      "size_bytes": 11773,
+      "lines": 148,
+      "cases": null
+    },
+    {
+      "path": "evals/f16-simulation-v2-report/judges/F-02.md",
+      "sha256": "f6730adf7d8be767d3ec00527272a00a046ff8760f8773010373f3742e24bb36",
+      "size_bytes": 11172,
+      "lines": 150,
+      "cases": null
+    },
+    {
+      "path": "evals/f16-simulation-v2-report/labels/calibration_final.csv",
+      "sha256": "5904007362efa94897c306e8211fbc55c2311da171135dc09156acfe98abf9b2",
+      "size_bytes": 780,
+      "lines": 13,
+      "cases": null
+    },
+    {
+      "path": "evals/f17-chat-end-drafts/calibration_supplement.jsonl",
+      "sha256": "633bb7fe37d138444fc0d70f382dee1a9d79143299edc2d04b7f61fcc60a5e0b",
+      "size_bytes": 4678,
+      "lines": 4,
+      "cases": null
+    },
+    {
+      "path": "evals/f17-chat-end-drafts/goldset.jsonl",
+      "sha256": "ba32f3328b3ff7325936cbea1c86f2d3d3f677a253ec9b06dbb169e4048448af",
+      "size_bytes": 53640,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f17-chat-end-drafts/judges/F-01.md",
+      "sha256": "3b9e200762fa826b308b0d704641e7ac18842409b2d2b333de5be3abefd396e9",
+      "size_bytes": 6867,
+      "lines": 170,
+      "cases": null
+    },
+    {
+      "path": "evals/f17-chat-end-drafts/judges/F-02.md",
+      "sha256": "07dfb09145ba08c549a68e91bd6e0e68cf162070ea256daf5c66bf02bf7345b6",
+      "size_bytes": 6323,
+      "lines": 158,
+      "cases": null
+    },
+    {
+      "path": "evals/f17-chat-end-drafts/judges/F-03.md",
+      "sha256": "05ba659cdf63b4c27e878a61e92b66637dda8829f539438dbb8b6c9f05a124da",
+      "size_bytes": 5351,
+      "lines": 120,
+      "cases": null
+    },
+    {
+      "path": "evals/f17-chat-end-drafts/labels/calibration_final.csv",
+      "sha256": "4e302eb1ea2bb220f9c7a0032b7d4f9abbb6f81b251bac5641114b1684fed803",
+      "size_bytes": 588,
+      "lines": 12,
+      "cases": null
+    },
+    {
+      "path": "evals/f18-chat-end-message/calibration_supplement.jsonl",
+      "sha256": "2d3071df4bd8df997dbf6c8dc7f2d7af750159668aa57b64116e515972aaa541",
+      "size_bytes": 4518,
+      "lines": 4,
+      "cases": null
+    },
+    {
+      "path": "evals/f18-chat-end-message/goldset.jsonl",
+      "sha256": "1f33d95ffc461617b3fc55067aac1632c557e7e2f13f5c2733649350a0641037",
+      "size_bytes": 89190,
+      "lines": 40,
+      "cases": 40
+    },
+    {
+      "path": "evals/f18-chat-end-message/judges/F-02.md",
+      "sha256": "b2866ca62d81cff20fcb09ca86ca7a9a2f1532f369fe14e2698704388406e403",
+      "size_bytes": 6295,
+      "lines": 148,
+      "cases": null
+    },
+    {
+      "path": "evals/f18-chat-end-message/judges/F-03.md",
+      "sha256": "5e5ad4a4212064a7688c2b451f58268610f7c599ef212afc300e3f3a1c5c14db",
+      "size_bytes": 7848,
+      "lines": 200,
+      "cases": null
+    },
+    {
+      "path": "evals/f18-chat-end-message/judges/F-04.md",
+      "sha256": "05a746ba9be495d386bd6f38a2860b8a5175f5a740579a32fda030a3646bfb53",
+      "size_bytes": 6532,
+      "lines": 136,
+      "cases": null
+    },
+    {
+      "path": "evals/f18-chat-end-message/judges/F-05.md",
+      "sha256": "a8b6142c972f5d9c5eb6f6806444763b80805c9ef1de7d64870ecbc8a14a9c66",
+      "size_bytes": 6673,
+      "lines": 145,
+      "cases": null
+    },
+    {
+      "path": "evals/f18-chat-end-message/judges/F-07.md",
+      "sha256": "84fdbf1a086ce2bd276d00a74e81d658dd1dd635a803b4049fef634a1ac96abe",
+      "size_bytes": 3676,
+      "lines": 62,
+      "cases": null
+    },
+    {
+      "path": "evals/f18-chat-end-message/labels/calibration_final.csv",
+      "sha256": "86bc0307bd9a048fe507d98420917168a86d6e445641d2dc5bb978944ddefa7d",
+      "size_bytes": 871,
+      "lines": 13,
+      "cases": null
+    }
+  ]
+}

@@ -6,7 +6,7 @@ import pytest
 
 from app.features.persona.agents import TAG_PROMPT, parse_tags, tagging_messages
 from scripts.eval_tagging import _arguments, load_cases, score, summarize
-from training.tagging.build_sft import is_validation, to_record
+from training.tagging.build_sft import is_validation, main, to_record
 from training.tagging.data import TagExample, eval_answers, normalize, validate
 
 
@@ -76,6 +76,44 @@ def test_duplicate_ids_and_pairs_are_rejected():
 def test_validation_split_is_stable_per_id():
     assert is_validation("t-1", 0.5) == is_validation("t-1", 0.5)
     assert sum(is_validation(f"t-{i}", 0.2) for i in range(1000)) in range(150, 250)
+
+
+def _build(tmp_path, examples: list[TagExample], *extra: str) -> tuple[dict, dict[str, list[str]]]:
+    src = tmp_path / "examples.jsonl"
+    src.write_text("".join(ex.model_dump_json() + "\n" for ex in examples), encoding="utf-8")
+    out = tmp_path / "out"
+    assert main([str(src), "--out", str(out), "--val-ratio", "0.5", *extra]) == 0
+    ids = {
+        name: [json.loads(line)["id"] for line in (out / f"{name}.jsonl").read_text().splitlines()]
+        for name in ("train", "val")
+    }
+    return json.loads((out / "manifest.json").read_text()), ids
+
+
+def test_split_keeps_each_session_on_one_side(tmp_path):
+    # 같은 사람의 다른 답이 train 에 있으면 val 이 처음 보는 사용자를 재지 못한다
+    examples = [
+        example(id=f"s{s}-t{t}", answer=f"세션 {s} 의 {t}번째 답이에요", group=f"seed-{s}")
+        for s in range(20)
+        for t in range(3)
+    ]
+    _, ids = _build(tmp_path, examples)
+
+    side = {i: name for name, rows in ids.items() for i in rows}
+    for s in range(20):
+        assert len({side[f"s{s}-t{t}"] for t in range(3)}) == 1
+    assert ids["train"] and ids["val"]
+
+
+def test_max_primary_drops_over_tagged_examples(tmp_path):
+    examples = [
+        example(id="one", answer="답 하나", primary=["routine"]),
+        example(id="three", answer="답 셋", primary=["routine", "interests", "anxiety"]),
+    ]
+    manifest, ids = _build(tmp_path, examples, "--max-primary", "2")
+
+    assert sorted(ids["train"] + ids["val"]) == ["one"]
+    assert manifest["dropped_by_max_primary"] == 1 and manifest["max_primary"] == 2
 
 
 EXPECTED = {

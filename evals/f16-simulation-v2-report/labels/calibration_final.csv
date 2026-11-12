@@ -1,0 +1,13 @@
+﻿case_id,F-01,F-02,F-03,F-04,출처
+16-v2-004-report1,PASS,NA,PASS,FAIL,Claude+Codex·Grok 일치
+16-v2-010-report1,FAIL,NA,PASS,FAIL,Codex·Grok 일치
+16-v2-015-report1,PASS,NA,PASS,PASS,Claude+Codex·Grok 일치
+16-v2-111-report1,PASS,PASS,PASS,PASS,Codex·Grok 일치
+16-v2-008-report-fill,FAIL,NA,PASS,FAIL,Claude+Codex·Grok 일치
+16-v2-014-report-fill,PASS,NA,PASS,FAIL,Claude+Codex·Grok 일치
+16-v2-019-report-fill,PASS,NA,PASS,PASS,Codex·Grok 일치
+16-v2-026-report-fill,FAIL,NA,PASS,FAIL,Codex·Grok 일치
+16-v2-029-report-fill,FAIL,NA,PASS,FAIL,Codex·Grok 일치
+16-v2-103-report-fill,PASS,NA,FAIL,FAIL,Codex·Grok 일치
+16-v2-104-report-fill,PASS,NA,PASS,FAIL,Claude+Codex·Grok 일치
+16-v2-107-report-fill,FAIL,NA,PASS,FAIL,Codex·Grok 일치

@@ -1,6 +1,6 @@
 """v2 사용자 사실 추출(extract) 및 중복/모순 판정(judge) 에이전트.
 
-LLM 호출은 v1 과 같은 경로다 — persona.agents._call_json (OpenAI 호환 클라이언트, llm_model, llm_retry 재시도).
+LLM 호출은 v1 과 같은 경로다 — persona.agents._call_json (OpenAI 호환 클라이언트, llm_model_v2, llm_retry 재시도).
 """
 
 from __future__ import annotations
@@ -13,8 +13,13 @@ from langfuse import observe
 from pydantic import ValidationError
 
 from app.core.config import get_settings
-from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
-from app.features.persona.agents import LLMError, _call_json
+from app.core.observability import (
+    LangfuseMetadata,
+    propagate_langfuse_metadata,
+    record_rule_result,
+    track_model_selection,
+)
+from app.v2.llm import LLMError, _call_json
 
 from .embedder import normalize_chat_text
 from .schemas import ExtractionOutput, ReconcileBatchOutput
@@ -74,6 +79,7 @@ target_id 는 반드시 existing_candidates 의 id 중에서만 고른다.
 
 class PersonaMemoryExtractor:
     @observe(name="v2-memory-extract", capture_input=False, capture_output=False)
+    @track_model_selection("v2-memory-extract")
     async def extract(
         self,
         *,
@@ -113,6 +119,7 @@ class PersonaMemoryExtractor:
 
 class PersonaMemoryReconcileJudge:
     @observe(name="v2-memory-reconcile", capture_input=False, capture_output=False)
+    @track_model_selection("v2-memory-reconcile")
     async def judge_batch(
         self,
         items: list[tuple[int, dict[str, Any], list[float], list[tuple[Any, float]]]],
@@ -159,11 +166,13 @@ class PersonaMemoryReconcileJudge:
 
         by_idx = {d.new_fact_index: d for d in out.decisions}
         results: list[dict[str, Any]] = []
+        rule_count = 0
         for idx, fact_item, _, candidates in items:
             valid_ids = {c.id for c, _ in candidates}
             dec = by_idx.get(idx)
             # 판정이 빠졌거나, 후보에 없는 target_id 를 지어냈거나, 대상이 필요한 액션인데 대상이 없으면 안전하게 ADD
             if dec is None or (dec.action in ("UPDATE", "DELETE", "PROMOTE") and dec.target_id not in valid_ids):
+                rule_count += 1
                 results.append({"action": "ADD", "target_id": None, "updated_fact": fact_item["fact"]})
             else:
                 results.append(
@@ -173,4 +182,6 @@ class PersonaMemoryReconcileJudge:
                         "updated_fact": dec.updated_fact or fact_item["fact"],
                     }
                 )
+        if rule_count:
+            record_rule_result("invalid_reconcile_decision", mixed=rule_count < len(results))
         return results

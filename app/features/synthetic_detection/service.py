@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import math
 import threading
 from pathlib import Path
@@ -17,6 +18,8 @@ from app.core.errors import ModelUnavailable
 from app.core.media import decode_image
 
 from .schemas import SyntheticDecision, SyntheticResult
+
+logger = logging.getLogger(__name__)
 
 MODEL_VERSION = "community-forensics-vit-v1.1-int8"
 AI_SOURCE_MARKERS = (
@@ -71,31 +74,69 @@ class SyntheticDetectionService:
         decode_image(data)
         provenance = self.provenance.inspect(data, content_type)
         if provenance == "confirmed-ai":
-            return SyntheticResult(
+            result = SyntheticResult(
                 decision=SyntheticDecision.CONFIRMED_SYNTHETIC,
                 probability=None,
                 provenance=provenance,
                 model_version=MODEL_VERSION,
                 signals=["TRUSTED_AI_PROVENANCE"],
             )
+            self._log(result, data, None)
+            return result
 
         probability = self._predict(data)
-        signals = self._visual_signals(data)
+        metrics = self._visual_metrics(data)
+        signals = self._signals_from(metrics)
         decision = (
             SyntheticDecision.SYNTHETIC_RISK if probability >= self.threshold or signals else SyntheticDecision.CLEAR
         )
-        return SyntheticResult(
+        result = SyntheticResult(
             decision=decision,
             probability=round(probability, 6),
             provenance=provenance,
             model_version=MODEL_VERSION,
             signals=signals,
         )
+        self._log(result, data, metrics)
+        return result
 
-    def _visual_signals(self, data: bytes) -> list[str]:
+    def _log(self, result: SyntheticResult, data: bytes, metrics: tuple[int, int, float, float] | None) -> None:
+        # 이미지는 남기지 않고 판정 근거 수치만 기록한다. 일반 사진이 합성으로 탈락하면 어느 경로였는지 가린다.
+        if metrics is None:
+            with Image.open(io.BytesIO(data)) as source:
+                width, height = ImageOps.exif_transpose(source).size
+            axis_ratio = edge_density = "-"
+        else:
+            width, height, axis, edge = metrics
+            axis_ratio, edge_density = f"{axis:.3f}", f"{edge:.3f}"
+        logger.info(
+            "synthetic check decision=%s probability=%s threshold=%.3f signals=%s provenance=%s size=%dx%d "
+            "axis_ratio=%s edge_density=%s",
+            result.decision.value,
+            f"{result.probability:.3f}" if result.probability is not None else "-",
+            self.threshold,
+            ",".join(result.signals) or "-",
+            result.provenance,
+            width,
+            height,
+            axis_ratio,
+            edge_density,
+        )
+
+    def _signals_from(self, metrics: tuple[int, int, float, float] | None) -> list[str]:
+        if metrics is None:
+            return []
+        _, _, axis_ratio, edge_density = metrics
+        if axis_ratio >= self.pixel_art_min_axis_ratio and edge_density >= self.pixel_art_min_edge_density:
+            return ["PIXEL_ART_OR_ILLUSTRATION"]
+        return []
+
+    def _visual_metrics(self, data: bytes) -> tuple[int, int, float, float] | None:
+        """(원본 가로, 세로, 수평·수직 테두리 비율, 테두리 밀도). 강한 테두리가 거의 없으면 None."""
         with Image.open(io.BytesIO(data)) as source:
             image = np.asarray(ImageOps.exif_transpose(source).convert("RGB"))
         height, width = image.shape[:2]
+        original_width, original_height = width, height
         scale = min(1.0, 512 / max(width, height))
         if scale < 1:
             image = cv2.resize(
@@ -109,15 +150,13 @@ class SyntheticDetectionService:
         magnitude = np.hypot(gradient_x, gradient_y)
         strong = magnitude > 30
         if int(strong.sum()) < 100:
-            return []
+            return None
 
         angles = np.abs(np.arctan2(gradient_y[strong], gradient_x[strong]))
         axis_distance = np.minimum.reduce([angles, np.abs(angles - np.pi / 2), np.abs(angles - np.pi)])
         axis_ratio = float((axis_distance < np.deg2rad(8)).mean())
         edge_density = float((cv2.Canny(gray, 50, 150) > 0).mean())
-        if axis_ratio >= self.pixel_art_min_axis_ratio and edge_density >= self.pixel_art_min_edge_density:
-            return ["PIXEL_ART_OR_ILLUSTRATION"]
-        return []
+        return original_width, original_height, axis_ratio, edge_density
 
     def _predict(self, data: bytes) -> float:
         session = self._get_session()

@@ -23,7 +23,7 @@ from langgraph.graph import END, StateGraph
 from app.core.config import get_settings
 
 from . import generator, repair, report, verifier
-from .llm import SimLLMError
+from .llm import SimLLMError, call_text
 from .schemas import (
     FAIL_TYPES,
     SPEAKER_MIXUP_TYPES,
@@ -35,6 +35,7 @@ from .schemas import (
     SimContext,
     SimV2State,
     StageCallback,
+    TextLLMCaller,
     TopicFact,
     TraceEvent,
     TraceIssue,
@@ -72,11 +73,13 @@ def build_graph(
     *,
     llm: LLMCaller,
     judge_llm: LLMCaller,
+    text_llm: TextLLMCaller | None = None,
     on_stage: StageCallback | None,
     clock: Callable[[], float],
     metadata: dict[str, Any] | None,
 ):
     s = get_settings()
+    effective_text_llm = text_llm or call_text
 
     def remaining(st: SimV2State) -> float:
         return st.attempts.deadline - clock()
@@ -123,8 +126,15 @@ def build_graph(
         ev = TraceEvent(node=node)
         timeout = max(min(s.simulation_v2_generate_timeout_s, remaining(st)), 0.1)
         try:
-            script, res = await generator.generate(
-                llm, st.ctx, st.topics, st.turns, correction=correction, timeout=timeout, metadata=metadata
+            # [NOW] 항상 text 형식. [OLD] JSON 경로는 generator.generate_old 에 남아 있다(호출 안 함)
+            script, res = await generator.generate_text(
+                effective_text_llm,
+                st.ctx,
+                st.topics,
+                st.turns,
+                correction=correction,
+                timeout=timeout,
+                metadata=metadata,
             )
             ev.prompt_tokens, ev.completion_tokens = res.prompt_tokens, res.completion_tokens
             last_err = None
@@ -309,6 +319,7 @@ async def run_harness(
     job_id: str,
     llm: LLMCaller,
     judge_llm: LLMCaller | None = None,
+    text_llm: TextLLMCaller | None = None,
     on_stage: StageCallback | None = None,
     clock: Callable[[], float] = time.monotonic,
     deadline_s: float | None = None,
@@ -324,7 +335,14 @@ async def run_harness(
         facts_b=facts_b,
         attempts=Budget(deadline=clock() + total),
     )
-    graph = build_graph(llm=llm, judge_llm=judge_llm or llm, on_stage=on_stage, clock=clock, metadata=metadata)
+    graph = build_graph(
+        llm=llm,
+        judge_llm=judge_llm or llm,
+        text_llm=text_llm,
+        on_stage=on_stage,
+        clock=clock,
+        metadata=metadata,
+    )
     raw = await graph.ainvoke(state, config={"recursion_limit": 50})
     final = raw if isinstance(raw, SimV2State) else SimV2State.model_validate(raw)
 

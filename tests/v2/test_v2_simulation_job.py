@@ -129,7 +129,7 @@ def test_run_success_saves_simulation_and_trace():
         script[2] = script[2].model_copy(update={"fact_refs": ["A-f1"]})
         llm = _ok_llm(script)
         async with sessions() as db:
-            await SimulationV2Service(db, llm=llm).run(job_id)
+            await SimulationV2Service(db, llm=llm, text_llm=llm).run(job_id)
 
         async with sessions() as db:
             svc = SimulationV2Service(db)
@@ -153,7 +153,7 @@ def test_run_success_saves_simulation_and_trace():
             assert [x.simulation_id for x in listed_me] == [sim.id] == [x.simulation_id for x in listed_partner]
 
         # 생성 프롬프트에 코어 성격은 들어가고 직업(민감)은 들어가지 않는다
-        gen = next(c for c in llm.calls if c["name"] == "simulation-v2-generate")
+        gen = next(c for c in llm.calls if c["name"] == "simulation-v2-generate-text")
         assert "차분함" in gen["user"] and "개발자" not in gen["user"]
 
     asyncio.run(with_db(scenario))
@@ -179,7 +179,7 @@ def test_run_failure_records_reason_and_no_simulation():
             }
         )
         async with sessions() as db:
-            await SimulationV2Service(db, llm=llm).run(job_id)
+            await SimulationV2Service(db, llm=llm, text_llm=llm).run(job_id)
         async with sessions() as db:
             job = await SimulationV2Service(db).get_job(job_id)
             assert job.status == "failed" and job.error == "speaker_mixup_unresolved"
@@ -200,7 +200,7 @@ def test_run_crash_marks_internal_error():
             await db.commit()
             job_id = job.id
         async with sessions() as db:
-            await SimulationV2Service(db, llm=boom).run(job_id)
+            await SimulationV2Service(db, llm=boom, text_llm=boom).run(job_id)
         async with sessions() as db:
             job = await SimulationV2Service(db).get_job(job_id)
             assert job.status == "failed" and job.error == "internal_error"
@@ -218,7 +218,7 @@ def test_run_ignores_non_pending_job():
             job_id = job.id
         llm = _ok_llm()
         async with sessions() as db:
-            await SimulationV2Service(db, llm=llm).run(job_id)
+            await SimulationV2Service(db, llm=llm, text_llm=llm).run(job_id)
         assert llm.calls == []
 
     asyncio.run(with_db(scenario))
@@ -250,8 +250,9 @@ def test_partner_by_session_without_facts_runs_solo_or_persona_only():
             job = await SimulationV2Service(db).start(_req(partner_user_id=None, partner_session_id="s-pb"))
             await db.commit()
             job_id = job.id
+        ok = _ok_llm()
         async with sessions() as db:
-            await SimulationV2Service(db, llm=_ok_llm()).run(job_id)
+            await SimulationV2Service(db, llm=ok, text_llm=ok).run(job_id)
         async with sessions() as db:
             job = await SimulationV2Service(db).get_job(job_id)
             assert job.status == "succeeded"
@@ -273,5 +274,56 @@ def test_conflict_survives_partner_persona_new_version():
             assert job.partner_persona_id in {"pb", "pb2"}
             with pytest.raises(JobInProgress):
                 await SimulationV2Service(db).start(_req(partner_user_id=None, partner_persona_id="pb"))
+
+    asyncio.run(with_db(scenario))
+
+
+def test_post_route_runs_in_other_session_and_returns_result():
+    """POST 는 요청 세션에서 작업을 만들고 다른 세션에서 실행한다.
+    expire_on_commit=False 라 요청 세션이 예전 job 을 들고 있어도 실행 결과를 다시 읽어 201 로 돌려줘야 한다."""
+    import httpx
+    from fastapi import FastAPI
+
+    from app.core.db import get_db
+    from app.v2.simulation import api
+
+    async def scenario(sessions):
+        async with sessions() as db:
+            await _seed(db)
+            await db.commit()
+
+        async def runner(job_id):
+            ok = _ok_llm()
+            async with sessions() as db:
+                await SimulationV2Service(db, llm=ok, text_llm=ok).run(job_id)
+
+        async def fake_db():
+            async with sessions() as db:
+                yield db
+
+        app = FastAPI()
+        app.include_router(api.router)
+        app.dependency_overrides[get_db] = fake_db
+        app.dependency_overrides[api.get_runner] = lambda: runner
+        transport = httpx.ASGITransport(app=app)
+        async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+            r = await client.post("/v2/simulation", json={"me_user_id": "u-a", "partner_user_id": "u-b"})
+            assert r.status_code == 201, r.text
+            body = r.json()
+            assert body["simulation_id"] and len(body["transcript"]) == 20
+            assert body["report"]["simulation_id"] == body["simulation_id"]
+
+            # 같은 조합을 다시 돌려도 앞 작업이 끝났으니 409 가 아니다
+            failing = FakeLLM({"generate": [RuntimeError("llm down")]})
+
+            async def failing_runner(job_id):
+                async with sessions() as db:
+                    await SimulationV2Service(db, llm=failing, text_llm=failing).run(job_id)
+
+            app.dependency_overrides[api.get_runner] = lambda: failing_runner
+            r = await client.post("/v2/simulation", json={"me_user_id": "u-a", "partner_user_id": "u-b"})
+            assert r.status_code == 503, r.text
+            detail = r.json()["detail"]
+            assert detail["reason"] and detail["simulation_id"] is None and detail["job_id"]
 
     asyncio.run(with_db(scenario))

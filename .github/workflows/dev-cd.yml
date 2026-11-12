@@ -21,6 +21,8 @@ env:
 jobs:
 
     build_image:
+        # DEV CD is suspended during the Jenkins transition.
+        if: ${{ false }}
         name: Build and Push DEV Image
         runs-on: ubuntu-latest
         steps:
@@ -54,6 +56,7 @@ jobs:
 
     deploy:
 
+        if: ${{ false }}
         name: Deploy AI to DEV
         needs: build_image
         runs-on: ubuntu-latest
@@ -97,6 +100,11 @@ jobs:
                       docker login --username AWS --password-stdin $ECR_REGISTRY && \
                     sed -i 's|^AI_IMAGE=.*|AI_IMAGE=$IMAGE_URL|' .env && \
                     docker compose pull ai && \
+                    sed -i -e '/^LANGFUSE_TRACING_ENVIRONMENT=/d' \
+                      -e '/^LANGFUSE_RELEASE=/d' ai/.env && \
+                    printf '\n%s\n%s\n' \
+                      'LANGFUSE_TRACING_ENVIRONMENT=development' \
+                      'LANGFUSE_RELEASE=$IMAGE_TAG' >> ai/.env && \
                     docker compose run --rm --no-deps \
                       --entrypoint /code/.venv/bin/alembic ai upgrade head && \
                     docker compose up -d --no-deps ai"

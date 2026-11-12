@@ -20,6 +20,14 @@ python3 scripts/gold_drafts.py prepare drafts/tagging_opus.jsonl drafts/tagging_
 python3 scripts/gold_drafts.py build --kind tagging --labels A.csv B.csv --reviewers lena,yuta
 python3 scripts/gold_drafts.py build --kind tagging --labels A.csv B.csv --reviewers lena,yuta --adjudicated adj.csv
 
+# 기존 골드셋(상위 폴더, LLM 초안 라벨)을 사람이 다시 다는 경우: prepare 대신 export. caseId·split·입력은 그대로,
+# 초안 라벨은 시트에 숨긴다(items.jsonl 의 hidden). 기본은 calibration+regression 의 label_accuracy (태깅 63, 추출 24)
+python3 scripts/gold_drafts.py export --kind tagging    # → data/gold_work/existing/tagging/sheet.csv
+python3 scripts/gold_drafts.py build --kind tagging --labels A.csv B.csv --reviewers lena,yuta --work-dir data/gold_work/existing
+#    엑셀 검수표(사람검수표_검수자A·B.xlsx)로 검수했으면 export 뒤 라벨 시트로 바꿔 build 에 넣는다 (openpyxl 은 dev 의존성)
+#    완료 행만 옮기고, 기준(P1~P8)·합의 버전이 검수자끼리 다르면 멈춘다. 보류 3문항은 --include-hold 로만
+uv run python scripts/gold_review_xlsx.py 검수자A.xlsx 검수자B.xlsx   # → data/gold_work/existing/labels/{tagging,build}_<검수자>.csv
+
 # 채점에 쓰기
 python3 scripts/score_teacher_gold.py data/teacher/run --gold-dir evals/quality_datasets/human
 python3 scripts/label_with_teacher.py --gold --gold-dir evals/quality_datasets/human

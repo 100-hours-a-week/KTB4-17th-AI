@@ -382,6 +382,50 @@ def test_empty_response_format_retry_once_no_third_call(
     asyncio.run(_run())
 
 
+@pytest.mark.parametrize(
+    ("raw_text", "error_detail"),
+    [
+        ('{"text":"PRIVATE_DIALOGUE', "유효한 JSON이 아닙니다"),
+        ('{"text":"PRIVATE_DIALOGUE","message":"OTHER_PRIVATE_DIALOGUE"}', "여러 대사 필드"),
+        ('{"payload":"PRIVATE_DIALOGUE"}', "'text' 대사 필드"),
+        ('{"text":null}', "문자열이어야"),
+        ('{"text":"   "}', "공백만"),
+        ('{"text":"' + "PRIVATE_DIALOGUE" * 21 + '"}', "300자를 초과"),
+        ('{"text":"알파: 알파: PRIVATE_DIALOGUE"}', "repeated_name_prefix"),
+    ],
+)
+def test_format_failure_logs_validation_detail_without_dialogue(
+    test_personas: tuple[PersonaResponse, PersonaResponse], monkeypatch, caplog, raw_text, error_detail
+) -> None:
+    """invalid_json의 실제 검증 사유를 남기되 대사·프롬프트·닉네임은 기록하지 않는다."""
+    from app.features.simulation_migration.tools import speak_as_a
+
+    monkeypatch.setattr("app.features.simulation_migration.tools.effective_mode", lambda _: "off")
+    fake_llm = FakeLLM(default_response=raw_text)
+    result = asyncio.run(
+        speak_as_a(
+            persona=test_personas[0],
+            nickname_self="알파",
+            nickname_other="베타",
+            transcript=[],
+            closing_hint="none",
+            llm=fake_llm,
+            index=4,
+            turns=3,
+        )
+    )
+
+    assert result.reason == "invalid_json"
+    assert result.llm_calls == 2
+    messages = [r.getMessage() for r in caplog.records if r.name == "app.features.simulation_migration.tools"]
+    assert len(messages) == 2
+    for attempt, message in enumerate(messages, start=1):
+        assert f"speaker=a index=4 attempt={attempt}" in message
+        assert error_detail in message
+        assert "PRIVATE_DIALOGUE" not in message
+        assert "알파" not in message and "베타" not in message
+
+
 def test_failed_node_stops_without_calling_report(test_personas: tuple[PersonaResponse, PersonaResponse]) -> None:
     """실패 노드 뒤에는 report가 호출되지 않고 stop으로 이동 검증."""
 

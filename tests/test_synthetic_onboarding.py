@@ -77,6 +77,17 @@ def test_off_topic_answer_is_reasked_once_without_consuming_turn():
         assert t.answer != t.reask["offTopicAnswer"]
 
 
+def test_rude_answer_is_reasked_but_deflect_is_kept():
+    # 거친 말은 운영처럼 되묻고, 농담으로 넘긴 답은 질문에 대한 대답이라 그대로 남는다
+    rude = _session(off_topic_rate=0.0, joke_rate=0.0, short_rate=0.0, deflect_rate=0.0, rude_rate=1.0)
+    non_closing = [t for t in rude.turns if not TOPICS_BY_ID[t.topicId].is_closing]
+    assert all(t.mode == "rude" and t.reask["question"].startswith(REASK_PREFIX) for t in non_closing)
+
+    deflect = _session(off_topic_rate=0.0, joke_rate=0.0, short_rate=0.0, deflect_rate=1.0)
+    non_closing = [t for t in deflect.turns if not TOPICS_BY_ID[t.topicId].is_closing]
+    assert all(t.mode == "deflect" and t.reask is None for t in non_closing)
+
+
 def test_clean_answer_strips_labels_and_caps_length():
     assert clean_answer('나: "주말엔 러닝해요"') == "주말엔 러닝해요"
     assert len(clean_answer("가" * 500)) == MAX_ANSWER_LEN

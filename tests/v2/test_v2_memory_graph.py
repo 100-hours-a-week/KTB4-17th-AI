@@ -199,3 +199,84 @@ def test_llm_garbage_core_keys_and_category_are_sanitized():
             assert len(facts) == 1
 
     asyncio.run(with_db(body))
+
+
+class UpdateAllToFirstCandidateJudge:
+    """모든 새 사실에 대해 '첫 번째 후보를 UPDATE' 라고 답하는 심판 — 실제 LLM 이 같은 대상을 두 번 고른 상황을 재현한다."""
+
+    async def judge_batch(self, items):
+        return [
+            {"action": "UPDATE", "target_id": candidates[0][0].id, "updated_fact": fact_item["fact"]}
+            for _, fact_item, _, candidates in items
+        ]
+
+
+def test_two_updates_on_same_target_keep_both_facts():
+    """한 배치의 새 사실 두 개가 같은 기존 사실을 UPDATE 하면, 두 번째가 첫 번째를 덮어써 정보가 사라지면 안 된다."""
+
+    async def body(factory):
+        async with factory() as db_session:
+            repo = PersonaMemoryRepository(db_session)
+            embedder = FakeEmbedder()
+            existing = await repo.add_fact(
+                user_id="u1",
+                category="취미",
+                fact="주 1회 등산을 간다",
+                confidence=0.9,
+                status="confirmed",
+                embedding=await embedder.encode("등산"),
+                embedding_model="KURE-v1",
+            )
+            extractor = FakeExtractor(
+                ExtractionOutput(
+                    facts=[
+                        ExtractedFactItem(
+                            category="취미", fact="무릎 때문에 등산 대신 클라이밍을 3개월째 한다", confidence=0.9
+                        ),
+                        ExtractedFactItem(category="취미", fact="주 2회 실내 클라이밍을 다닌다", confidence=0.9),
+                    ]
+                )
+            )
+            graph = create_memory_graph(
+                repo=repo, embedder=embedder, extractor=extractor, judge=UpdateAllToFirstCandidateJudge()
+            )
+            await graph.ainvoke(
+                {
+                    "user_id": "u1",
+                    "current_date": "2026-10-20",
+                    "dialogue_pairs": [
+                        {"ai": "요즘도 등산 가요?", "user": "무릎 때문에 클라이밍 다녀요, 주 2회요", "message_id": 30}
+                    ],
+                    "latest_message_id": 30,
+                    "existing_core": {},
+                }
+            )
+            facts = {f for _, f in await repo.search_confirmed_facts("u1", await embedder.encode("운동"), top_k=10)}
+            assert facts == {"무릎 때문에 등산 대신 클라이밍을 3개월째 한다", "주 2회 실내 클라이밍을 다닌다"}
+            await db_session.refresh(existing)
+            assert existing.fact == "무릎 때문에 등산 대신 클라이밍을 3개월째 한다"
+
+    asyncio.run(with_db(body))
+
+
+def test_resolve_target_conflicts_first_claim_wins():
+    """같은 대상에 대한 두 번째 UPDATE 는 ADD, 두 번째 DELETE 는 NOOP. DELETE 뒤 UPDATE 도 새 사실로 살린다."""
+    from app.v2.persona.graph import _resolve_target_conflicts
+
+    plan = [
+        {"fact": "a", "action": "DELETE", "target_id": 1},
+        {"fact": "b", "action": "UPDATE", "target_id": 1},
+        {"fact": "c", "action": "DELETE", "target_id": 1},
+        {"fact": "d", "action": "UPDATE", "target_id": 2},
+        {"fact": "e", "action": "PROMOTE", "target_id": 2},
+        {"fact": "f", "action": "ADD", "target_id": None},
+    ]
+    got = [(p["fact"], p["action"], p["target_id"]) for p in _resolve_target_conflicts(plan)]
+    assert got == [
+        ("a", "DELETE", 1),
+        ("b", "ADD", None),
+        ("c", "NOOP", None),
+        ("d", "UPDATE", 2),
+        ("e", "PROMOTE", 2),
+        ("f", "ADD", None),
+    ]

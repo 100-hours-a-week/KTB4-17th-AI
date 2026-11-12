@@ -21,7 +21,6 @@ from app.core.config import get_settings
 from app.core.observability import build_langfuse_metadata
 from app.features.persona.lookup import LoadedPersona, load_persona
 from app.features.persona.schemas import PersonaBrief, PersonaRef, PersonaResponse
-from app.features.simulation.report import score_layer
 from app.features.simulation.schemas import (
     GRADE_LABEL,
     MatchingReport,
@@ -35,7 +34,8 @@ from . import graph, topics
 from .llm import call_tools
 from .models import V2Simulation, V2SimulationJob
 from .repository import SimulationV2Repository
-from .schemas import LLMCaller, SimContext, TopicFact, V2SimulationResponse
+from .schemas import LLMCaller, SimContext, TextLLMCaller, TopicFact, V2SimulationResponse
+from .scoring import score_layer
 
 logger = logging.getLogger(__name__)
 
@@ -86,9 +86,7 @@ def _clean(text: str, limit: int) -> str:
 
 
 def _clean_persona(p: PersonaResponse) -> PersonaResponse:
-    update: dict = {
-        k: [_clean(x, 100) for x in getattr(p, k)] for k in ("interests", "routine", "date_prefer", "date_avoid")
-    }
+    update: dict = {k: [] for k in ("interests", "routine", "date_prefer", "date_avoid")}
     if p.narrative is not None:
         update["narrative"] = p.narrative.model_copy(
             update={
@@ -101,11 +99,19 @@ def _clean_persona(p: PersonaResponse) -> PersonaResponse:
 
 
 class SimulationV2Service:
-    def __init__(self, db: AsyncSession, *, llm: LLMCaller | None = None, judge_llm: LLMCaller | None = None) -> None:
+    def __init__(
+        self,
+        db: AsyncSession,
+        *,
+        llm: LLMCaller | None = None,
+        judge_llm: LLMCaller | None = None,
+        text_llm: TextLLMCaller | None = None,
+    ) -> None:
         self.db = db
         self.repo = SimulationV2Repository(db)
         self.llm: LLMCaller = llm or call_tools
         self.judge_llm = judge_llm
+        self.text_llm = text_llm
 
     async def _load(self, who: str, ref: PersonaRef) -> LoadedPersona:
         loaded = await load_persona(self.db, ref)
@@ -219,6 +225,7 @@ class SimulationV2Service:
                     job_id=job.id,
                     llm=self.llm,
                     judge_llm=self.judge_llm,
+                    text_llm=self.text_llm,
                     on_stage=on_stage,
                     deadline_s=s.simulation_v2_job_timeout_s,
                     metadata=build_langfuse_metadata(

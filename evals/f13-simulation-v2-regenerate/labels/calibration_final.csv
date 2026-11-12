@@ -1,0 +1,13 @@
+﻿case_id,F-01,F-02,F-03,F-04,출처
+13-v2-022-regenerate1,PASS,PASS,PASS,FAIL,Codex·Grok 일치
+13-v2-100-regenerate1,FAIL,PASS,PASS,FAIL,Codex·Grok 일치
+13-v2-105-regenerate1,PASS,PASS,PASS,FAIL,Claude+Codex·Grok 일치
+13-v2-022-regen-fill,PASS,PASS,PASS,FAIL,Codex·Grok 일치
+13-v2-023-regen-fill,PASS,PASS,PASS,FAIL,Codex·Grok 일치
+13-v2-100-regen-fill,FAIL,PASS,PASS,FAIL,Codex·Grok 일치
+13-v2-105-regen-fill,PASS,PASS,PASS,PASS,Codex·Grok 일치
+13-v2-114-regen-fill,PASS,PASS,PASS,FAIL,Codex·Grok 일치
+13-v2-115-regen-fill,FAIL,PASS,PASS,FAIL,Codex·Grok 일치
+13-v2-000-regen-fill,PASS,PASS,PASS,PASS,Codex·Grok 일치
+13-v2-010-regen-fill,PASS,PASS,PASS,FAIL,Codex·Grok 일치
+13-v2-014-regen-fill,PASS,PASS,PASS,FAIL,Codex·Grok 일치

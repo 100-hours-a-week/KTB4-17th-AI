@@ -35,12 +35,11 @@ logger = logging.getLogger(__name__)
 TASKS = {
     "persona-tagging": "tagging",
     "persona-extraction": "extraction",
-    "persona-extraction-style": "extraction",
 }
 
 # 서버가 없거나 아직 안 떴다는 신호. 이런 실패면 SLM 을 내려감으로 표시한다.
 # 404 는 RunPod 프록시가 꺼진 Pod 에 주는 응답이기도 하고, 모델 이름 오타이기도 하다 — 둘 다 폴백이 맞다
-_DOWN = (
+DOWN_ERRORS = (
     TimeoutError,
     openai.APIConnectionError,
     openai.InternalServerError,
@@ -54,6 +53,12 @@ _HEALTH_TIMEOUT_S = 5.0
 class Route:
     client: AsyncOpenAI
     model: str
+
+
+@dataclass(frozen=True)
+class RoutingDecision:
+    route: Route | None
+    skip_reason: str | None
 
 
 @lru_cache
@@ -77,9 +82,9 @@ def health_url(base_url: str) -> str:
     return f"{base}/health"
 
 
-async def check_health() -> bool:
-    """vLLM 이 모델을 다 올려 요청을 받을 수 있으면 True."""
-    url = health_url(get_settings().slm_base_url)
+async def check_health(base_url: str | None = None) -> bool:
+    """vLLM 이 모델을 다 올려 요청을 받을 수 있으면 True. base_url 을 안 주면 태깅·추출 SLM 서버."""
+    url = health_url(base_url if base_url is not None else get_settings().slm_base_url)
     try:
         async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT_S) as client:
             resp = await client.get(url)
@@ -89,9 +94,11 @@ async def check_health() -> bool:
 
 
 class Health:
-    """SLM 이 살아 있는지. 내려가면 백그라운드에서 /health 가 200 이 될 때까지 확인한다."""
+    """SLM 이 살아 있는지. 내려가면 백그라운드에서 /health 가 200 이 될 때까지 확인한다.
+    서버마다 하나씩 둔다 (태깅·추출 서버는 이 모듈의 health, 연습대화 9칸 서버는 practice_slm.health)."""
 
-    def __init__(self, check: Callable[[], Awaitable[bool]] = check_health) -> None:
+    def __init__(self, check: Callable[[], Awaitable[bool]] = check_health, name: str = "SLM") -> None:
+        self.name = name
         self.up = True
         self._check = check
         self._probe: asyncio.Task | None = None
@@ -99,7 +106,7 @@ class Health:
 
     def mark_down(self, reason: str) -> None:
         if self.up:
-            logger.warning("SLM marked down, routing to main LLM: %s", reason)
+            logger.warning("%s marked down, routing to main LLM: %s", self.name, reason)
         self.up = False
         if self._probe is None or self._probe.done():
             self._probe = asyncio.create_task(self._probe_until_up())
@@ -110,7 +117,7 @@ class Health:
             await asyncio.sleep(interval)
             if await self._check():
                 self.up = True
-                logger.info("SLM is healthy again, routing tagging/extraction back to it")
+                logger.info("%s is healthy again, routing back to it", self.name)
 
     def check_in_background(self) -> None:
         """앱 시작 때 한 번. 아직 모델을 올리는 중이면 내려감으로 두고 복구를 기다린다.
@@ -138,22 +145,33 @@ def enabled() -> bool:
 
 def route_for(name: str) -> Route | None:
     """이 호출을 SLM 으로 보낼 수 있으면 그 경로. 꺼져 있거나 대상이 아니거나 내려가 있으면 None."""
-    if not enabled() or not health.up:
-        return None
+    return routing_decision(name).route
+
+
+def routing_decision(name: str, *, use_slm: bool = True) -> RoutingDecision:
+    """Explain a pre-call skip separately from an attempted SLM call failing."""
+    if not use_slm:
+        return RoutingDecision(None, "slm_disabled")
     settings = get_settings()
+    if name not in TASKS:
+        return RoutingDecision(None, "task_not_supported")
+    if not settings.slm_base_url:
+        return RoutingDecision(None, "slm_base_url_not_configured")
     model = {
         "tagging": settings.slm_tagging_model,
         "extraction": settings.slm_extraction_model,
     }.get(TASKS.get(name, ""), "")
     if not model:
-        return None
-    return Route(client=_get_client(), model=model)
+        return RoutingDecision(None, "slm_model_not_configured")
+    if not health.up:
+        return RoutingDecision(None, "slm_unhealthy")
+    return RoutingDecision(Route(client=_get_client(), model=model), None)
 
 
 def record_fallback(name: str, error: BaseException) -> None:
     """SLM 실패를 기록한다. 서버가 없다는 신호면 내려감으로 표시해 다음 요청부터 바로 메인 LLM 으로 보낸다."""
     cause = error.__cause__ or error
-    if isinstance(cause, _DOWN):
+    if isinstance(cause, DOWN_ERRORS):
         health.mark_down(f"{name}: {type(cause).__name__}")
     logger.warning("SLM call %s failed, falling back to main LLM: %s", name, error)
     try:

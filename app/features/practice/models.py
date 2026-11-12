@@ -44,6 +44,13 @@ class PracticeSession(Base):
     message_count: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(16), default="active")  # active | ended
 
+    # 답변을 만드는 모델 — 세션을 시작할 때 정해 고정한다 (app/v2/practice/cells.py).
+    # "slm" = 애착 9칸 모델, "llm" = 메인 LLM. NULL 은 이 컬럼 전에 만든 세션이라 메인 LLM 으로 본다.
+    # 9칸 서버가 죽으면 "llm" 으로 내리고 되돌리지 않는다
+    reply_engine: Mapped[str | None] = mapped_column(String(8))
+    # 9칸 세션의 칸 이름 (예: high_anx0.75). 메인 LLM 으로 내려가도 기록으로 남긴다
+    slm_cell: Mapped[str | None] = mapped_column(String(16))
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
@@ -66,7 +73,7 @@ class PracticeMessage(Base):
 
     role: Mapped[str] = mapped_column(String(8))  # user | persona
     content: Mapped[str] = mapped_column(Text)
-    # "llm" | "fallback" — 페르소나 메시지만. 폴백 빈도를 나중에 세기 위해
+    # "llm" | "slm" | "fallback" — 페르소나 메시지만. slm 은 애착 9칸 모델이 만든 답. 폴백 빈도를 나중에 세기 위해
     source: Mapped[str | None] = mapped_column(String(8))
     # 세션의 user_id 복사본 — 세션 조인 없이 "이 사람의 발화"를 센다. DB 컬럼은 마이그레이션 ae420271b9cf 가
     # 먼저 만들었는데 모델에 빠져 있어 그동안 NULL 로 쌓였다 (n4c5d6e7f8a9 에서 backfill)

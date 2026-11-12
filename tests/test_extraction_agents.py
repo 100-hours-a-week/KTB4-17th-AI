@@ -17,13 +17,14 @@ def test_style_agent_sends_previous_style_and_utterances(monkeypatch):
         return {"style": {"speech_level": "반말", "frequent_phrases": ["오 대박"]}, "positivity": 80}
 
     monkeypatch.setattr(agents_mod, "_call_json", fake_call_json)
-    previous = ConversationStyle(speech_level="존댓말", frequent_phrases=["아하"])
+    previous = ConversationStyle.model_validate({"speech_level": "존댓말", "frequent_phrases": ["아하"]})
 
     out = asyncio.run(StyleAgent().analyze(["오 대박 진짜?", "ㅋㅋㅋ 나도"], previous=previous))
 
     body = seen["messages"][0]["content"]
     assert "아하" in body and "오 대박 진짜?" in body
-    assert out.style.speech_level == "반말"
+    assert "speech_level" not in agents_mod.STYLE_RUBRIC
+    assert "speech_level" not in out.style.model_dump()
     assert out.positivity == 80
 
 

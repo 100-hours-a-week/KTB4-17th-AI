@@ -11,20 +11,35 @@ import asyncio
 import json
 import logging
 import time
+from functools import lru_cache
 from typing import Any
 
+from langfuse.openai import AsyncOpenAI
 from openai import APIStatusError
 
 from app.core.config import get_settings
-from app.features.simulation.agents import _get_client, _semaphore
 
-from .schemas import LLMResult, ToolCall
+from .schemas import LLMResult, TextResult, ToolCall
 
 logger = logging.getLogger(__name__)
 
 
+# v1 simulation.agents 와 같은 OpenAI 호환 클라이언트 (v2 복제본)
+@lru_cache
+def _get_client() -> AsyncOpenAI:
+    settings = get_settings()
+    return AsyncOpenAI(base_url=settings.llm_base_url, api_key=settings.llm_api_key or "EMPTY")
+
+
+# 동시에 진행 중인 v2 시뮬레이션 LLM 호출 수를 settings.simulation_max_inflight 로 제한한다.
+# 프로세스 하나에서만 유효하고, v1 시뮬레이션과는 따로 센다.
+@lru_cache
+def _semaphore() -> asyncio.Semaphore:
+    return asyncio.Semaphore(get_settings().simulation_max_inflight)
+
+
 class SimLLMError(Exception):
-    """reason: timeout | upstream_error | truncated | invalid_json | no_tool_call | llm_error"""
+    """reason: timeout | upstream_error | truncated | invalid_json | no_tool_call | llm_error | invalid_text"""
 
     def __init__(self, message: str, *, reason: str = "llm_error") -> None:
         super().__init__(message)
@@ -108,6 +123,7 @@ def _calls_from_json_text(text: str, tools: list[dict[str, Any]]) -> list[ToolCa
     return calls
 
 
+# call_tools: 대본 생성에는 쓰지 않음([OLD] generate_old 만), 수정·심사·리포트는 지금도 사용
 async def call_tools(
     *,
     system: str,
@@ -136,7 +152,7 @@ async def call_tools(
         async with _semaphore(), asyncio.timeout(max(timeout, 0.1)):
             resp = await client.chat.completions.create(
                 name=name,
-                model=model or settings.llm_model,
+                model=model or settings.llm_model_v2,
                 messages=messages,  # type: ignore[arg-type]
                 max_tokens=max_tokens,
                 metadata=metadata,
@@ -195,6 +211,70 @@ async def call_tools(
 
     return LLMResult(
         calls=calls,
+        prompt_tokens=getattr(usage, "prompt_tokens", None),
+        completion_tokens=getattr(usage, "completion_tokens", None),
+    )
+
+
+# call_text: [NOW] 대본 생성·재생성 전용
+async def call_text(
+    *,
+    system: str,
+    user: str,
+    max_tokens: int,
+    timeout: float,
+    name: str,
+    model: str | None = None,
+    metadata: dict | None = None,
+) -> TextResult:
+    settings = get_settings()
+    client = _get_client().with_options(max_retries=1)
+    messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
+
+    started = time.monotonic()
+    try:
+        async with _semaphore(), asyncio.timeout(max(timeout, 0.1)):
+            resp = await client.chat.completions.create(
+                name=name,
+                model=model or settings.llm_model_v2,
+                messages=messages,  # type: ignore[arg-type]
+                max_tokens=max_tokens,
+                metadata=metadata,
+            )
+    except TimeoutError as e:
+        logger.warning("llm %s: timeout after %.1fs", name, time.monotonic() - started)
+        raise SimLLMError(f"timeout after {timeout:.1f}s", reason="timeout") from e
+    except APIStatusError as e:
+        logger.warning("llm %s: upstream status=%s", name, e.status_code)
+        raise SimLLMError(f"upstream error {e.status_code}", reason="upstream_error") from e
+    except Exception as e:
+        logger.warning("llm %s: %s: %s", name, type(e).__name__, e)
+        raise SimLLMError(str(e)) from e
+
+    choice = resp.choices[0] if resp.choices else None
+    finish_reason = getattr(choice, "finish_reason", None)
+    usage = getattr(resp, "usage", None)
+    logger.info(
+        "llm %s: finish_reason=%s completion_tokens=%s/%d elapsed=%.1fs",
+        name,
+        finish_reason,
+        getattr(usage, "completion_tokens", None),
+        max_tokens,
+        time.monotonic() - started,
+    )
+    if choice is None:
+        raise SimLLMError("empty response", reason="llm_error")
+    if finish_reason == "length":
+        raise SimLLMError(f"output truncated at max_tokens={max_tokens}", reason="truncated")
+    if finish_reason == "error":
+        raise SimLLMError("provider error mid-generation", reason="upstream_error")
+
+    content = (getattr(choice.message, "content", None) or "").strip()
+    if not content:
+        raise SimLLMError("empty text response", reason="llm_error")
+
+    return TextResult(
+        text=content,
         prompt_tokens=getattr(usage, "prompt_tokens", None),
         completion_tokens=getattr(usage, "completion_tokens", None),
     )

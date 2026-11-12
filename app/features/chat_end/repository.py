@@ -39,8 +39,10 @@ class ChatEndRepository:
         end_type: str,
         turns: list[str],
         source: str,
+        request_id: str | None = None,
     ) -> ChatEndDraft:
         row = ChatEndDraft(
+            request_id=request_id,
             room_id=room_id,
             delegation_id=delegation_id,
             requester_user_id=requester_user_id,
@@ -56,6 +58,11 @@ class ChatEndRepository:
     # draft_id 로 한 건. 없으면 None
     async def get_draft(self, draft_id: str) -> ChatEndDraft | None:
         return await self.db.get(ChatEndDraft, draft_id)
+
+    # request_id 로 초안 한 건. 없으면 None
+    async def get_draft_by_request_id(self, request_id: str) -> ChatEndDraft | None:
+        stmt = select(ChatEndDraft).where(ChatEndDraft.request_id == request_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
 
     # 이 방·위임의 확정(CONFIRMED) 스크립트. 없으면 None (부분 유니크 인덱스라 많아야 1건)
     async def get_confirmed_draft(self, room_id: int, delegation_id: int) -> ChatEndDraft | None:
@@ -97,6 +104,11 @@ class ChatEndRepository:
         await self.db.flush()
         return draft
 
+    # request_id 로 메시지 한 건. 없으면 None (SUCCESS 행만 request_id 를 가진다)
+    async def get_message_by_request_id(self, request_id: str) -> ChatEndMessage | None:
+        stmt = select(ChatEndMessage).where(ChatEndMessage.request_id == request_id)
+        return (await self.db.execute(stmt)).scalar_one_or_none()
+
     # 종료 메시지 호출 한 건을 저장하고 flush 해 message_id 로 쓸 id 를 확정한다
     async def save_message(
         self,
@@ -113,8 +125,12 @@ class ChatEndRepository:
         end_turns: int,
         end_reason: str | None,
         source: str,
+        request_id: str | None = None,
+        ai_turn_count: int | None = None,
     ) -> ChatEndMessage:
         row = ChatEndMessage(
+            request_id=request_id,
+            ai_turn_count=ai_turn_count,
             room_id=room_id,
             delegation_id=delegation_id,
             user_id=user_id,

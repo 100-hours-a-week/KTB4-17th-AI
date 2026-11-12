@@ -68,6 +68,15 @@ class Settings(BaseSettings):
         description="호출할 기본 LLM 모델명",
     )
 
+    # v2 기능(app/v2/**) 전용 메인 LLM 모델. v1 은 llm_model 을 그대로 쓴다.
+    # 코드 기본값으로 동작한다 — 환경 변수가 없어도 이 값이 쓰인다 (#116 재발 방지)
+    # 2026-10-22 v2 시뮬레이션 실측: 2.5-flash-lite 4/5 → 3.1-flash-lite 5/5, 실행당 비용 약 3배
+    llm_model_v2: str = Field(
+        default="google/gemini-3.1-flash-lite",
+        validation_alias="LLM_MODEL_V2",
+        description="v2 기능이 호출할 LLM 모델명",
+    )
+
     # response_format={"type": "json_object"} 를 붙일지. 지원 안 하는 로컬 모델이면 0 으로 끈다
     llm_json_mode: bool = Field(
         default=True,
@@ -84,6 +93,19 @@ class Settings(BaseSettings):
     slm_extraction_model: str = Field(default="", validation_alias="SLM_EXTRACTION_MODEL")
     # SLM 이 내려간 동안(콜드 스타트 등) /health 를 다시 확인하는 간격
     slm_probe_interval_s: float = Field(default=15.0, gt=0, validation_alias="SLM_PROBE_INTERVAL_S")
+
+    # ── 문장 판정 카드 학습 후보 알림 (Discord 웹훅) ──────────────────────
+    # 비워 두면 알림은 로그로만 남고, 설정한 뒤 다음 묶음 때 밀린 알림을 보낸다
+    training_discord_webhook_url: str = Field(default="", validation_alias="TRAINING_DISCORD_WEBHOOK_URL")
+
+    # ── 연습대화 애착 9칸 모델 (RunPod vLLM, persona_model 9칸_서버_실행_설명서) ─────────────
+    # 비워 두면 연습대화는 메인 LLM(llm_model_v2)만 쓴다. 태깅 SLM 과 다른 서버라 변수를 따로 둔다
+    practice_slm_base_url: str = Field(default="", validation_alias="PRACTICE_SLM_BASE_URL")
+    practice_slm_api_key: str = Field(default="", validation_alias="PRACTICE_SLM_API_KEY")
+    # 첫 글자까지 기다리는 시간. 넘기면 같은 턴을 메인 LLM 으로 다시 보낸다 (사용자가 오래 기다리지 않게)
+    practice_slm_first_chunk_timeout_s: float = Field(
+        default=3.0, gt=0, validation_alias="PRACTICE_SLM_FIRST_CHUNK_TIMEOUT_S"
+    )
 
     # 시뮬레이션 동시 실행 최대 수 (과도한 부하 방지용 세마포어 한도)
     simulation_max_inflight: int = Field(
@@ -149,6 +171,18 @@ class Settings(BaseSettings):
         default=Path("models/face_recognition_sface_2021dec.onnx"),
         validation_alias="SFACE_MODEL_PATH",
     )
+    face_landmarker_model_path: Path = Field(
+        default=Path("models/face_landmarker.task"),
+        validation_alias="FACE_LANDMARKER_MODEL_PATH",
+    )
+    palm_model_path: Path = Field(
+        default=Path("models/palm_detection_mediapipe_2023feb.onnx"),
+        validation_alias="PALM_MODEL_PATH",
+    )
+    handpose_model_path: Path = Field(
+        default=Path("models/handpose_estimation_mediapipe_2023feb.onnx"),
+        validation_alias="HANDPOSE_MODEL_PATH",
+    )
     synthetic_model_path: Path = Field(
         default=Path("models/community_forensics_vit_int8.onnx"),
         validation_alias="SYNTHETIC_MODEL_PATH",
@@ -156,7 +190,13 @@ class Settings(BaseSettings):
     c2pa_trust_anchors_path: Path | None = Field(default=None, validation_alias="C2PA_TRUST_ANCHORS_PATH")
 
     max_image_bytes: int = Field(default=10 * 1024 * 1024, ge=1024, validation_alias="MAX_IMAGE_BYTES")
-    max_video_bytes: int = Field(default=25 * 1024 * 1024, ge=1024, validation_alias="MAX_VIDEO_BYTES")
+    max_video_bytes: int = Field(default=12 * 1024 * 1024, ge=1024, validation_alias="MAX_VIDEO_BYTES")
+    face_verification_max_inflight: int = Field(
+        default=2,
+        ge=1,
+        validation_alias="FACE_VERIFICATION_MAX_INFLIGHT",
+        description="동시에 메모리에 적재·분석할 수 있는 라이브 얼굴 인증 영상 최대 요청 수",
+    )
     min_image_edge_px: int = Field(default=160, ge=64, validation_alias="MIN_IMAGE_EDGE_PX")
     min_blur_variance: float = Field(default=8.0, ge=0, validation_alias="MIN_BLUR_VARIANCE")
     masked_face_max_blur_variance: float = Field(
@@ -181,6 +221,9 @@ class Settings(BaseSettings):
     max_abs_yaw_deg: float = Field(default=20.0, gt=0, validation_alias="MAX_ABS_YAW_DEG")
     max_abs_pitch_deg: float = Field(default=18.0, gt=0, validation_alias="MAX_ABS_PITCH_DEG")
     max_abs_roll_deg: float = Field(default=22.0, gt=0, validation_alias="MAX_ABS_ROLL_DEG")
+    # 대표사진 양쪽 눈의 MediaPipe eyeBlink 점수가 모두 이 값 이상이면 눈 감은 사진으로 보고 탈락시킨다.
+    # 실측: 눈 감고 웃는 사진 0.50~0.53, 눈 뜬 셀카 0.01. 원래 눈이 가는 사람의 정상 사진이 걸리지 않게 보수적으로 둔다.
+    max_eye_blink_score: float = Field(default=0.45, ge=0, le=1, validation_alias="MAX_EYE_BLINK_SCORE")
 
     synthetic_risk_threshold: float = Field(default=0.70, gt=0, lt=1, validation_alias="SYNTHETIC_RISK_THRESHOLD")
     pixel_art_min_axis_ratio: float = Field(
@@ -205,6 +248,13 @@ class Settings(BaseSettings):
         validation_alias="LIVENESS_TOKEN_SECRET",
     )
     liveness_token_ttl_seconds: int = Field(default=300, ge=60, le=1800, validation_alias="LIVENESS_TOKEN_TTL_SECONDS")
+    # 신규 인증은 고개·손 챌린지를 발급한다. 이전 BE/FE 배포나 롤백 시 명시적으로 false로 전환한다.
+    active_liveness_enabled: bool = Field(default=True, validation_alias="ACTIVE_LIVENESS_ENABLED")
+    # v3(정면·손 기본 + 위험 시 고개 추가)는 BE가 protocol_version 3을 받을 때까지 끈다. 끄면 v2 계획을 발급한다.
+    adaptive_liveness_enabled: bool = Field(default=False, validation_alias="ADAPTIVE_LIVENESS_ENABLED")
+    liveness_step_up_match_margin: float = Field(
+        default=0.08, ge=0, le=0.2, validation_alias="LIVENESS_STEP_UP_MATCH_MARGIN"
+    )
 
     # ── v2 사용자 페르소나 메모리 RAG 설정 ──────────────────────────
     embedding_model_name: str = Field(
@@ -236,11 +286,11 @@ class Settings(BaseSettings):
     # 실시간 검색 (retrieve) 파라미터 — pgvector <=> 는 코사인 거리(1 - similarity)
     memory_top_k: int = Field(default=5, ge=1, le=20, validation_alias="MEMORY_TOP_K")
     memory_max_cosine_distance: float = Field(
-        default=0.65,
+        default=0.5,
         gt=0.0,
         lt=2.0,
         validation_alias="MEMORY_MAX_COSINE_DISTANCE",
-        description="pgvector 코사인 거리(<=>) 상한 (0.65 = 코사인 유사도 0.35 이상만 허용)",
+        description="pgvector 코사인 거리(<=>) 상한 (0.5 = 코사인 유사도 0.5 이상만 허용)",
     )
     practice_v2_history_window: int = Field(
         default=20,
@@ -264,7 +314,7 @@ class Settings(BaseSettings):
     memory_reconcile_timeout_s: float = Field(default=20.0, validation_alias="MEMORY_RECONCILE_TIMEOUT_S")
 
     # ── v2 시뮬레이션 하네스 (docs/기획_및_설계/시뮬레이션_v2_하네스_기획안_최종.md) ──
-    # 심사 모델. 비우면 생성 모델(llm_model)과 같다
+    # 심사 모델. 비우면 생성 모델(llm_model_v2)과 같다
     simulation_v2_judge_model: str | None = Field(default=None, validation_alias="SIMULATION_V2_JUDGE_MODEL")
     # tools(function calling) 를 쓸지. 기본은 json_object 경로 — 2026-10-19 로컬 실측(gemini-2.5-flash-lite)에서
     # tools 는 긴 대본 인자가 깨지는 형식 오류가 잦아 성공 6/14, json_object 는 11/14 였다

@@ -44,6 +44,7 @@ class ChatEndDraft(Base):
     )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_uuid)
+    request_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True, index=True)  # 멱등 키
     room_id: Mapped[int] = mapped_column(BigInteger, index=True)
     delegation_id: Mapped[int] = mapped_column(BigInteger, index=True)
     requester_user_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -60,6 +61,8 @@ class ChatEndMessage(Base):
     __tablename__ = "chat_end_messages"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # 멱등 키. SUCCESS 행에만 저장한다 — FAILED 는 같은 request_id 로 다시 생성할 수 있어야 해서 비운다
+    request_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True, index=True)
     room_id: Mapped[int] = mapped_column(BigInteger, index=True)
     delegation_id: Mapped[int] = mapped_column(BigInteger, index=True)
     user_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -69,6 +72,7 @@ class ChatEndMessage(Base):
     direction: Mapped[str | None] = mapped_column(Text, nullable=True)  # 이번 턴에 프롬프트로 보낸 N번째 문장
     ai_response: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(8))  # SUCCESS | FAILED
+    ai_turn_count: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 시도한 턴 번호 (FAILED 도 기록)
     end_turns: Mapped[int] = mapped_column(Integer)
     end_reason: Mapped[str | None] = mapped_column(String(255))
     source: Mapped[str] = mapped_column(String(8))  # llm | fallback

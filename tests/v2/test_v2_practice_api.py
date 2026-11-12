@@ -1,8 +1,8 @@
 import asyncio
 
-from app.features.practice.agents import PartnerAgent
 from app.features.practice.schemas import PracticeStartRequest
 from app.v2.persona.repository import PersonaMemoryRepository
+from app.v2.practice.agents import PartnerAgent
 from app.v2.practice.memory import MemoryContext, load_memory_context, render_memory_section
 from app.v2.practice.service import V2PracticeService
 from tests.conftest import seed_persona, with_db
@@ -27,7 +27,7 @@ class CapturingAgent(PartnerAgent):
     def __init__(self) -> None:
         self.systems: list[str] = []
 
-    async def reply(self, *, system, history, opening=False, trace_metadata=None):
+    async def reply(self, *, system, history, opening=False, trace_metadata=None, slm=None):
         self.systems.append(system)
         yield "부산에서 주말마다 등산 다니시는군요!"
 
@@ -40,6 +40,15 @@ async def _seed_memory(db_session) -> None:
         category="취미",
         fact="주말마다 등산을 다닌다",
         confidence=0.92,
+        status="confirmed",
+        embedding=VEC,
+        embedding_model="KURE-v1",
+    )
+    await repo.add_fact(
+        user_id="pu1",
+        category="취미",
+        fact="독서 모임에 나가고 에세이를 즐겨 읽는다",
+        confidence=0.95,
         status="confirmed",
         embedding=VEC,
         embedding_model="KURE-v1",
@@ -89,12 +98,16 @@ def test_stream_reply_injects_memory_into_system_prompt_and_grounds_guardrail():
             system = agent.systems[0]
             assert "거주 지역: 부산" in system
             assert "주말마다 등산을 다닌다" in system
+            assert "독서 모임에 나가고 에세이를 즐겨 읽는다" in system
+            assert "관심사: 알 수 없음" not in system
 
-            # 가드레일 근거: 검색된 Fact 와 코어 값이 user_texts 에 들어간다
+            # 가드레일 근거: 검색된 Fact 와 코어 값이 user_texts 에 들어가고, 화자/상대 속성은 메모리 Fact 키워드에서 나온다
             ctx = service._guardrail_context(
                 session, (await service._load("partner", _ref("p-partner"))).response, None
             )
             assert "주말마다 등산을 다닌다" in ctx.user_texts and "부산" in ctx.user_texts
+            assert "독서" in ctx.speaker_attributes
+            assert "등산" in ctx.partner_attributes
 
     asyncio.run(with_db(body))
 

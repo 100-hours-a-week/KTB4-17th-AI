@@ -228,9 +228,7 @@ class FakeStyle:
         if self.error:
             raise self.error
         return StyleExtraction(
-            style=ConversationStyle(
-                speech_level="반말", frequent_phrases=["내 말", "민수 최고", "010-1"], interjections=["헐"]
-            ),
+            style=ConversationStyle(frequent_phrases=["내 말", "민수 최고", "010-1"], interjections=["헐"]),
             disclosure=40,
         )
 
@@ -319,7 +317,8 @@ def test_second_extraction_passes_previous_style():
 
     _scenario(steps)
 
-    assert agent.calls[0]["previous"].speech_level == "반말"
+    assert agent.calls[0]["previous"].frequent_phrases == ["내 말"]
+    assert "speech_level" not in agent.calls[0]["previous"].model_dump()
 
 
 def test_onboarding_rebuild_drops_style_and_reflected_messages_are_not_reused():

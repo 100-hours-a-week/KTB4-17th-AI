@@ -47,6 +47,7 @@ def convert(row: dict, *, min_agreement: float) -> tuple[TagExample | None, str]
         secondary=secondary,
         off_topic=off,
         source="synthetic",
+        group=row.get("familyId"),
     )
     return example, ""
 

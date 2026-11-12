@@ -20,6 +20,9 @@ node_modules/
 package.json
 package-lock.json
 release.config.cjs
+Jenkinsfile
+Dockerfile.ci
+.ci-reports/
 
 # IDE
 .idea/
@@ -44,3 +47,6 @@ docs/
 README.md
 gitconvention.md
 .python-version
+
+# Runtime models are downloaded and verified in the builder stage.
+models/
