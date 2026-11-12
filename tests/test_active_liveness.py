@@ -104,6 +104,7 @@ def evaluate(
     leading_unready=False,
     brief_turn=False,
     turn_pitch=-20,
+    lower_hands_before_head=False,
 ):
     target = next(
         item
@@ -158,7 +159,9 @@ def evaluate(
             if not adaptive
             and not no_turn
             and not missing_middle
-            and 84 <= index < (88 if brief_turn else 160 if no_return else 130)
+            and (108 if lower_hands_before_head else 84)
+            <= index
+            < (88 if brief_turn else 160 if no_return else 154 if lower_hands_before_head else 130)
             else neutral_pitch
         )
         x = center_x + (0.018 if index % 2 else -0.018) if slight_center_drift else center_x
@@ -173,6 +176,8 @@ def evaluate(
     def hands(frame):
         if no_hand:
             return []
+        if lower_hands_before_head and int(frame[0, 0, 0]) >= 84:
+            return []
         if interrupted_pose and 50 <= int(frame[0, 0, 0]) < 135:
             return []
         box = np.array([25, 20, 55, 60]) if overlap else np.array([62, 5, 79, 60])
@@ -184,6 +189,14 @@ def evaluate(
     return ActiveLivenessAnalyzer(SimpleNamespace(observe=face), SimpleNamespace(detect=hands)).evaluate(
         b"video", ".webm", encode_target(target)[:3] if adaptive else encode_target(target)
     )
+
+
+def test_head_verification_accepts_two_second_hands_lowered_interval_after_pose(monkeypatch):
+    result = evaluate(monkeypatch, lower_hands_before_head=True).result
+    assert result.passed, result.reason_codes
+    assert result.frontal_hold_seconds >= REQUIRED_HOLD_SECONDS
+    assert result.pose_hold_seconds >= REQUIRED_HOLD_SECONDS
+    assert result.head_hold_seconds >= REQUIRED_HOLD_SECONDS
 
 
 def test_basic_challenge_requires_frontal_then_continuous_pose_without_head_turn(monkeypatch):
