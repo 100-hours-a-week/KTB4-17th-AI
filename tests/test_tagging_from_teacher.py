@@ -10,6 +10,7 @@ def teacher_row(**overrides) -> dict:
     row = {
         "id": "synthetic:syn-1-00000:t0",
         "source": "synthetic",
+        "familyId": "seed-1-00000",
         "input": {"question": "주말엔 뭐 해요?", "answer": "집에서 빵 굽는 게 제일 좋아요"},
         "aggregate": {
             "validSamples": 5,
@@ -25,6 +26,7 @@ def test_convert_keeps_majority_and_drops_primary_secondary_overlap():
     assert reason == ""
     assert example.primary == ["interests", "routine"] and example.secondary == []
     assert example.source == "synthetic" and example.reviewed_by is None
+    assert example.group == "seed-1-00000"  # train/val 을 세션 단위로 나누는 키
     # 형식 규칙은 통과하고, 검수 전이라는 이유로만 막힌다
     errors = validate([example], leaked=set())
     assert errors == [f"[{example.id}] reviewed_by 없음 (사람이 정답을 확인해야 함)"]

@@ -1,8 +1,8 @@
-"""v2 연습대화 서비스 — v1 PracticeService 를 복제하고 메모리·말 놓기 흐름을 합쳤다.
+"""v2 연습대화 서비스 — v1 PracticeService 를 복제하고 메모리 흐름을 합쳤다.
 
   start(req)               상대(저장된 페르소나) 고르고 세션을 연다. LLM 없음
   stream_opening(session)  상대가 먼저 인사 (SSE)
-  stream_reply(session, m) 말 놓기 답 판정 → 내 메시지 저장 → 상대 답변 스트리밍 → 답변 저장 (SSE)
+  stream_reply(session, m) 내 메시지 저장 → 상대 답변 스트리밍 → 답변 저장 (SSE)
   stream_retry(session)    답을 못 받은 내 마지막 메시지에 답변만 다시
 
 v1 코드를 고쳐도 v2 동작이 같이 바뀌지 않도록 v1 서비스·프롬프트를 쓰지 않는다.
@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 
 from pydantic import BaseModel
 from sqlalchemy.exc import IntegrityError
@@ -42,31 +41,43 @@ from app.features.practice.schemas import (
     StartEvent,
 )
 from app.v2.persona.embedder import EmbedderProtocol, get_embedder
-from app.v2.persona.repository import PersonaMemoryRepository
 
+from . import cells
 from .agents import (
     FALLBACK_REPLY,
     OPENING_INSTRUCTION,
     LLMError,
     PartnerAgent,
+    SlmRoute,
     without_identity_confession,
 )
-from .memory import MemoryContext, grounding_texts, load_memory_context, render_memory_section
-from .models import V2PracticeSpeechState
-from .speech import (
-    ASK_AFTER_TURNS,
-    MODE_ASKED,
-    MODE_CASUAL,
-    MODE_DECLINED,
-    MODE_FORMAL,
-    asks_permission,
-    classify_permission,
-    speech_addon,
+from .memory import (
+    MemoryContext,
+    fact_attributes,
+    grounding_texts,
+    load_confirmed_fact_texts,
+    load_memory_context,
+    render_memory_section,
 )
 
 logger = logging.getLogger(__name__)
 
 Event = tuple[str, BaseModel]
+
+
+def _demote(session: PracticeSession, reason: str) -> None:
+    """9칸 세션을 메인 LLM 으로 내린다. 칸 이름은 기록으로 남긴다. 다음 커밋(메시지 저장)에 같이 저장된다."""
+    if session.reply_engine == cells.ENGINE_SLM:
+        logger.warning("practice session %s: 9-cell (%s) -> main LLM (%s)", session.id, session.slm_cell, reason)
+    session.reply_engine = cells.ENGINE_LLM
+
+
+def _without_opening_instruction(history: list[dict]) -> list[dict]:
+    """9칸용 대화 기록. 상대가 먼저 인사한 세션은 _history 가 맨 앞에 인사 지시문(user)을 끼우는데,
+    학습에 없던 문장이라 9칸에는 빼고 상대 인사(assistant)부터 보낸다. 실제 서버에서 이 형식이 받아지는 것을 확인했다."""
+    if len(history) > 1 and history[0] == {"role": "user", "content": OPENING_INSTRUCTION}:
+        return history[1:]
+    return history
 
 
 class PersonaNotFound(Exception):
@@ -107,7 +118,9 @@ class V2PracticeService:
         self.agent = PartnerAgent()
         self.embedder = embedder or get_embedder()  # 모델은 첫 호출 때 로드된다
         self._memory = MemoryContext()  # _system 이 채우고 _guardrail_context 가 읽는다 (요청마다 새 인스턴스)
-        self._ask_pending = False  # 이번 답변에서 말 놓기를 제안하도록 지시했는지 — 저장 때 asked 로 넘길지 정한다
+        self._partner_facts: list[str] = []
+        self._partner: LoadedPersona | None = None  # _system 이 채운다 (9칸 프롬프트가 다시 쓴다)
+        self._me: LoadedPersona | None = None
 
     # PersonaRef 로 저장된 페르소나를 불러온다. 없으면 PersonaNotFound
     async def _load(self, who: str, ref: PersonaRef) -> LoadedPersona:
@@ -126,6 +139,12 @@ class V2PracticeService:
         # 내 페르소나가 있으면 온보딩 닉네임이 우선. nickname 은 페르소나가 없는 사용자용이다
         my_nickname = me.nickname if me else (req.nickname or "회원")
 
+        # 답변 모델은 지금 정해 세션에 고정한다. 9칸 서버가 살아 있을 때만 9칸 (app/v2/practice/cells.py)
+        if cells.available():
+            reply_engine, slm_cell = cells.ENGINE_SLM, cells.cell_for(partner.response)
+        else:
+            reply_engine, slm_cell = cells.ENGINE_LLM, None
+
         session = await self.repo.create_session(
             partner_persona_id=partner.record.id,
             partner_user_id=partner.record.user_id,
@@ -133,6 +152,8 @@ class V2PracticeService:
             my_persona_id=me.record.id if me else None,
             user_id=me.record.user_id if me else None,
             my_nickname=my_nickname,
+            reply_engine=reply_engine,
+            slm_cell=slm_cell,
         )
         return PracticeStartResponse(
             session_id=session.id,
@@ -199,15 +220,27 @@ class V2PracticeService:
             logger.exception("v2 memory retrieval failed for user=%s — continuing without memory", session.user_id)
             return MemoryContext()
 
+    async def _load_partner_facts(self, user_id: str | None) -> list[str]:
+        if not user_id:
+            return []
+        try:
+            return await load_confirmed_fact_texts(self.db, user_id)
+        except Exception:  # noqa: BLE001
+            logger.exception("v2 partner fact retrieval failed for user=%s — continuing without facts", user_id)
+            return []
+
     # ── 프롬프트 ──────────────────────────────────────────
 
-    # 상대(+나) 프로필 → 기본 시스템 프롬프트, 그 뒤에 가드레일·메모리·말투 지시를 붙인다
+    # 상대(+나) 프로필 → 기본 시스템 프롬프트, 그 뒤에 가드레일·메모리 지시를 붙인다
     async def _system(self, session: PracticeSession) -> str:
         self._memory = await self._load_memory(session)  # _guardrail_context 가 읽으므로 먼저 채운다
         partner = await self._load("partner", PersonaRef(persona_id=session.partner_persona_id))
+        self._partner = partner
+        self._partner_facts = await self._load_partner_facts(partner.record.user_id or session.partner_user_id)
         me = None
         if session.my_persona_id:
             me = await load_persona(self.db, PersonaRef(persona_id=session.my_persona_id))
+        self._me = me
         mode = effective_mode(session.user_id)
         # 온보딩 세션의 닉네임이 유효하게 로드되었으면(id 앞자리 폴백이 아니면) 우선 반영하고 세션에도 동기화한다
         partner_name = (
@@ -224,6 +257,7 @@ class V2PracticeService:
             partner=partner.response,
             my_name=session.my_nickname,
             me=me.response if me else None,
+            partner_facts=self._partner_facts,
         )
         if mode == "enforce":
             system += "\n" + practice_cove_addon(
@@ -231,12 +265,33 @@ class V2PracticeService:
             )
         if not self._memory.is_empty:
             system += "\n" + render_memory_section(session.my_nickname, self._memory)
-        return system + "\n" + await self._speech_section(session)
+        return system
+
+    # 9칸 세션의 이번 턴 경로. 서버가 내려가 있으면 세션을 메인 LLM 으로 내리고 None (되돌리지 않는다)
+    @staticmethod
+    def _slm_route(session: PracticeSession) -> SlmRoute | None:
+        if session.reply_engine != cells.ENGINE_SLM or not session.slm_cell:
+            return None
+        if not cells.available():
+            _demote(session, "server down")
+            return None
+        return SlmRoute(cell=session.slm_cell)
+
+    # 9칸 프롬프트 — 학습 때와 같은 compact 형식. _system 을 먼저 불러 상대 페르소나를 채워 둬야 한다.
+    # 메인 LLM 프롬프트의 메모리·가드레일 지시는 학습에 없던 입력이라 넣지 않는다 (가드레일 사후 검사는 그대로 돈다)
+    def _slm_system(self, session: PracticeSession) -> str:
+        assert self._partner is not None
+        return cells.system_prompt(
+            partner_name=session.partner_nickname,
+            partner=self._partner.response,
+            my_name=session.my_nickname,
+            my_mbti=self._me.response.mbti if self._me else None,
+        )
 
     # 가드레일 문맥. 메모리에서 꺼낸 사실도 "사용자가 말한 것"으로 인정해 근거 검사에서 걸리지 않게 한다
-    def _guardrail_context(self, session: PracticeSession, partner, me) -> GuardrailContext:
-        speaker = [*partner.interests, *partner.routine, *partner.date_prefer]
-        own = [*me.interests, *me.routine, *me.date_prefer] if me else []
+    def _guardrail_context(self, session: PracticeSession, partner=None, me=None) -> GuardrailContext:
+        speaker = fact_attributes(self._partner_facts)
+        own = fact_attributes(self._memory.all_facts)
         partner_only = [item for item in own if item not in speaker]
         user_texts = [m.content for m in session.messages if m.role == "user"]
         return GuardrailContext(
@@ -265,61 +320,10 @@ class V2PracticeService:
             msgs.insert(0, {"role": "user", "content": OPENING_INSTRUCTION})
         return msgs
 
-    # ── 말 놓기 제안 ──────────────────────────────────────
-
-    async def _speech_state(self, session: PracticeSession) -> V2PracticeSpeechState:
-        state = await self.db.get(V2PracticeSpeechState, session.id)
-        if state is None:
-            state = V2PracticeSpeechState(session_id=session.id, mode=MODE_FORMAL)
-            self.db.add(state)
-            await self.db.flush()
-        return state
-
-    async def _user_declined(self, session: PracticeSession) -> bool:
-        if not session.user_id:
-            return False
-        core = await PersonaMemoryRepository(self.db).get_core(session.user_id)
-        return core is not None and core.casual_speech_declined_at is not None
-
-    # 이번 답변에서 말투 고정/허락/제안 중 무엇을 지시할지 정해 프롬프트 조각으로 만든다
-    async def _speech_section(self, session: PracticeSession) -> str:
-        state = await self._speech_state(session)
-        mode = state.mode
-        if mode != MODE_CASUAL and await self._user_declined(session):
-            mode = MODE_DECLINED  # 다른 세션에서 거절한 사용자 — 이 세션에서도 묻지 않는다
-        user_turns = sum(1 for m in session.messages if m.role == "user")
-        self._ask_pending = (
-            mode == MODE_FORMAL
-            and user_turns >= ASK_AFTER_TURNS
-            and bool(session.messages)
-            and session.messages[-1].role == "user"
-        )
-        return speech_addon(me=session.my_nickname, mode=mode, ask_now=self._ask_pending)
-
-    # 제안한 뒤 처음 오는 사용자 답을 판정해 casual/declined 로 확정한다. 거절은 사용자 단위로도 남긴다
-    async def _resolve_pending_question(self, session: PracticeSession, message: str) -> None:
-        state = await self._speech_state(session)
-        if state.mode != MODE_ASKED:
-            return
-        allow = await classify_permission(message)
-        now = datetime.now(UTC)
-        state.mode = MODE_CASUAL if allow else MODE_DECLINED
-        state.answered_at = now
-        if not allow and session.user_id:
-            core = await PersonaMemoryRepository(self.db).get_or_create_core(session.user_id)
-            core.casual_speech_declined_at = now
-        await self.db.flush()  # 내 메시지 저장 커밋과 함께 반영된다
-
     # ── 저장 ──────────────────────────────────────────────
 
     # 메시지를 저장·커밋하되 (session_id, index) 유니크 위반(flush/commit 어느 쪽이든)이면 롤백하고 ConcurrentRequest 로 바꾼다.
-    # 말 놓기를 제안하라고 지시한 답변이 실제로 제안을 담았을 때만 asked 로 넘긴다. 아니면 다음 턴에 다시 시도한다
     async def _save_message(self, session: PracticeSession, role: str, content: str, source: str | None = None) -> None:
-        if role == "persona" and self._ask_pending and source == "llm" and asks_permission(content):
-            state = await self._speech_state(session)
-            state.mode = MODE_ASKED
-            state.asked_at = datetime.now(UTC)
-            self._ask_pending = False
         try:
             await self.repo.add_message(session, role, content, source)
             await self.db.commit()
@@ -339,12 +343,11 @@ class V2PracticeService:
         async for ev in self._respond(session, opening=True):
             yield ev
 
-    # 말 놓기 답을 먼저 판정하고, 내 메시지를 커밋한 뒤 상대 답변을 스트리밍한다.
+    # 내 메시지를 커밋한 뒤 상대 답변을 스트리밍한다.
     # 답변이 도중에 끊겨도 내 메시지는 남는다 — 새로고침해도 보이고, /retry 로 답변만 다시 받는다
     async def stream_reply(self, session: PracticeSession, message: str) -> AsyncIterator[Event]:
         if session.status != "active":
             raise SessionEnded(session.id)
-        await self._resolve_pending_question(session, message)
         await self._save_message(session, "user", message)
         async for ev in self._respond(session, opening=False):
             yield ev
@@ -362,32 +365,66 @@ class V2PracticeService:
     # 스트림이 끊기면 롤백 후 error, 첫 조각도 못 받으면 폴백 문장으로 대화를 이어간다
     async def _respond(self, session: PracticeSession, *, opening: bool) -> AsyncIterator[Event]:
         mode = effective_mode(session.user_id)
-        system = await self._system(session)
+        llm_system = await self._system(session)  # 메인 LLM 프롬프트. 메모리·상대 페르소나도 여기서 불러 둔다
+        # 첫 인사도 9칸. 지침서(3절 4번)는 학습에 없던 입력이라 메인 LLM 을 권했지만, 실제 서버에서 9칸 모두
+        # 자연스럽게 인사해 9칸으로 둔다 (docs/실험_및_분석_결과/연습대화_9칸_라우팅_테스트_결과.md 4·9장)
+        slm = self._slm_route(session)
+        system = self._slm_system(session) if slm is not None else llm_system
         history = self._history(session)
+        llm_history = history
+        if slm is not None:
+            history = _without_opening_instruction(history)
         index = session.message_count
         yield "start", StartEvent(session_id=session.id, message_index=index)
 
+        def trace(engine: str):
+            return build_langfuse_metadata(
+                feature="practice",
+                operation="reply",
+                user_id=session.user_id,
+                session_id=session.id,
+                tags=("streaming", engine),
+                messageIndex=index,
+                opening=opening,
+                **({"cell": session.slm_cell} if engine == cells.ENGINE_SLM else {}),
+            )
+
         parts: list[str] = []
-        source = "llm"
+        source = cells.ENGINE_SLM if slm is not None else "llm"
         validation = None
         try:
-            async for chunk in self.agent.reply(
-                system=system,
-                history=history,
-                opening=opening,
-                trace_metadata=build_langfuse_metadata(
-                    feature="practice",
-                    operation="reply",
-                    user_id=session.user_id,
-                    session_id=session.id,
-                    tags=("streaming",),
-                    messageIndex=index,
+            try:
+                async for chunk in self.agent.reply(
+                    system=system,
+                    history=history,
                     opening=opening,
-                ),
-            ):
-                parts.append(chunk)
-                if mode != "enforce":
-                    yield "delta", DeltaEvent(text=chunk)
+                    trace_metadata=trace(source),
+                    slm=slm,
+                ):
+                    parts.append(chunk)
+                    if mode != "enforce":
+                        yield "delta", DeltaEvent(text=chunk)
+            except LLMError as e:
+                if slm is None or parts:
+                    if slm is not None:
+                        cells.record_fallback(e)  # 다음 턴부터 메인 LLM 으로 가도록 서버 상태를 내린다
+                    raise
+                # 9칸 서버가 첫 글자도 못 줬다 — 세션을 메인 LLM 으로 내리고, 메인 LLM 프롬프트로 이 턴을 다시 만든다
+                cells.record_fallback(e)
+                _demote(session, f"reply failed: {e}")
+                slm = None
+                source = "llm"
+                system = llm_system
+                history = llm_history
+                async for chunk in self.agent.reply(
+                    system=system,
+                    history=history,
+                    opening=opening,
+                    trace_metadata=trace(source),
+                ):
+                    parts.append(chunk)
+                    if mode != "enforce":
+                        yield "delta", DeltaEvent(text=chunk)
         except LLMError as e:
             if parts:
                 # 중간에 끊겼다. 반 토막 문장을 저장하면 다음 턴 맥락이 망가진다 — 버리고 알린다
@@ -402,7 +439,7 @@ class V2PracticeService:
             yield "delta", DeltaEvent(text=FALLBACK_REPLY)
 
         content = "".join(parts).strip()
-        if source == "llm" and mode != "off":
+        if source in ("llm", cells.ENGINE_SLM) and mode != "off":
             partner = await self._load("partner", PersonaRef(persona_id=session.partner_persona_id))
             me = (
                 await load_persona(self.db, PersonaRef(persona_id=session.my_persona_id))
@@ -412,16 +449,20 @@ class V2PracticeService:
             ctx = self._guardrail_context(session, partner.response, me.response if me else None)
 
             async def regenerate(notice: str) -> str:
-                retry_history = [
-                    *history,
-                    {"role": "assistant", "content": content},
-                    {"role": "user", "content": notice},
-                ]
+                # 메인 LLM 은 위반 내용을 알려 주고 고쳐 쓰게 한다. 9칸은 이 지시문을 학습하지 않았으니
+                # 같은 입력으로 한 번 더 뽑는다 (온도 0.7 이라 다른 답이 나온다, 연동 지침서 6-4)
+                retry_history = (
+                    history
+                    if slm is not None
+                    else [*history, {"role": "assistant", "content": content}, {"role": "user", "content": notice}]
+                )
                 chunks = []
+                # 처음 답과 같은 경로·프롬프트로 다시 만든다
                 async for chunk in self.agent.reply(
                     system=system,
                     history=retry_history,
                     opening=False,
+                    slm=slm,
                     trace_metadata=build_langfuse_metadata(
                         feature="practice",
                         operation="reply",
@@ -463,7 +504,8 @@ class V2PracticeService:
                 session_id=session.id,
                 message_index=index,
                 content=content,
-                source=source,
+                # API 는 지금처럼 llm | fallback 만 내보낸다. 9칸 여부는 DB 메시지 source 와 Langfuse 로 본다
+                source="llm" if source == cells.ENGINE_SLM else source,
                 validationResult=validation,
             ),
         )

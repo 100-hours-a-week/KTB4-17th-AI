@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 # 로컬 .env가 있어도 테스트 trace를 실제 Langfuse 프로젝트로 전송하지 않는다.
 os.environ["LANGFUSE_TRACING_ENABLED"] = "false"
 
+import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.core.guardrail_trace  # noqa: F401
@@ -17,12 +18,25 @@ import app.features.practice.models  # noqa: F401  테이블을 metadata 에 등
 import app.features.simulation.models  # noqa: F401
 import app.v2.persona.models  # noqa: F401
 import app.v2.persona_extraction.models  # noqa: F401
-import app.v2.practice.models  # noqa: F401
 import app.v2.simulation.models  # noqa: F401
 from app.core.db import Base
 from app.features.persona.models import OnboardingSession, PersonaRecord
 
 NOW = datetime(2026, 9, 27, 12, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _no_practice_slm(monkeypatch):
+    """로컬 .env 에 9칸 서버 주소가 있어도 테스트가 실제 서버로 가지 않게 한다.
+    환경변수(빈 값 포함)가 .env 보다 우선한다. 9칸 테스트는 자기 픽스처에서 다시 채운다."""
+    from app.core.config import get_settings
+    from app.v2.practice import cells
+
+    monkeypatch.setenv("PRACTICE_SLM_BASE_URL", "")
+    get_settings.cache_clear()
+    cells.get_client.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 async def with_db(scenario: Callable[[async_sessionmaker[AsyncSession]], Awaitable]):

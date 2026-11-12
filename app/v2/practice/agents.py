@@ -3,7 +3,7 @@
   - PartnerAgent : 상대 페르소나의 프로필 + 대화 이력 → 다음 답변 (스트리밍)
 
 v1 프롬프트를 고쳐도 v2 연습대화가 같이 바뀌지 않도록 v2 가 따로 들고 있는다.
-v2 에서 붙는 메모리·말 놓기 지시는 service.py 가 이 시스템 프롬프트 뒤에 덧붙인다.
+v2 에서 붙는 메모리 지시는 service.py 가 이 시스템 프롬프트 뒤에 덧붙인다.
 상대 프로필은 app/v2/persona/profile.describe 로 만들고, PersonaResponse 스키마만 v1 과 공유한다.
 """
 
@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Sequence
+from dataclasses import dataclass
 from functools import lru_cache
 
 from langfuse import get_client
@@ -22,6 +23,8 @@ from app.core.config import get_settings
 from app.core.observability import LangfuseMetadata, propagate_langfuse_metadata
 from app.features.persona.schemas import PersonaResponse
 from app.v2.persona.profile import describe
+
+from . import cells
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +48,13 @@ class LLMError(Exception):
 
 # OpenAI 호환(OpenRouter 및 로컬 vLLM/Ollama 등) 스트리밍 호출 함수.
 # Anthropic의 messages.stream 대신 OpenAI 규격의 chat.completions.create(stream=True)를 사용합니다.
+@dataclass(frozen=True)
+class SlmRoute:
+    """애착 9칸 서버로 보낼 때. 없으면 메인 LLM (app/v2/practice/cells.py)."""
+
+    cell: str
+
+
 async def _stream(
     *,
     system: str,
@@ -52,10 +62,27 @@ async def _stream(
     max_tokens: int,
     timeout: float | None = None,
     metadata: LangfuseMetadata | None = None,
+    slm: SlmRoute | None = None,
 ) -> AsyncIterator[str]:
-    """텍스트 조각을 비동기 스트림으로 낸다. timeout 은 첫 조각이 아니라 전체 스트림 완료 기준."""
+    """텍스트 조각을 비동기 스트림으로 낸다. timeout 은 첫 조각이 아니라 전체 스트림 완료 기준.
+
+    slm 이면 9칸 서버에 칸 이름을 model 로 보낸다. 재시도하지 않고, 첫 조각을 짧게만 기다린다 —
+    실패하면 호출부(service)가 같은 턴을 메인 LLM 으로 다시 보낸다."""
     settings = get_settings()
-    client = _get_client()
+    if slm is not None:
+        client = cells.get_client()
+        model = slm.cell
+        extra: dict = {"temperature": cells.TEMPERATURE}
+        first_chunk_timeout: float | None = settings.practice_slm_first_chunk_timeout_s
+        name = "practice-reply-slm"
+        total = 1
+    else:
+        client = _get_client()
+        model = settings.llm_model_v2  # v2 전용 모델 (config.llm_model_v2)
+        extra = {}
+        first_chunk_timeout = None
+        name = "practice-reply"
+        total = llm_retry.attempts()
 
     # 인자로 넘어온 timeout이 없으면 app/core/config.py 에 정의된 practice_timeout_s(기본 12초) 적용
     stream_timeout = timeout if timeout is not None else settings.practice_timeout_s
@@ -64,24 +91,30 @@ async def _stream(
     payload_messages = [{"role": "system", "content": system}, *messages]
 
     # 재시도는 첫 조각을 내보내기 전까지만 — 이미 사용자에게 보낸 글자를 다시 보내면 답변이 겹친다
-    total = llm_retry.attempts()
     for attempt in range(1, total + 1):
         sent = False
         try:
-            async with asyncio.timeout(stream_timeout):
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + stream_timeout
+            # 9칸이면 첫 조각까지는 짧게, 첫 조각이 오면 전체 기한으로 늘린다
+            first_deadline = min(deadline, loop.time() + first_chunk_timeout) if first_chunk_timeout else deadline
+            async with asyncio.timeout_at(first_deadline) as limit:
                 # OpenRouter 및 로컬 서버로 스트리밍 요청 전송
                 stream = await client.chat.completions.create(
-                    name="practice-reply",
-                    model=settings.llm_model_v2,  # v2 전용 모델 (config.llm_model_v2)
+                    name=name,
+                    model=model,
                     messages=payload_messages,  # type: ignore[arg-type]
                     max_tokens=max_tokens,
                     stream=True,
                     stream_options={"include_usage": True},
                     metadata=metadata,
+                    **extra,
                 )
                 # 스트림에서 청크를 받아 텍스트 조각을 yield
                 async for chunk in stream:
                     if chunk.choices and chunk.choices[0].delta.content:
+                        if not sent:
+                            limit.reschedule(deadline)
                         sent = True
                         yield chunk.choices[0].delta.content
             return
@@ -95,8 +128,8 @@ async def _stream(
                 # 모델 서버 연결 거부, 유효하지 않은 모델명, API Key 인증 실패 등 모든 예외를 LLMError로 통일
                 error = LLMError(str(e))
             if not sent and attempt < total and llm_retry.is_retryable(e):
-                logger.warning("practice-reply attempt %d failed (%s), retrying", attempt, error)
-                llm_retry.record_retry(name="practice-reply", attempt=attempt, reason=str(error))
+                logger.warning("%s attempt %d failed (%s), retrying", name, attempt, error)
+                llm_retry.record_retry(name=name, attempt=attempt, reason=str(error))
                 await asyncio.sleep(llm_retry.RETRY_BACKOFF_S)
                 continue
             if error is e:
@@ -107,8 +140,7 @@ async def _stream(
 # ══ 프롬프트 ═══════════════════════════════════════════════
 
 # 대화 스타일 우선 (2026-10-05 결정): 프로필에 "대화 스타일"(실제 대화에서 관찰한 말투)이 있으면
-# 아래 고정 규칙의 "존댓말 유지·이모지 금지"보다 그 스타일을 따른다. 재현 정확도를 택한 결정이라,
-# 반말·이모티콘을 쓰던 사람이면 처음 보는 상대에게도 그렇게 말할 수 있다는 점을 감수했다.
+# 아래 고정 규칙보다 실제 대화에서 관찰한 표현 습관을 우선한다.
 SYSTEM_TEMPLATE = """\
 당신은 "{partner}" 본인입니다. {me}님과 오늘 처음 메신저로 대화합니다.
 아래 프로필은 당신의 연애 성향입니다. 이 사람으로서 말하고 행동하세요.
@@ -133,7 +165,7 @@ SYSTEM_TEMPLATE = """\
 - 상대가 화제를 바꾸면 따라갑니다. 어색하면 어색한 대로 — 성향이 안 맞는 지점은 감추지 않아도 됩니다.
 
 ## 성향을 말투로
-- 프로필에 "대화 스타일"이 있으면 그 말투(존댓말/반말, 자주 쓰는 말, 어미, 웃음, 이모티콘)를 그대로 씁니다.
+- 프로필에 "대화 스타일"이 있으면 자주 쓰는 말, 어미, 웃음, 이모티콘 습관을 따릅니다.
   어미나 추임새 등 리스트 항목은 앞쪽에 적힌 것을 주된 말투로 쓰고, 뒤쪽은 가끔씩만 자연스럽게 섞어 씁니다.
   아래 성향 설명이나 MBTI 힌트와 다르면 대화 스타일이 우선입니다.
 - 연락 빈도·긍정적 상호작용이 높으면 답이 길고 "ㅎㅎ" 가 잦고, 낮으면 짧고 담백하게.
@@ -142,8 +174,8 @@ SYSTEM_TEMPLATE = """\
 
 ## 절대 하지 않는 것
 - 평가·진단·조언 ("잘 하고 계세요", "회피형이시네요" ✕). 상대 말을 요약하지 않기.
-- 이모지. 존댓말 유지 (상대가 반말하자고 해도 한 번은 "ㅎㅎ 저는 이게 편해요" 정도로).
-  단, 프로필에 "대화 스타일"이 있으면 반말·이모티콘 여부는 그 스타일을 따릅니다.
+- 이모지 금지. 기본적으로 존댓말을 사용합니다.
+  단, 프로필에 "대화 스타일"이 있으면 관찰된 어미·이모티콘 습관을 우선합니다.
 - AI·인공지능·챗봇·언어 모델·페르소나·연기라는 단어를 답변에 넣지 않기. 누가 되냐고 물으면
   "{partner}예요"처럼 1인칭으로 답하고, 프로필에 있는 관심사나 일상 하나만 짧게 얹습니다.
   "AI야?", "인공지능이야?"라고 물어도 동의하지 않습니다. "네"로 받지 않습니다.
@@ -205,6 +237,7 @@ class PartnerAgent:
         partner: PersonaResponse,
         my_name: str,
         me: PersonaResponse | None,
+        partner_facts: Sequence[str] | None = None,
     ) -> str:
         me_section = ""
         if me is not None:
@@ -212,7 +245,7 @@ class PartnerAgent:
         return SYSTEM_TEMPLATE.format(
             partner=partner_name,
             me=my_name,
-            partner_profile=describe(partner_name, partner),
+            partner_profile=describe(partner_name, partner, facts=partner_facts),
             me_section=me_section,
         )
 
@@ -224,6 +257,7 @@ class PartnerAgent:
         history: list[dict],
         opening: bool = False,
         trace_metadata: LangfuseMetadata | None = None,
+        slm: SlmRoute | None = None,
     ) -> AsyncIterator[str]:
         """텍스트 조각 스트림. 실패는 LLMError — 호출부(service)가 폴백을 낸다.
 
@@ -243,8 +277,10 @@ class PartnerAgent:
                 async for chunk in _stream(
                     system=system,
                     messages=messages,
-                    max_tokens=300,  # 1~3문장. 넉넉히
+                    # 메인 LLM 은 1~3문장에 넉넉히. 9칸은 학습·평가 기준 160 (칸 평균 답 20~37토큰)
+                    max_tokens=cells.MAX_TOKENS if slm is not None else 300,
                     timeout=None,
                     metadata=trace_metadata,
+                    slm=slm,
                 ):
                     yield chunk

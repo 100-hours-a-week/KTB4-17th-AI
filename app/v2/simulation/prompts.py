@@ -6,6 +6,8 @@ v1 프롬프트를 고쳐도 v2 리포트가 같이 바뀌지 않도록 v2 가 �
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
+from typing import Any
 
 from app.features.persona.schemas import SCORED, PersonaResponse
 from app.features.simulation.schemas import AREAS, DIMENSIONS_BY_AREA, RULES, Fit
@@ -42,16 +44,43 @@ _REPORT_RULES = """- 점수를 다시 매기지 마세요. 주어진 점수를 "
 - 하이라이트 quote 는 대화록 원문을 그대로, turn_index 와 함께. click(잘 통한 순간)·friction(어긋난 순간) 섞어서 3~5개."""
 
 
-def _report_perspective_swap(text: str, pa: PersonaResponse, pb: PersonaResponse, name_a: str, name_b: str) -> bool:
-    """Detect an exclusive profile phrase attributed to the other named person."""
-    attrs_a = set([*pa.interests, *pa.routine, *pa.date_prefer])
-    attrs_b = set([*pb.interests, *pb.routine, *pb.date_prefer])
+def _fact_attrs(facts: Sequence[Any]) -> set[str]:
+    from .verifier import _JOSA, _VERBISH, _fact_keys
+
+    attrs: set[str] = set()
+    for item in facts:
+        text = getattr(item, "text", item)
+        if not isinstance(text, str):
+            continue
+        keys = _fact_keys(text)
+        attrs.update(k for k in keys if len(k) >= 2)
+        words = [_JOSA.sub("", w) for w in text.replace(".", " ").split() if w]
+        for i in range(len(words) - 1):
+            w1, w2 = words[i], words[i + 1]
+            if len(w1) >= 2 and len(w2) >= 2 and not _VERBISH.search(w2):
+                attrs.add(f"{w1} {w2}")
+    return attrs
+
+
+def _report_perspective_swap(
+    text: str,
+    pa: PersonaResponse | None = None,
+    pb: PersonaResponse | None = None,
+    name_a: str = "",
+    name_b: str = "",
+    *,
+    facts_a: Sequence[Any] = (),
+    facts_b: Sequence[Any] = (),
+) -> bool:
+    """Detect an exclusive memory fact phrase/keyword attributed to the other named person."""
+    attrs_a = _fact_attrs(facts_a)
+    attrs_b = _fact_attrs(facts_b)
     for owner_attrs, other_attrs, owner, other in (
         (attrs_a, attrs_b, name_a, name_b),
         (attrs_b, attrs_a, name_b, name_a),
     ):
         for attr in owner_attrs - other_attrs:
-            if len(attr) < 4:
+            if len(attr) < 2:
                 continue
             for match in re.finditer(re.escape(other), text):
                 after = text[match.end() : match.end() + 40]

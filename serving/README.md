@@ -6,18 +6,18 @@
 앱 (FastAPI, EC2)                                       RunPod Pod (GPU 1장)
  ├ 대화·질문 생성·연습·시뮬 ── LLM_* ──▶ OpenRouter Gemini
  └ 태깅·추출 ───────────────── SLM_* ──▶ vLLM 0.30.0  ── kakaocorp/kanana-2-3b-instruct
-        │ 실패·콜드 스타트면                              └ LoRA tagging-v1
+        │ 실패·콜드 스타트면                              └ LoRA tagging-v1, extraction-v1
         └──────────── 메인 LLM(Gemini)으로 폴백
 ```
 
 | 앱 호출 (`name=`) | 보내는 모델 | 설정 |
 |---|---|---|
 | `persona-tagging` | `tagging-v1` (Kanana + LoRA) | `SLM_TAGGING_MODEL` |
-| `persona-extraction`, `persona-extraction-style` | `kanana` (기본 모델) | `SLM_EXTRACTION_MODEL` |
-| 그 밖의 모든 호출 | Gemini | `LLM_MODEL` |
+| `persona-extraction` | `extraction-v1` (Kanana + LoRA) 또는 `kanana` (기본 모델) | `SLM_EXTRACTION_MODEL` |
+| 그 밖의 모든 호출 (`persona-extraction-style` 포함) | Gemini | `LLM_MODEL` |
 
-추출용 LoRA 를 따로 학습하면 `config.yaml` 의 `max-loras` 를 올리고 `start.sh` 에 `--lora-modules` 를 하나 더 붙인 뒤
-`SLM_EXTRACTION_MODEL` 을 그 이름으로 바꾼다. 앱 코드는 바꾸지 않는다.
+`start.sh` 는 `/workspace/adapters/{tagging-v1,extraction-v1}` 중 있는 어댑터만 LoRA 로 올린다.
+스타일 분석(`persona-extraction-style`)은 프롬프트가 달라 추출 어댑터로 보내지 않는다.
 
 ## 파일
 
@@ -72,7 +72,7 @@ Pod 를 켜면 이미지 기동 → 모델 로드 → (첫 기동이면 다운�
    git clone https://github.com/100-hours-a-week/KTB4-17th-AI.git && cd KTB4-17th-AI
    ```
 
-4. 어댑터를 `/workspace/adapters/tagging-v1` 에 둔다 (Jupyter 업로드 / `runpodctl send` / `TAGGING_ADAPTER_REPO`).
+4. 어댑터를 `/workspace/adapters/tagging-v1`, `/workspace/adapters/extraction-v1` 에 둔다 (Jupyter 업로드 / `runpodctl send` / `TAGGING_ADAPTER_REPO`·`EXTRACTION_ADAPTER_REPO`).
 5. `serving/vllm/start.sh` 실행 → `Uvicorn running on http://0.0.0.0:8000` 이 보이면 성공.
 
 ### B. 운영용 템플릿 (이미지로 고정)
@@ -93,7 +93,7 @@ Pod 를 켜면 이미지 기동 → 모델 로드 → (첫 기동이면 다운�
 ```bash
 export POD_URL="https://<POD_ID>-8000.proxy.runpod.net"
 curl -s "$POD_URL/health" -o /dev/null -w "%{http_code}\n"                       # 200 이면 준비 완료
-curl -s "$POD_URL/v1/models" -H "Authorization: Bearer $VLLM_API_KEY"            # kanana, tagging-v1
+curl -s "$POD_URL/v1/models" -H "Authorization: Bearer $VLLM_API_KEY"            # kanana, tagging-v1, extraction-v1
 uv run python scripts/eval_tagging.py --base-url "$POD_URL/v1" --model tagging-v1 --out evals/results/tagging-v1.json
 ```
 
@@ -103,7 +103,7 @@ uv run python scripts/eval_tagging.py --base-url "$POD_URL/v1" --model tagging-v
 SLM_BASE_URL=https://<POD_ID>-8000.proxy.runpod.net/v1
 SLM_API_KEY=<vllm_api_key 와 같은 값>
 SLM_TAGGING_MODEL=tagging-v1
-SLM_EXTRACTION_MODEL=kanana
+SLM_EXTRACTION_MODEL=extraction-v1
 # SLM_PROBE_INTERVAL_S=15
 ```
 

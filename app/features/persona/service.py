@@ -10,11 +10,20 @@ import asyncio
 import logging
 import re
 from datetime import UTC, datetime
+from uuid import uuid4
+
+from langfuse import observe
 
 from app.core.config import get_settings
-from app.core.guardrail import contains_profanity, effective_mode
+from app.core.guardrail import effective_mode
 from app.core.guardrail_trace import record_guardrail
-from app.core.observability import build_langfuse_metadata
+from app.core.observability import (
+    build_langfuse_metadata,
+    model_failure_reason,
+    record_consumer_rule_result,
+    record_rule_result,
+    track_model_selection,
+)
 
 from .agents import (
     BuildFailed,
@@ -592,6 +601,7 @@ class OnboardingService:
         session = await self.repo.create_session(nickname, ONBOARDING_TOTAL_TURNS, user_id, mbti)
         return await self._ask_next(session)
 
+    @observe(name="persona-answer-workflow", capture_input=False, capture_output=False)
     async def submit_answer(
         self, session: OnboardingSession, answer: str, *, turn_index: int | None = None
     ) -> TurnResponse:
@@ -604,6 +614,8 @@ class OnboardingService:
 
         topic = TOPICS_BY_ID[session.pending_topic_id]
         question = session.turns[-1].question
+        operation_id = uuid4().hex
+        rule_reason = "tagging_failed"
 
         tagging = asyncio.create_task(
             self.tagging.tag(
@@ -616,6 +628,7 @@ class OnboardingService:
                     session_id=session.id,
                     turnIndex=session.turn_index,
                     topicId=topic.id,
+                    model_operation_id=operation_id,
                 ),
             )
         )
@@ -627,6 +640,7 @@ class OnboardingService:
             logger.warning("tagging exceeded onboarding wait, continuing in background (turn %s)", session.turns[-1].id)
             _keep_pending_tag(session.turns[-1].id, tagging)
             tags = None
+            rule_reason = "tagging_wait_timeout"
 
         # 질문과 무관한 답이면 한 번만 가볍게 되묻는다. 턴은 소모하지 않고 답도 저장하지 않는다
         if tags is not None and tags.off_topic and not (session.turns[-1].tags or {}).get("reasked"):
@@ -637,6 +651,7 @@ class OnboardingService:
         if tags is None:
             # 태깅 실패 시 주제가 커버하기로 한 차원을 그대로 인정
             coverage.apply(list(topic.covers), list(topic.also_touches))
+            record_consumer_rule_result(operation="persona-tagging", operation_id=operation_id, reason=rule_reason)
         else:
             coverage.apply(tags.primary, tags.secondary)
 
@@ -684,6 +699,8 @@ class OnboardingService:
 
         return await self.build_persona(session, allow_fallback=True)
 
+    @observe(name="persona-build-workflow", capture_input=False, capture_output=False)
+    @track_model_selection("persona-extraction")
     async def build_persona(self, session: OnboardingSession, *, allow_fallback: bool = False) -> PersonaResponse:
         """완료된 대화 전체 → 미확정 가치관 초안. 재빌드(보강 문답 뒤)도 이 함수.
 
@@ -713,6 +730,7 @@ class OnboardingService:
             if not allow_fallback:
                 raise
             logger.warning("extraction failed (%s), using rule-based fallback draft", e)
+            record_rule_result(model_failure_reason(e))
             raw, source = fallback_extraction(session), "fallback"
         coverage = Coverage(session.coverage)
 
@@ -730,17 +748,8 @@ class OnboardingService:
             evidence = max(coverage.primary.get(key, 0), 1 if key in answered else 0)
             confidence[key] = confidence_of(value is not None, evidence)
 
-        texts: dict[str, list[str]] = {}
-        for key in TEXTUAL:
-            values = getattr(raw, key, [])
-            if values and key not in answered:
-                dropped.append(key)
-                values = []
-            # 욕설이 든 항목은 버린다 — narrative·summaries 는 가드레일을 거치지만 texts 는 거치지 않았다
-            clean = [v for v in values if not contains_profanity(v)]
-            if len(clean) != len(values):
-                logger.info("dropped profane %s items: %d", key, len(values) - len(clean))
-            texts[key] = clean
+        # 텍스트형 항목(interests, routine, date_prefer, date_avoid)은 v2 메모리에서 관리하므로 추출하지 않는다
+        texts: dict[str, list[str]] = {key: [] for key in TEXTUAL}
         if dropped:
             logger.info("dropped unanswered dimensions from extraction: %s", dropped)
 
@@ -758,6 +767,15 @@ class OnboardingService:
         # 근거 있는 점수 차원이 하나도 없는 area 의 카드는 추측으로 쓴 것이다
         grounded_areas = {SCORED[k].area for k in SCORED if k in answered and getattr(raw, k, None) is not None}
         summaries = [s for s in valid_summaries(raw.summaries) if s["category"] in grounded_areas]
+        narrative_data = narrative.model_dump() if narrative else None
+        original_narrative = raw.narrative.model_dump() if raw.narrative else None
+        if source == "llm" and (
+            dropped or narrative_data != original_narrative or len(summaries) != len(raw.summaries)
+        ):
+            record_rule_result(
+                "persona_result_filtered",
+                mixed=any(value is not None for value in scores.values()) or bool(narrative or summaries),
+            )
 
         record, previous = await self.repo.save_persona(
             session,

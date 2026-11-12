@@ -24,8 +24,12 @@ class PracticeRepository:
         my_persona_id: str | None,
         user_id: str | None,
         my_nickname: str,
+        reply_engine: str | None = None,
+        slm_cell: str | None = None,
     ) -> PracticeSession:
         session = PracticeSession(
+            reply_engine=reply_engine,
+            slm_cell=slm_cell,
             partner_persona_id=partner_persona_id,
             partner_user_id=partner_user_id,
             partner_nickname=partner_nickname,

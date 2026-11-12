@@ -11,7 +11,10 @@ from tests.v2.sim_fixtures import FakeLLM, ctx, good_script, judge_flag, judge_p
 PLAN = TopicPlan(
     mode="shared",
     facts_a=[TopicFact(ref="A-f1", fact_id=1, owner="a", category="취미", text="주말마다 산에 간다")],
-    facts_b=[TopicFact(ref="B-f1", fact_id=11, owner="b", category="취미", text="트레킹 동호회 활동")],
+    facts_b=[
+        TopicFact(ref="B-f1", fact_id=11, owner="b", category="취미", text="트레킹 동호회 활동"),
+        TopicFact(ref="B-f2", fact_id=12, owner="b", category="취미", text="독서 모임에 참여한다"),
+    ],
 )
 
 

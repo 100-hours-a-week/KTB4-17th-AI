@@ -436,5 +436,7 @@ def test_tag_prompt_defines_every_dimension_and_keeps_output_contract():
     assert f"avoidance ({d.label}): 낮음 = {d.low} / 높음 = {d.high}" in agents.TAG_PROMPT
     assert "primary 를 빈 배열로" in agents.TAG_PROMPT
     assert "아직 정하지 않았어요" in agents.TAG_PROMPT
+    # 정황만 있는 답은 primary 가 아니라 secondary — 세 모델이 공통으로 틀린 유형 (docs/성능평가/11 4절)
+    assert "남은 흔적만 전해" in agents.TAG_PROMPT
     # TaggingAgent 파싱과 증류 student 가 기대하는 출력 형식
     assert agents.TAG_PROMPT.rstrip().endswith('{"primary": [], "secondary": [], "off_topic": false}')

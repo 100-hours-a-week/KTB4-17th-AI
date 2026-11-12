@@ -17,6 +17,7 @@ from scripts.generate_synthetic_onboarding import (
 from scripts.label_with_teacher import (
     GOLD_DIR,
     Completion,
+    TeacherClient,
     aggregate_tags,
     check_tag_sample,
     gold_items,
@@ -149,3 +150,72 @@ def test_resume_skips_done_items_and_retries_failures(tmp_path):
     assert len([c for c in again.calls if c[0] == TAG_PROMPT]) == 2 * (len(tags) - 3)
     ids = [json.loads(x)["id"] for x in (out / "tagging.jsonl").read_text().splitlines()]
     assert sorted(ids) == sorted(t.id for t in tags)
+
+
+class FlakyTeacher(FakeTeacher):
+    """앞쪽 태깅 호출 몇 개가 연결 오류로 실패한다."""
+
+    def __init__(self, tag_outputs, *, fail_first):
+        super().__init__(tag_outputs)
+        self.fail_first = fail_first
+
+    async def __call__(self, system, user, temperature, max_tokens):
+        if system == TAG_PROMPT and self.fail_first > 0:
+            self.fail_first -= 1
+            raise ConnectionError("down")
+        return await super().__call__(system, user, temperature, max_tokens)
+
+
+def test_resume_retries_call_failures_and_redoes_extraction_built_on_them(tmp_path):
+    tags, extracts = synthetic_items(_synthetic_file(tmp_path))
+    out = tmp_path / "out"
+    out.mkdir()
+    options = {"out_dir": out, "samples": 2, "temperature": 0.7, "concurrency": 1, "teacher_meta": {}}
+
+    # concurrency 1 이라 첫 행의 샘플 2개가 실패한다. 그 답변의 차원이 추출의 허용 목록에서 빠진다
+    empty = '{"primary": [], "secondary": [], "off_topic": false}'
+    asyncio.run(run(tags, extracts, FlakyTeacher([empty], fail_first=2), resume=False, **options))
+    assert json.loads((out / "extraction.jsonl").read_text().splitlines()[0])["input"]["answered"] == []
+
+    retry = FakeTeacher(['{"primary": ["avoidance"], "secondary": [], "off_topic": false}'])
+    asyncio.run(run(tags, extracts, retry, resume=True, **options))
+
+    assert len([c for c in retry.calls if c[0] == TAG_PROMPT]) == 2  # 실패한 행만
+    assert len([c for c in retry.calls if c[0] == RUBRIC]) == 1
+    tag_rows = [json.loads(x) for x in (out / "tagging.jsonl").read_text().splitlines()]
+    extract_rows = [json.loads(x) for x in (out / "extraction.jsonl").read_text().splitlines()]
+    assert sorted(r["id"] for r in tag_rows) == sorted(t.id for t in tags)  # 중복 없음
+    assert all("error" not in s for r in tag_rows for s in r["samples"])
+    assert [r["input"]["answered"] for r in extract_rows] == [["avoidance"]]
+
+    again = FakeTeacher([empty])
+    asyncio.run(run(tags, extracts, again, resume=True, **options))
+    assert again.calls == []
+
+
+def test_resume_does_not_retry_parse_failures(tmp_path):
+    """모델이 깨진 JSON 을 낸 건 teacher 품질 지표다. 다시 뽑아 지우지 않는다."""
+    tags, _ = synthetic_items(_synthetic_file(tmp_path))
+    out = tmp_path / "out"
+    out.mkdir()
+    options = {"out_dir": out, "samples": 2, "temperature": 0.7, "concurrency": 2, "teacher_meta": {}}
+    asyncio.run(run(tags[:1], [], FakeTeacher(["not json"]), resume=False, **options))
+
+    again = FakeTeacher(['{"primary": [], "secondary": [], "off_topic": false}'])
+    asyncio.run(run(tags[:1], [], again, resume=True, **options))
+    assert again.calls == []
+
+
+def test_self_hosted_teacher_turns_off_template_reasoning_by_default():
+    client = TeacherClient(
+        base_url="http://localhost:8000/v1", api_key="", model="qwen3.8-27b", reasoning=False, providers=None
+    )
+    assert client.extra_body == {"chat_template_kwargs": {"enable_thinking": False}}
+
+
+def test_openrouter_teacher_keeps_provider_routing():
+    client = TeacherClient(
+        base_url="https://openrouter.ai/api/v1", api_key="k", model="qwen/qwen3.8-27b", reasoning=False, providers=None
+    )
+    assert client.extra_body["provider"]["data_collection"] == "deny"
+    assert "chat_template_kwargs" not in client.extra_body

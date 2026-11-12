@@ -22,7 +22,6 @@ _STYLE_LISTS = (
     ("줄임말/신조어", "slang"),
 )
 _STYLE_FIELDS = (
-    ("말투", "speech_level"),
     ("문장부호", "punctuation"),
     ("웃음", "laughter"),
     ("메시지 길이", "message_length"),

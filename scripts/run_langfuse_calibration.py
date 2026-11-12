@@ -72,6 +72,7 @@ from app.features.simulation.report import (  # noqa: E402
 from app.features.simulation.schemas import (  # noqa: E402
     grade_of,
 )
+from scripts.eval_tagging import score as score_tagging  # noqa: E402
 
 DATASETS = (
     "quality/persona/onboarding-conversation",
@@ -293,22 +294,23 @@ async def _conversation(item: Any) -> dict[str, Any]:
 
 async def _tagging(item: Any) -> dict[str, Any]:
     inp = item.input
+    metrics = item.expected_output["autoMetrics"]
+    if not metrics.get("applies"):
+        return _error(ValueError("tagging label evaluation requires autoMetrics.applies=true"), mode="fixture")
     tags = await TaggingAgent().tag(
         inp["question"],
         inp["answer"],
         trace_metadata=_trace_metadata(item, "persona_tagging"),
+        strict=True,
     )
     output = tags.model_dump(mode="json") if tags is not None else None
-    metrics = item.expected_output["autoMetrics"]
-    checks = {"modelOutput": output is not None}
-    if output is not None and metrics.get("applies"):
-        checks.update(
-            {
-                "primary": output["primary"] in metrics["primary"]["accepted"],
-                "secondary": output["secondary"] in metrics["secondary"]["accepted"],
-                "offTopic": output["off_topic"] in metrics["off_topic"]["accepted"],
-            }
-        )
+    scored = score_tagging(output, item.expected_output)
+    checks = {
+        "modelOutput": output is not None,
+        "primary": scored["primary"],
+        "secondary": scored["secondary"],
+        "offTopic": scored["off_topic"],
+    }
     return _result(output, checks=checks, mode="model")
 
 

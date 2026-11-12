@@ -59,6 +59,7 @@ uv run python training/tagging/build_sft.py data/tagging.jsonl --allow-unreviewe
 
 teacher 라벨은 `reviewed_by` 가 비어 있어 사람이 확인하기 전에는 학습에 들어가지 않는다. 검수는 5회 샘플 판정 일치율
 (`aggregate.agreement`)이 낮은 것부터 본다. teacher 자체의 골드셋 점수는 `scripts/score_teacher_gold.py` 로 잰다.
+teacher 를 RunPod 에 직접 띄워 라벨링하는 절차는 `serving/teacher/README.md` 에 있다.
 
 ```bash
 uv run python training/tagging/build_sft.py data/tagging.jsonl --out training/tagging/out
@@ -84,6 +85,21 @@ python training/tagging/train_lora.py --base-model <HF 모델 id> \
 - 기본 모델은 한국어 성능과 **상업 이용 가능한 라이선스**를 함께 본다. 상업 이용이 제한된 라이선스도 있다.
 - `trl` 은 1.14.0 으로 고정했다. 1.15 는 Triton 커널을 무조건 써서 CUDA 가 없으면 돌지 않는다. `--max-steps 4` 로 노트북에서도 파이프라인을 점검할 수 있다.
 
+### 추출 어댑터 (`training/extraction/`)
+
+teacher 의 `extraction.jsonl` 을 운영과 같은 프롬프트(`RUBRIC` + 대화 + 답한 항목)의 학습 파일로 바꾼다. 어떤 행을 왜 빼는지는 `build_sft.py` 머리말과 `manifest.json` 의 `skipped` 에 있다.
+
+```bash
+uv run python training/extraction/build_sft.py data/teacher/qwen-fp8-sub1000/extraction.jsonl --allow-unreviewed
+python training/tagging/train_lora.py --base-model kakaocorp/kanana-2-3b-instruct \
+    --data-dir training/extraction/out --output-dir training/extraction/adapters/extraction-v1 \
+    --max-length 4096 --batch-size 4 --grad-accum 4
+```
+
+- 추출 예시는 입력과 정답을 합쳐 최대 약 3,350 토큰이다. `--max-length` 기본값(2048)이면 정답이 잘려 학습이 망가진다.
+- 입력이 길어 메모리를 많이 쓰므로 배치를 줄이고 `--grad-accum` 으로 같은 업데이트 크기를 유지한다.
+- `--base-model` 에는 로컬 경로가 아니라 HF ID 를 넘긴다. `serving/vllm/start.sh` 가 어댑터의 기본 모델 이름을 검사한다.
+
 ## 3. 서빙과 평가
 
 기본 모델은 `kakaocorp/kanana-2-3b-instruct` 다. 학습(`--base-model`)과 서빙(`serving/vllm/config.yaml`)이 같아야 한다.
@@ -97,6 +113,16 @@ uv run python scripts/eval_tagging.py --slm --model tagging-v1 \
 
 평가 스크립트는 운영 `TaggingAgent` 를 그대로 호출하므로 프롬프트·타임아웃(15초)·JSON 파싱·차원 필터가 운영과 같다.
 기본은 regression split 이다. `blind_holdout` 은 최종 판정 때만 `--allow-holdout` 으로 본다.
+
+점수를 Langfuse 에서 실행끼리 비교하려면 결과 파일을 올린다. `.env` 에 `LANGFUSE_PUBLIC_KEY`·`LANGFUSE_SECRET_KEY` 가 있어야 한다.
+
+```bash
+uv run python scripts/upload_eval_scores.py evals/results/tagging-v1.json --dry-run
+uv run python scripts/upload_eval_scores.py evals/results/tagging-v1.json
+```
+
+세션 `eval-<실행 이름>`, 환경 `eval-results` 로 올라간다. 케이스 점수는 trace 에, 요약 점수는 세션에 붙는다. 다시 올리면 덮어쓴다.
+`evals/_harness/stage5_run.py` 결과도 같은 명령으로 올린다. 입력·출력·Judge 근거는 올리지 않는다.
 
 ### 전환 기준 (제안)
 

@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.v2.persona.embedder import EmbedderProtocol, is_trivial_reaction
+from app.v2.persona.models import UserPersonaFact
 from app.v2.persona.repository import PersonaMemoryRepository
+from app.v2.simulation.verifier import _fact_keys
 
 CORE_LABELS = {
     "job": "직업/하는 일",
@@ -36,6 +40,7 @@ MEMORY_SECTION = """\
 class MemoryContext:
     core_profile: dict[str, Any] = field(default_factory=dict)
     facts: list[tuple[str, str]] = field(default_factory=list)  # (YYYY-MM-DD, 문장)
+    all_facts: list[str] = field(default_factory=list)  # 가드레일 관점 검사용 전체 confirmed fact 문장
 
     @property
     def is_empty(self) -> bool:
@@ -45,6 +50,28 @@ class MemoryContext:
 def _sanitize(text: str) -> str:
     """개행·마크다운 헤더 기호를 제거해 프롬프트 인젝션을 막고 200자로 자른다."""
     return " ".join(text.replace("#", "").splitlines()).strip()[:200]
+
+
+async def load_confirmed_fact_texts(db: AsyncSession, user_id: str | None, *, limit: int = 15) -> list[str]:
+    """해당 사용자의 confirmed 상태 메모리 Fact 문장을 최신순으로 조회한다."""
+    if not user_id:
+        return []
+    stmt = (
+        select(UserPersonaFact)
+        .where(
+            UserPersonaFact.user_id == user_id,
+            UserPersonaFact.status == "confirmed",
+        )
+        .order_by(UserPersonaFact.updated_at.desc(), UserPersonaFact.id.desc())
+        .limit(limit)
+    )
+    rows = list((await db.execute(stmt)).scalars())
+    return [_sanitize(r.fact) for r in rows if r.fact and _sanitize(r.fact)]
+
+
+def fact_attributes(facts: Iterable[str]) -> list[str]:
+    """메모리 Fact 문장들에서 가드레일 관점 뒤바뀜 검사용 핵심 키워드를 추출한다."""
+    return list(dict.fromkeys(k for f in facts for k in _fact_keys(f)))
 
 
 async def load_memory_context(
@@ -58,8 +85,9 @@ async def load_memory_context(
     repo = PersonaMemoryRepository(db)
     core = await repo.get_core(user_id)
     profile = dict(core.profile) if core and core.profile else {}
+    all_facts = await load_confirmed_fact_texts(db, user_id)
     if not query or is_trivial_reaction(query):
-        return MemoryContext(core_profile=profile)
+        return MemoryContext(core_profile=profile, all_facts=all_facts)
 
     settings = get_settings()
     q_vec = await embedder.encode_query(query)
@@ -69,7 +97,7 @@ async def load_memory_context(
         top_k=settings.memory_top_k,
         max_distance=settings.memory_max_cosine_distance,
     )
-    return MemoryContext(core_profile=profile, facts=facts)
+    return MemoryContext(core_profile=profile, facts=facts, all_facts=all_facts)
 
 
 def render_memory_section(my_name: str, ctx: MemoryContext) -> str:

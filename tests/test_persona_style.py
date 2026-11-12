@@ -11,10 +11,10 @@ from app.features.persona.schemas import ConversationStyle, StyleExtraction
 from app.features.persona.service import persona_response
 
 
-def test_style_drops_unknown_speech_level_and_truncates_long_text():
-    s = ConversationStyle.model_validate({"speech_level": "사투리", "summary": "가" * 500, "reaction": "나" * 200})
+def test_style_ignores_legacy_speech_level_and_truncates_long_text():
+    s = ConversationStyle.model_validate({"speech_level": "반말", "summary": "가" * 500, "reaction": "나" * 200})
 
-    assert s.speech_level is None
+    assert "speech_level" not in s.model_dump()
     assert len(s.summary) == 200
     assert len(s.reaction) == 80
 
@@ -30,6 +30,7 @@ def test_style_phrase_weights_validation_and_backward_compatibility():
     # 1. phrase_weights 가 없는 레거시 데이터 (하위 호환성)
     s_legacy = ConversationStyle.model_validate({"speech_level": "존댓말", "frequent_phrases": ["감사합니다"]})
     assert s_legacy.phrase_weights == {}
+    assert "speech_level" not in s_legacy.model_dump()
 
     # 2. 비정상 값 필터링 및 clamp
     s = ConversationStyle.model_validate(
@@ -79,8 +80,8 @@ def test_persona_response_carries_conversation_style():
     resp = persona_response(record)
 
     assert resp.source == "kakao"
-    assert resp.conversation_style.speech_level == "반말"
     assert resp.conversation_style.frequent_phrases == ["오 대박"]
+    assert "speech_level" not in resp.conversation_style.model_dump()
 
 
 def test_save_extracted_version_confirms_new_version_on_top_of_base():
@@ -103,7 +104,7 @@ def test_save_extracted_version_confirms_new_version_on_top_of_base():
                 scores={"disclosure": 61},
                 confidence={},
                 narrative=None,
-                conversation_style={"speech_level": "반말"},
+                conversation_style={"endings": ["~해"]},
             )
             await db.commit()
             latest = await repo.latest_persona_for_user("u-me")
@@ -136,7 +137,7 @@ def test_save_reset_version_removes_style_and_restores_original_scores():
                 scores={"disclosure": 75, "positivity": 80},
                 confidence={"disclosure": "HIGH", "positivity": "HIGH"},
                 narrative=None,
-                conversation_style={"speech_level": "존댓말"},
+                conversation_style={"endings": ["~요"]},
             )
             await db.commit()
 

@@ -25,12 +25,15 @@ from fastapi import APIRouter, FastAPI
 from langfuse import get_client
 
 from app.core import slm
+from app.core.http_metrics import setup_http_metrics
 from app.features.chat_end.api import router as chat_end_router
 from app.features.face_verification.api import router as face_verification_router
+from app.features.feedback_cards.api import router as feedback_cards_router
 from app.features.persona.api import router as persona_router
 from app.features.persona_extraction.api import router as persona_extraction_router
 from app.features.practice.api import router as practice_router
 from app.features.primary_photo.api import router as primary_photo_router
+from app.features.sentence_cards.api import router as sentence_cards_router
 from app.features.simulation.api import router as simulation_router
 from app.features.simulation_migration.api import get_run_manager
 from app.features.simulation_migration.api import router as simulation_migration_router
@@ -39,6 +42,7 @@ from app.v2.persona.api import router as v2_persona_router
 from app.v2.persona.embedder import get_embedder
 from app.v2.persona.service import idle_sweeper_loop
 from app.v2.persona_extraction.api import router as v2_persona_extraction_router
+from app.v2.practice import cells as practice_cells
 from app.v2.practice.api import router as v2_practice_router
 from app.v2.simulation.api import router as v2_simulation_router
 
@@ -66,6 +70,7 @@ TAGS_METADATA = [
     {"name": "primary-photo", "description": "대표사진의 정면·품질을 검사합니다."},
     {"name": "synthetic-detection", "description": "대표사진의 AI 생성 위험을 검사합니다."},
     {"name": "face-verification", "description": "라이브니스와 동일인 여부를 확인합니다."},
+    {"name": "sentence-cards", "description": "문장 판정 카드를 발급하고 BE 가 모아 보낸 답변 묶음을 받습니다."},
 ]
 
 
@@ -81,9 +86,10 @@ async def _warmup_embedder() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    """시작 시 태깅·추출 SLM 상태를 확인하고 v2 메모리 스위퍼/워밍업을 띄우며, 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
+    """시작 시 태깅·추출 SLM·연습대화 9칸 서버 상태를 확인하고 v2 메모리 스위퍼/워밍업을 띄우며, 종료 전에 RunManager를 정리하고 Langfuse 이벤트를 전송한다."""
 
     await slm.start()
+    await practice_cells.start()
     background = [asyncio.create_task(idle_sweeper_loop()), asyncio.create_task(_warmup_embedder())]
     yield
     for task in background:
@@ -92,6 +98,7 @@ async def lifespan(_: FastAPI):
             await task
     try:
         await slm.stop()
+        await practice_cells.stop()
         await get_run_manager().shutdown()
     finally:
         get_client().shutdown()
@@ -120,6 +127,8 @@ api_router.include_router(simulation_migration_router)
 api_router.include_router(primary_photo_router)
 api_router.include_router(synthetic_detection_router)
 api_router.include_router(face_verification_router)
+api_router.include_router(feedback_cards_router)
+api_router.include_router(sentence_cards_router)
 
 # v2
 api_router.include_router(v2_persona_router)
@@ -136,3 +145,5 @@ async def health_check() -> dict[str, str]:
 
 
 app.include_router(api_router)
+
+setup_http_metrics(app)
