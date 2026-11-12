@@ -181,6 +181,10 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 
 ## 개발 도구
 
+### Jenkins prod CI/CD
+
+Private EC2 Jenkins용 [Jenkinsfile](Jenkinsfile)과 [실행·credential·GitOps 배포 안내](scripts/jenkins/README.md)를 추가했다. 기본값은 검사와 이미지 빌드이며 ECR push와 CLOUD 배포 PR은 각각 명시적으로 켠다. DEV CD는 중단하고, 나머지 기존 GitHub Actions는 별도 전환 전까지 유지한다.
+
 ### Lint / Format (ruff)
 
 ```bash
