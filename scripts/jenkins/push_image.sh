@@ -5,9 +5,22 @@ set -euo pipefail
 
 reports=${CI_REPORT_DIR:-.ci-reports}
 mkdir -p "$reports"
-rm -f "$reports/image-digest.txt" "$reports/image-reference.txt"
-: "${AWS_REGION:?}" "${AWS_ACCOUNT_ID:?}" "${ECR_REPOSITORY:?}" "${LOCAL_IMAGE:?}" "${GIT_COMMIT:?}"
+rm -f "$reports/image-digest.txt" "$reports/image-reference.txt" "$reports/image-tag.txt"
+: "${AWS_REGION:?}" "${AWS_ACCOUNT_ID:?}" "${ECR_REPOSITORY:?}" "${LOCAL_IMAGE:?}" "${GIT_COMMIT:?}" "${VERSION_IMAGE_TAG:?}"
+if [[ "$AWS_REGION" != 'ap-northeast-2' || "$AWS_ACCOUNT_ID" != '975779326240' || "$ECR_REPOSITORY" != 'star23/ai' ]]; then
+  echo 'Only the contracted Seoul star23/ai ECR repository is allowed.' >&2
+  exit 1
+fi
 [[ "$GIT_COMMIT" =~ ^[0-9a-f]{40}$ ]]
+if [[ -n "${CHANGE_ID:-}" || -n "${CHANGE_FORK:-}" ]]; then
+  echo 'PR and fork jobs cannot publish deployment tags.' >&2
+  exit 1
+fi
+case "${BRANCH_NAME:-}" in
+  dev) [[ "$VERSION_IMAGE_TAG" == "dev-$GIT_COMMIT" ]] ;;
+  main) [[ "$VERSION_IMAGE_TAG" == "sha-$GIT_COMMIT" || "$VERSION_IMAGE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] ;;
+  *) echo 'Only original dev/main builds may publish deployment tags.' >&2; exit 1 ;;
+esac
 export AWS_PAGER=''
 account=$(aws sts get-caller-identity --region "$AWS_REGION" --query Account --output text)
 if [[ "$account" != "$AWS_ACCOUNT_ID" ]]; then
@@ -62,6 +75,41 @@ if ! grep -Fxq "$repository@$digest" <<< "$repo_digests"; then
   echo 'ECR digest does not match the image just pushed.' >&2
   exit 1
 fi
+
+# Attach the exact stored manifest, never rebuild for a human-readable version.
+version_digest=''
+if version_digest=$(aws ecr describe-images --region "$AWS_REGION" --repository-name "$ECR_REPOSITORY" \
+  --image-ids "imageTag=$VERSION_IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text \
+  2> "$DOCKER_CONFIG/version-lookup-error"); then
+  if [[ "$version_digest" != "$digest" ]]; then
+    echo 'Version tag already points at a different digest; refusing to overwrite it.' >&2
+    exit 1
+  fi
+elif grep -Fq '(ImageNotFoundException)' "$DOCKER_CONFIG/version-lookup-error"; then
+  # ECR PutImage has no create-if-absent option. Fail closed unless the tag is
+  # immutable, so a racing publisher cannot be overwritten between lookup/put.
+  aws ecr describe-repositories --region "$AWS_REGION" --repository-names "$ECR_REPOSITORY" \
+    --output json > "$DOCKER_CONFIG/repository.json"
+  python3 scripts/jenkins/ecr_tag_policy.py "$DOCKER_CONFIG/repository.json" "$VERSION_IMAGE_TAG"
+  aws ecr batch-get-image --region "$AWS_REGION" --repository-name "$ECR_REPOSITORY" \
+    --image-ids "imageDigest=$digest" --output json > "$DOCKER_CONFIG/manifest-response.json"
+  python3 scripts/jenkins/ecr_tag_policy.py manifest "$DOCKER_CONFIG/manifest-response.json" "$digest" "$DOCKER_CONFIG/manifest.json"
+  if ! aws ecr put-image --region "$AWS_REGION" --repository-name "$ECR_REPOSITORY" \
+    --image-tag "$VERSION_IMAGE_TAG" --image-digest "$digest" --image-manifest "file://$DOCKER_CONFIG/manifest.json" \
+    --query 'image.imageId.imageDigest' --output text > "$DOCKER_CONFIG/tagged-digest" 2> "$DOCKER_CONFIG/version-put-error"; then
+    if ! grep -Eq '\((ImageTagAlreadyExistsException|ImageAlreadyExistsException)\)' "$DOCKER_CONFIG/version-put-error"; then
+      cat "$DOCKER_CONFIG/version-put-error" >&2
+      exit 1
+    fi
+  fi
+  version_digest=$(aws ecr describe-images --region "$AWS_REGION" --repository-name "$ECR_REPOSITORY" \
+    --image-ids "imageTag=$VERSION_IMAGE_TAG" --query 'imageDetails[0].imageDigest' --output text)
+  [[ "$version_digest" == "$digest" ]]
+else
+  cat "$DOCKER_CONFIG/version-lookup-error" >&2
+  exit 1
+fi
 printf '%s\n' "$digest" > "$reports/image-digest.txt"
 printf '%s\n' "$repository@$digest" > "$reports/image-reference.txt"
-printf 'Verified published image: %s@%s\n' "$repository" "$digest"
+printf '%s\n' "$VERSION_IMAGE_TAG" > "$reports/image-tag.txt"
+printf 'Verified published image: %s:%s @ %s\n' "$repository" "$VERSION_IMAGE_TAG" "$digest"

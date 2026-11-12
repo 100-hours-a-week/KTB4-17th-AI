@@ -11,6 +11,7 @@ import pytest
 from scripts.jenkins import gitops_release as release
 
 SOURCE_SHA = "a" * 40
+TAG = "sha-" + SOURCE_SHA
 BASE_SHA = "b" * 40
 DIGEST = "sha256:" + "c" * 64
 OLD_DIGEST = "sha256:" + "d" * 64
@@ -23,15 +24,15 @@ ROLES = (
     "chat-ai-cleanup",
 )
 PATHS = tuple(f"manifest/helm/star23-service/values/{role}.yaml" for role in ROLES)
-VALUES = f"# preserve this comment\nimage:\n  digest: {OLD_DIGEST}\n  repository: {IMAGE}\nresources:\n  limits:\n    cpu: '1'\n"
+VALUES = f"# preserve this comment\nimage:\n  digest: {OLD_DIGEST}\n  repository: {IMAGE}\n  tag: \"v0.9.0\"\nresources:\n  limits:\n    cpu: '1'\n"
 
 
 def test_plan_changes_only_the_five_ai_digests_and_preserves_other_values() -> None:
-    changes = release.plan_changes(dict.fromkeys(PATHS, VALUES), DIGEST)
+    changes = release.plan_changes(dict.fromkeys(PATHS, VALUES), DIGEST, image_tag=TAG)
 
     assert set(changes) == set(PATHS)
     for content in changes.values():
-        assert content == VALUES.replace(OLD_DIGEST, DIGEST)
+        assert content == VALUES.replace(OLD_DIGEST, DIGEST).replace("v0.9.0", TAG)
 
 
 @pytest.mark.parametrize(
@@ -45,12 +46,12 @@ def test_plan_changes_only_the_five_ai_digests_and_preserves_other_values() -> N
 )
 def test_invalid_or_foreign_values_are_rejected(values: str) -> None:
     with pytest.raises(ValueError):
-        release.plan_changes(dict.fromkeys(PATHS, values), DIGEST)
+        release.plan_changes(dict.fromkeys(PATHS, values), DIGEST, image_tag=TAG)
 
 
 def test_missing_target_file_is_rejected() -> None:
     with pytest.raises(ValueError):
-        release.plan_changes({PATHS[0]: VALUES}, DIGEST)
+        release.plan_changes({PATHS[0]: VALUES}, DIGEST, image_tag=TAG)
 
 
 @pytest.mark.parametrize(
@@ -67,7 +68,7 @@ def test_duplicate_or_escaped_image_mapping_prevents_api_writes(monkeypatch, ove
     monkeypatch.setenv("BRANCH_NAME", "main")
     github = FakeGitHub(values=VALUES + override)
     with pytest.raises(ValueError):
-        release.create_release_pr(github, SOURCE_SHA, DIGEST)
+        release.create_release_pr(github, SOURCE_SHA, DIGEST, image_tag=TAG, source=FakeSource())
     assert github.writes == []
 
 
@@ -75,7 +76,37 @@ def test_duplicate_or_escaped_image_mapping_prevents_api_writes(monkeypatch, ove
 def test_duplicate_or_escaped_image_fields_are_rejected(key: str) -> None:
     values = VALUES.replace("resources:", f"  {key}: wrong-value\nresources:")
     with pytest.raises(ValueError):
-        release.plan_changes(dict.fromkeys(PATHS, values), DIGEST)
+        release.plan_changes(dict.fromkeys(PATHS, values), DIGEST, image_tag=TAG)
+
+
+class FakeSource:
+    repository = "100-hours-a-week/KTB4-17th-AI"
+
+    def request(self, method, endpoint):
+        assert method == "GET"
+        if endpoint == "git/ref/heads/main":
+            return {"object": {"sha": SOURCE_SHA}}
+        if endpoint == "git/matching-refs/tags/v":
+            return []
+        assert endpoint.startswith("actions/workflows/release.yml/runs?")
+        repo = {"full_name": self.repository}
+        return {
+            "workflow_runs": [
+                {
+                    "id": 1,
+                    "run_number": 1,
+                    "head_sha": SOURCE_SHA,
+                    "head_branch": "main",
+                    "event": "push",
+                    "path": ".github/workflows/release.yml",
+                    "status": "completed",
+                    "conclusion": "success",
+                    "repository": repo,
+                    "head_repository": repo,
+                    "html_url": "https://github.com/actions/runs/1",
+                }
+            ]
+        }
 
 
 class FakeGitHub:
@@ -100,7 +131,9 @@ class FakeGitHub:
             assert path in PATHS
             assert ref in (BASE_SHA, "release-commit")
             content = (
-                self.values.replace(OLD_DIGEST, DIGEST) if self.unchanged or ref == "release-commit" else self.values
+                self.values.replace(OLD_DIGEST, DIGEST).replace("v0.9.0", TAG)
+                if self.unchanged or ref == "release-commit"
+                else self.values
             )
             return {"type": "file", "encoding": "base64", "content": base64.b64encode(content.encode()).decode()}
         if method == "GET" and endpoint.startswith("git/ref/heads/jenkins/"):
@@ -128,14 +161,16 @@ def test_release_creates_an_atomic_five_file_pr_without_updating_main(monkeypatc
     monkeypatch.delenv("CHANGE_ID", raising=False)
     github = FakeGitHub()
 
-    result = release.create_release_pr(github, SOURCE_SHA, DIGEST)
+    result = release.create_release_pr(github, SOURCE_SHA, DIGEST, image_tag=TAG, source=FakeSource())
 
     assert result["pull_request_url"].endswith("/pull/123")
     tree, commit, branch, pr = github.writes
     assert [call[0] for call in github.writes] == ["git/trees", "git/commits", "git/refs", "pulls"]
     assert tree[1]["base_tree"] == "base-tree"
     assert {entry["path"] for entry in tree[1]["tree"]} == set(PATHS)
-    assert all(entry["content"] == VALUES.replace(OLD_DIGEST, DIGEST) for entry in tree[1]["tree"])
+    assert all(
+        entry["content"] == VALUES.replace(OLD_DIGEST, DIGEST).replace("v0.9.0", TAG) for entry in tree[1]["tree"]
+    )
     assert commit[1]["parents"] == [BASE_SHA]
     assert branch[1]["ref"].startswith("refs/heads/jenkins/ai-prod-")
     assert pr[1]["base"] == "main"
@@ -149,7 +184,7 @@ def test_untrusted_source_branch_cannot_create_a_release(monkeypatch, branch: st
     monkeypatch.setenv("CHANGE_ID", change_id)
     github = FakeGitHub()
     with pytest.raises(ValueError):
-        release.create_release_pr(github, SOURCE_SHA, DIGEST)
+        release.create_release_pr(github, SOURCE_SHA, DIGEST, image_tag=TAG, source=FakeSource())
     assert github.writes == []
 
 
@@ -158,21 +193,26 @@ def test_invalid_revision_or_digest_prevents_api_writes(monkeypatch, sha: str, d
     monkeypatch.setenv("BRANCH_NAME", "main")
     github = FakeGitHub()
     with pytest.raises(ValueError):
-        release.create_release_pr(github, sha, digest)
+        release.create_release_pr(github, sha, digest, image_tag=TAG, source=FakeSource())
     assert github.writes == []
 
 
 def test_already_deployed_digest_is_a_noop(monkeypatch) -> None:
     monkeypatch.setenv("BRANCH_NAME", "main")
     github = FakeGitHub(unchanged=True)
-    assert release.create_release_pr(github, SOURCE_SHA, DIGEST)["status"] == "unchanged"
+    assert (
+        release.create_release_pr(github, SOURCE_SHA, DIGEST, image_tag=TAG, source=FakeSource())["status"]
+        == "unchanged"
+    )
     assert github.writes == []
 
 
 def test_matching_open_release_pr_is_reused_without_new_commits(monkeypatch) -> None:
     monkeypatch.setenv("BRANCH_NAME", "main")
     github = FakeGitHub(existing=True)
-    assert release.create_release_pr(github, SOURCE_SHA, DIGEST)["pull_request_url"].endswith("/pull/123")
+    assert release.create_release_pr(github, SOURCE_SHA, DIGEST, image_tag=TAG, source=FakeSource())[
+        "pull_request_url"
+    ].endswith("/pull/123")
     assert github.writes == []
 
 
@@ -180,7 +220,7 @@ def test_github_failure_does_not_create_pr(monkeypatch) -> None:
     monkeypatch.setenv("BRANCH_NAME", "main")
     github = FakeGitHub(fail_tree=True)
     with pytest.raises(RuntimeError, match="tree creation"):
-        release.create_release_pr(github, SOURCE_SHA, DIGEST)
+        release.create_release_pr(github, SOURCE_SHA, DIGEST, image_tag=TAG, source=FakeSource())
     assert [endpoint for endpoint, _ in github.writes] == ["git/trees"]
 
 
@@ -193,7 +233,18 @@ def test_offline_cli_writes_patch_without_touching_cloud_or_using_credentials(tm
     output = tmp_path / "reports"
     with patch.dict("os.environ", {"GITHUB_TOKEN": ""}):
         result = release.main(
-            ["--cloud-dir", str(cloud), "--source-sha", SOURCE_SHA, "--digest", DIGEST, "--output-dir", str(output)]
+            [
+                "--cloud-dir",
+                str(cloud),
+                "--source-sha",
+                SOURCE_SHA,
+                "--digest",
+                DIGEST,
+                "--image-tag",
+                TAG,
+                "--output-dir",
+                str(output),
+            ]
         )
     assert result == 0
     patch_file = output / "gitops.patch"
