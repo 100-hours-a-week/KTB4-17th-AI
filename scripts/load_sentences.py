@@ -13,6 +13,8 @@
 
 답안지는 expected_champion 만 채운다 (설계 5.4). 운영과 같은 프롬프트로 지금 모델을 부른다.
   축 질문 : TaggingAgent → primary = direct, secondary = inferred, 그 밖 = none
+            태거 전체 출력(champion_tags)과 context_question 도 저장한다. 태깅 학습 데이터는 이 전체 출력에서
+            판정한 차원만 다수결로 고쳐 만든다 (scripts/export_crowd_tagging.py). 그래서 축 질문은 context_question 이 필수다
   방향 질문: ExtractionAgent 를 그 문장 한 턴으로 → 65 이상 high, 34 이하 low, 중간·근거 없음 unsure
 expected_teacher 는 비워 둔다 — 다수결 집계 단계에서 채운다.
 답안지 계산이 실패한 문장은 넣지 않는다. 다시 돌리면 이미 넣은 문장은 건너뛰고 실패한 것만 다시 시도한다.
@@ -76,7 +78,8 @@ class SeedRow(BaseModel):
     family_id: str | None = Field(default=None, min_length=1, max_length=64)  # 없으면 문장마다 따로
     is_check: bool = False
     check_answer: ChoiceId | None = None  # 검증 문항의 확실한 정답. 판단 어려움(unsure)은 안 된다
-    context_question: str | None = None  # 답안지 계산 때만 모델에 같이 준다. 사용자에게는 안 보인다
+    # 태깅 입력의 질문. 답안지 계산과 태깅 학습 데이터에 쓰고 사용자에게는 안 보인다. 축 질문은 필수
+    context_question: str | None = Field(default=None, min_length=1, max_length=200)
 
     @model_validator(mode="after")
     def _consistent(self) -> SeedRow:
@@ -91,20 +94,25 @@ class SeedRow(BaseModel):
             raise ValueError(f"검증 문항은 check_answer 가 {allowed} 중 하나여야 합니다")
         if not self.is_check and self.check_answer is not None:
             raise ValueError("검증 문항이 아니면 check_answer 를 비워 두세요")
+        if self.question_type == QuestionType.AXIS and not self.context_question:
+            raise ValueError("축 질문은 context_question 이 필요합니다 (태깅 학습 입력의 질문)")
         return self
 
     @property
     def key(self) -> tuple[str, str, str]:
         return normalize(self.sentence), self.question_type.value, self.dimension
 
-    def to_model(self, expected_champion: ChoiceId | None = None) -> Sentence:
+    def to_model(self, champion: ChampionAnswer | None = None, champion_model: str | None = None) -> Sentence:
         return Sentence(
             family_id=self.family_id or hashlib.sha256(normalize(self.sentence).encode()).hexdigest()[:16],
             sentence=self.sentence,
             source=self.source,
             question_type=self.question_type.value,
             dimension=self.dimension,
-            expected_champion=expected_champion.value if expected_champion else None,
+            expected_champion=champion.choice.value if champion else None,
+            champion_tags=champion.tags if champion else None,
+            champion_model=champion_model if champion else None,
+            context_question=self.context_question,
             is_check=self.is_check,
             check_answer=self.check_answer.value if self.check_answer else None,
         )
@@ -147,17 +155,33 @@ def direction_answer(score: int | None) -> ChoiceId:
     return ChoiceId.UNSURE
 
 
-AnswerKey = Callable[[SeedRow], Awaitable[ChoiceId | None]]
+@dataclass(frozen=True)
+class ChampionAnswer:
+    choice: ChoiceId
+    tags: dict | None = None  # 축 질문만: 태거 전체 출력 {primary, secondary, off_topic}
 
 
-async def champion_answer(row: SeedRow) -> ChoiceId | None:
+AnswerKey = Callable[[SeedRow], Awaitable[ChampionAnswer | None]]
+
+
+def champion_model_name() -> str:
+    """답안지를 낸 모델. SLM 이 켜져 있어도 실패하면 메인 LLM 으로 넘어가므로 설정 기준의 기록이다."""
+    from app.core.config import get_settings
+
+    settings = get_settings()
+    if settings.slm_base_url and settings.slm_tagging_model:
+        return f"slm:{settings.slm_tagging_model}"[:128]
+    return f"llm:{settings.llm_model}"[:128]
+
+
+async def champion_answer(row: SeedRow) -> ChampionAnswer | None:
     """운영 에이전트로 계산한 답안지. 실패면 None."""
     from app.features.persona.agents import BuildFailed, ExtractionAgent, TaggingAgent
 
     question = row.context_question or ""
     if row.question_type == QuestionType.AXIS:
         tags = await TaggingAgent().tag(question, row.sentence)
-        return None if tags is None else axis_answer(tags, row.dimension)
+        return None if tags is None else ChampionAnswer(axis_answer(tags, row.dimension), tags.model_dump())
     history = [{"role": "assistant", "content": question}] if question else []
     history.append({"role": "user", "content": row.sentence})
     try:
@@ -165,7 +189,7 @@ async def champion_answer(row: SeedRow) -> ChoiceId | None:
     except BuildFailed as e:
         logger.warning("extraction failed: %s", e)
         return None
-    return direction_answer(getattr(extracted, row.dimension))
+    return ChampionAnswer(direction_answer(getattr(extracted, row.dimension)))
 
 
 # ══ 적재 ═════════════════════════════════════════════════
@@ -200,12 +224,17 @@ async def plan_rows(rows: list[SeedRow], db: AsyncSession, leak_index: LeakIndex
 
 
 async def load_rows(
-    rows: list[SeedRow], db: AsyncSession, answer_key: AnswerKey, *, concurrency: int = 4
+    rows: list[SeedRow],
+    db: AsyncSession,
+    answer_key: AnswerKey,
+    *,
+    champion_model: str | None = None,
+    concurrency: int = 4,
 ) -> tuple[list[Sentence], list[SeedRow]]:
     """답안지를 계산해 넣는다. (넣은 문장, 답안지 실패로 뺀 행). 한 트랜잭션으로 커밋한다."""
     gate = asyncio.Semaphore(concurrency)
 
-    async def one(row: SeedRow) -> ChoiceId | None:
+    async def one(row: SeedRow) -> ChampionAnswer | None:
         async with gate:
             try:
                 return await answer_key(row)
@@ -214,7 +243,7 @@ async def load_rows(
                 return None
 
     keys = await asyncio.gather(*(one(row) for row in rows))
-    loaded = [row.to_model(key) for row, key in zip(rows, keys, strict=True) if key is not None]
+    loaded = [row.to_model(key, champion_model) for row, key in zip(rows, keys, strict=True) if key is not None]
     failed = [row for row, key in zip(rows, keys, strict=True) if key is None]
     db.add_all(loaded)
     await db.commit()
@@ -248,7 +277,9 @@ async def _run(args: argparse.Namespace, rows: list[SeedRow]) -> dict:
         plan = await plan_rows(rows, db, leak_index)
         if args.dry_run:
             return summary(plan, None, None)
-        loaded, failed = await load_rows(plan.to_load, db, champion_answer, concurrency=args.concurrency)
+        loaded, failed = await load_rows(
+            plan.to_load, db, champion_answer, champion_model=champion_model_name(), concurrency=args.concurrency
+        )
         return summary(plan, loaded, failed)
 
 
