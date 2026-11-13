@@ -49,7 +49,8 @@ jobs:
   production:
     name: Production CD
     needs: release
-    if: needs.release.outputs.release_tag != ''
+    # Set the repository variable to false once before enabling Jenkins prod EKS CD.
+    if: needs.release.outputs.release_tag != '' && vars.AI_LEGACY_ECS_CD_ENABLED != 'false'
     uses: ./.github/workflows/prod-cd.yml
     with:
       release_tag: ${{ needs.release.outputs.release_tag }}

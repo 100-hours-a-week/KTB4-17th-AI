@@ -179,7 +179,40 @@ MBTI 는 온보딩 결과(점수·신뢰도)와 궁합 점수에 영향을 주�
 - 모델 파일은 Git 에 없습니다. 로컬에서는 `uv run python scripts/download_models.py` 로 받고, Docker 이미지는 빌드 때 받습니다.
 - 백엔드 연동 계약: [docs/v2docs/backend-api-contract.md](docs/v2docs/backend-api-contract.md), 스키마 [docs/v2docs/openapi.json](docs/v2docs/openapi.json) (`uv run python scripts/export_profile_trust_openapi.py` 로 재생성). 설계 결정은 [docs/v2docs/adr/](docs/v2docs/adr/).
 
+## 본인 확인 피드백 카드
+
+`POST /ai/api/v1/feedback-cards/next`는 `{ "user_id": "1001" }`을 받아 카드 한 장을 반환하며,
+카드가 없으면 본문 없는 204를 반환합니다. 응답 전·만료 전 노출 카드가 있으면 그 카드를 다시 반환합니다.
+`POST /ai/api/v1/feedback-cards/{card_id}/answer`는 `user_id`, `answer`(`YES`/`NO`),
+`answered_at`(타임존 포함 ISO 8601), `consent_version`을 받습니다. `NO`에는 선택적으로
+`correction_text`(1~200자)를 보낼 수 있습니다. 미입력은 null 또는 생략하며, 빈 문자열은 422입니다.
+같은 카드에 정규화된 요청 내용이 같으면 200, 다르면 409(`card already answered`)입니다.
+성공한 답변의 재전송은 카드 만료 뒤에도 200입니다. 새 답변의 만료는 서버 시각으로 판정합니다.
+
+운영 적용 시 `uv run alembic upgrade head`로 테이블을 만들고 `INTERNAL_API_KEY`를 설정합니다.
+두 API 모두 `X-Internal-Api-Key`를 요구하며, 서버에 키 설정이 없어도 401을 반환합니다.
+후보의 기존 만료 시각과 최초 노출 후 24시간 중 이른 시각이 응답의 `expires_at`입니다.
+
+카드 후보는 소유자·개인정보 검토를 마친 JSONL로 적재합니다. 한 줄의 형식은 다음과 같습니다.
+`expires_at`은 적재 시점보다 미래여야 하며, 맥락 질문을 안전하게 제공하기 어려우면 null을 씁니다.
+
+```json
+{"card_id":"fc_example_1","user_id":"1001","context_question":"빵 좋아하세요?","utterance":"저는 소금빵을 좋아해요","expires_at":"2027-01-01T00:00:00+09:00"}
+```
+
+```bash
+uv run python scripts/load_feedback_cards.py cards.jsonl --dry-run
+uv run python scripts/load_feedback_cards.py cards.jsonl
+```
+
+`card_id`를 유지하면 재적재 시 기존 카드를 건너뜁니다. 같은 ID의 소유자·문장·맥락 질문이 다르면
+전체 적재를 롤백합니다. 기존 카드의 노출 상태와 만료 시각은 유지됩니다.
+
 ## 개발 도구
+
+### Jenkins staging / prod CI/CD
+
+Private EC2 Jenkins용 [Jenkinsfile](Jenkinsfile)과 [활성화·credential·GitOps 배포 안내](scripts/jenkins/README.md)를 사용한다. 환경별 서버 flag를 한 번 활성화하면 dev는 staging, main은 prod tag와 digest 5개를 CLOUD/main에 자동 반영한다. 초기 flag는 false이며 인프라·schema·credential 연결 후 활성화한다. DEV CD는 중단 상태를 유지하고 기존 ECS prod CD에는 명시적인 전환용 repository variable을 추가했다.
 
 ### Lint / Format (ruff)
 

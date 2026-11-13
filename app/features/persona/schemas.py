@@ -710,6 +710,39 @@ class SupplementRequest(BaseModel):
     answer: str = Field(min_length=2, max_length=200)
 
 
+# ══ 백엔드용 "내 페르소나" 화면 조회 ═══════════════════════
+# GET /v1/persona/users/{user_id}. 화면에 보이는 것만 담는다 — 점수·신뢰도·말투 가중치는 빼고.
+
+
+class ProfileStyle(BaseModel):
+    """'나의 말투와 대화 습관' 칸. 실제 대화(카카오톡·연습대화)에서 추출한 적이 없으면 응답에서 null."""
+
+    summary: str | None = None  # 한두 문장 요약
+    frequent_phrases: list[str] = Field(default_factory=list)  # 자주 쓰는 표현
+    endings: list[str] = Field(default_factory=list)  # 말끝 습관
+    slang: list[str] = Field(default_factory=list)  # 줄임말
+    message_length: str | None = None  # 메시지 길이
+    laughter: str | None = None  # 웃음 표현
+    question_rate: str | None = None  # 질문하는 방식
+
+
+class PersonaProfileResponse(BaseModel):
+    user_id: str
+    persona_id: str
+    version: int
+    nickname: str
+    mbti: str | None = None  # 사용자가 알려준 MBTI. 없으면 null
+    confirmed_at: datetime | None = None
+    narrative: Narrative | None = None  # 헤드라인·본문·특징 태그. 생성 실패한 옛 행이면 null
+    conversation_style: ProfileStyle | None = None
+    # '관계 속의 나'. category 는 intimacy·communication·conflict·ideal·orientation 중 하나, 한 category 당 최대 1장
+    summaries: list[Summary] = Field(default_factory=list)
+    interests: list[str] = Field(default_factory=list)  # 관심사
+    routine: list[str] = Field(default_factory=list)  # 일상과 루틴
+    date_prefer: list[str] = Field(default_factory=list)  # 편안한 데이트
+    date_avoid: list[str] = Field(default_factory=list)  # 피하고 싶은 데이트
+
+
 # ══ 다른 기능이 페르소나를 가리킬 때 ═══════════════════════
 # simulation·practice 는 "저장된 페르소나"만 쓴다. 셋 중 하나로 가리키면 최신 버전을 꺼낸다.
 
