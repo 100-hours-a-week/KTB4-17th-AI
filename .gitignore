@@ -65,6 +65,8 @@ data/simfid/
 data/gold_work/
 # 문장 판정 카드 DISAGREE 검수 시트(scripts/review_disagreements.py). 운영 답변으로 만든 다수결이 들어 있다
 data/review/
+# 다수결 태깅 학습·평가 데이터(scripts/export_crowd_tagging.py). HF private dataset 으로만 옮긴다
+data/crowd/
 .grok/skills/flow-code-diagram/SKILL.md
 .grok/skills/flow-code-diagram/assets/shell.html
 .grok/skills/flow-code-diagram/references/layers.md

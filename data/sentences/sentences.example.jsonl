@@ -1,4 +1,4 @@
 {"sentence": "답장은 생각날 때 몰아서 하는 편이에요", "question_type": "AXIS", "dimension": "contact_rhythm", "source": "team_written", "family_id": "example-contact-01", "context_question": "연락은 자주 하는 편이에요?"}
 {"sentence": "주말엔 거의 집에서 혼자 쉬어요", "question_type": "DIRECTION", "dimension": "avoidance", "source": "team_written", "family_id": "example-avoid-01"}
 {"sentence": "연락이 하루 종일 없으면 무슨 일 있나 계속 신경 쓰여요", "question_type": "DIRECTION", "dimension": "anxiety", "source": "team_written", "family_id": "example-check-01", "is_check": true, "check_answer": "high"}
-{"sentence": "저는 매일 아침 아홉 시에 회사에 출근해요", "question_type": "AXIS", "dimension": "avoidance", "source": "team_written", "family_id": "example-check-02", "is_check": true, "check_answer": "none"}
+{"sentence": "저는 매일 아침 아홉 시에 회사에 출근해요", "question_type": "AXIS", "dimension": "avoidance", "source": "team_written", "family_id": "example-check-02", "is_check": true, "check_answer": "none", "context_question": "주말은 보통 어떻게 보내요?"}
