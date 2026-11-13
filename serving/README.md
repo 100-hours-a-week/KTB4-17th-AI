@@ -6,17 +6,21 @@
 앱 (FastAPI, EC2)                                       RunPod Pod (GPU 1장)
  ├ 대화·질문 생성·연습·시뮬 ── LLM_* ──▶ OpenRouter Gemini
  └ 태깅·추출 ───────────────── SLM_* ──▶ vLLM 0.30.0  ── kakaocorp/kanana-2-3b-instruct
-        │ 실패·콜드 스타트면                              └ LoRA tagging-v1, extraction-v1
+        │ 실패·콜드 스타트면                              └ LoRA tagging-v2, extraction-v2
         └──────────── 메인 LLM(Gemini)으로 폴백
 ```
 
 | 앱 호출 (`name=`) | 보내는 모델 | 설정 |
 |---|---|---|
-| `persona-tagging` | `tagging-v1` (Kanana + LoRA) | `SLM_TAGGING_MODEL` |
-| `persona-extraction` | `extraction-v1` (Kanana + LoRA) 또는 `kanana` (기본 모델) | `SLM_EXTRACTION_MODEL` |
+| `persona-tagging` | `tagging-v2` (Kanana + LoRA). primary 를 비우고 off_topic 이 아니면 그 답만 Gemini 로 다시 태깅 | `SLM_TAGGING_MODEL` |
+| `persona-extraction` | `extraction-v2` (Kanana + LoRA) 또는 `kanana` (기본 모델) | `SLM_EXTRACTION_MODEL` |
 | 그 밖의 모든 호출 (`persona-extraction-style` 포함) | Gemini | `LLM_MODEL` |
 
-`start.sh` 는 `/workspace/adapters/{tagging-v1,extraction-v1}` 중 있는 어댑터만 LoRA 로 올린다.
+`start.sh` 는 `/workspace/adapters/{tagging-v2,extraction-v2}` 중 있는 어댑터만 LoRA 로 올린다.
+이름은 `TAGGING_ADAPTER_NAME`, `EXTRACTION_ADAPTER_NAME` 으로 바꾼다. 앱의 `SLM_*_MODEL` 과 같아야 한다.
+릴리스 산출물(`/workspace/releases/<이름>/<sha>`)을 쓰려면 `TAGGING_ADAPTER_DIR`, `EXTRACTION_ADAPTER_DIR` 로 가리킨다.
+태깅의 빈 primary 폴백은 태깅 SLM 이 primary 를 비운 정상 출력도 메인 LLM 으로 다시 보낸다. 태깅 호출의 약 40% 가 여기에 해당한다(평가 기준).
+버전별 평가와 판정은 `docs/성능평가/14_태깅추출_SLM_버전별_개선사항.md` 에 있다.
 스타일 분석(`persona-extraction-style`)은 프롬프트가 달라 추출 어댑터로 보내지 않는다.
 
 ## 파일
@@ -72,7 +76,7 @@ Pod 를 켜면 이미지 기동 → 모델 로드 → (첫 기동이면 다운�
    git clone https://github.com/100-hours-a-week/KTB4-17th-AI.git && cd KTB4-17th-AI
    ```
 
-4. 어댑터를 `/workspace/adapters/tagging-v1`, `/workspace/adapters/extraction-v1` 에 둔다 (Jupyter 업로드 / `runpodctl send` / `TAGGING_ADAPTER_REPO`·`EXTRACTION_ADAPTER_REPO`).
+4. 어댑터를 `/workspace/adapters/tagging-v2`, `/workspace/adapters/extraction-v2` 에 둔다 (Jupyter 업로드 / `runpodctl send` / `TAGGING_ADAPTER_REPO`·`EXTRACTION_ADAPTER_REPO`).
 5. `serving/vllm/start.sh` 실행 → `Uvicorn running on http://0.0.0.0:8000` 이 보이면 성공.
 
 ### B. 운영용 템플릿 (이미지로 고정)
@@ -93,8 +97,8 @@ Pod 를 켜면 이미지 기동 → 모델 로드 → (첫 기동이면 다운�
 ```bash
 export POD_URL="https://<POD_ID>-8000.proxy.runpod.net"
 curl -s "$POD_URL/health" -o /dev/null -w "%{http_code}\n"                       # 200 이면 준비 완료
-curl -s "$POD_URL/v1/models" -H "Authorization: Bearer $VLLM_API_KEY"            # kanana, tagging-v1, extraction-v1
-uv run python scripts/eval_tagging.py --base-url "$POD_URL/v1" --model tagging-v1 --out evals/results/tagging-v1.json
+curl -s "$POD_URL/v1/models" -H "Authorization: Bearer $VLLM_API_KEY"            # kanana, tagging-v2, extraction-v2
+uv run python scripts/eval_tagging.py --base-url "$POD_URL/v1" --model tagging-v2 --out evals/results/tagging-v2.json
 ```
 
 ## 앱 설정 (`.env`)
@@ -102,13 +106,13 @@ uv run python scripts/eval_tagging.py --base-url "$POD_URL/v1" --model tagging-v
 ```dotenv
 SLM_BASE_URL=https://<POD_ID>-8000.proxy.runpod.net/v1
 SLM_API_KEY=<vllm_api_key 와 같은 값>
-SLM_TAGGING_MODEL=tagging-v1
-SLM_EXTRACTION_MODEL=extraction-v1
+SLM_TAGGING_MODEL=tagging-v2
+SLM_EXTRACTION_MODEL=extraction-v2
 # SLM_PROBE_INTERVAL_S=15
 ```
 
 `SLM_BASE_URL` 을 비우면 모든 호출이 예전처럼 메인 LLM 으로 간다 (즉시 롤백).
-작업별 모델 이름을 비우면 그 작업만 메인 LLM 으로 간다 — 예: 추출 품질이 기준에 못 미치면 `SLM_EXTRACTION_MODEL=` 로 태깅만 SLM.
+작업별 모델 이름을 비우면 그 작업만 메인 LLM 으로 간다 — 태깅만 Gemini 로 되돌리려면 `SLM_TAGGING_MODEL=`. 추출을 v1 로 되돌리려면 `EXTRACTION_ADAPTER_NAME=extraction-v1` 로 띄우고 `SLM_EXTRACTION_MODEL=extraction-v1`.
 
 ## 보안
 
