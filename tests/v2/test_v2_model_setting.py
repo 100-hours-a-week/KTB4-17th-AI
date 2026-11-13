@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.core.config import get_settings
+from app.core.config import Settings, get_settings
 from app.features.practice import agents as v1_practice_agents
 from app.v2 import llm as v2_llm
 from app.v2.practice import agents as v2_practice_agents
@@ -20,6 +20,15 @@ def test_default_llm_model_v2_without_env(monkeypatch: pytest.MonkeyPatch) -> No
         assert settings.llm_model_v2 == "google/gemini-3.1-flash-lite"
     finally:
         get_settings.cache_clear()
+
+
+def test_default_llm_model_without_env_or_dotenv(monkeypatch: pytest.MonkeyPatch) -> None:
+    # 서버에 LLM_MODEL 이 없을 때 쓰이는 값. 서빙이 끝난 anthropic/claude-3.5-sonnet 으로 돌아가면 v1 호출이 전부 404 (#279)
+    monkeypatch.delenv("LLM_MODEL", raising=False)
+    monkeypatch.delenv("LLM_MODEL_V2", raising=False)
+    settings = Settings(_env_file=None)
+    assert settings.llm_model == "google/gemini-3.1-flash-lite"
+    assert settings.llm_model_v2 == "google/gemini-3.1-flash-lite"
 
 
 def test_llm_model_v2_env_override(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -191,6 +191,55 @@ def test_tagging_agent_end_to_end_through_slm(monkeypatch):
     assert tags.primary == ["contact_rhythm"]
 
 
+EMPTY = '{"primary": [], "secondary": ["routine"], "off_topic": false}'
+
+
+def _tag():
+    return asyncio.run(agents.TaggingAgent().tag("주말엔 뭐 하세요?", "최근에 등산 시작했는데 원래 활동적인 편이에요"))
+
+
+def test_empty_primary_from_slm_is_retagged_on_main_llm(monkeypatch):
+    slm_calls, main_calls = _wire(
+        monkeypatch, [EMPTY], ['{"primary": ["routine"], "secondary": [], "off_topic": false}']
+    )
+
+    tags = _tag()
+
+    assert tags.primary == ["routine"]
+    assert (len(slm_calls), len(main_calls)) == (1, 1)
+    assert slm.health.up is True  # 서버 장애가 아니다
+
+
+def test_off_topic_with_empty_primary_stays_on_slm(monkeypatch):
+    _, main_calls = _wire(monkeypatch, ['{"primary": [], "secondary": [], "off_topic": true}'], [])
+
+    tags = _tag()
+
+    assert tags.off_topic is True
+    assert main_calls == []
+
+
+def test_slm_tags_are_kept_when_main_llm_retag_fails(monkeypatch):
+    _, main_calls = _wire(monkeypatch, [EMPTY], [_bad_gateway()] * llm_retry.attempts())
+
+    tags = _tag()
+
+    assert tags.primary == []
+    assert tags.secondary == ["routine"]
+    assert len(main_calls) == llm_retry.attempts()
+
+
+def test_empty_primary_from_main_llm_is_not_retagged(monkeypatch):
+    monkeypatch.setenv("SLM_TAGGING_MODEL", "")
+    get_settings.cache_clear()
+    slm_calls, main_calls = _wire(monkeypatch, [], [EMPTY])
+
+    tags = _tag()
+
+    assert tags.primary == []
+    assert (len(slm_calls), len(main_calls)) == (0, 1)
+
+
 def test_startup_check_marks_down_while_model_is_loading(monkeypatch):
     _wire(monkeypatch, [], [], healthy=False)
 

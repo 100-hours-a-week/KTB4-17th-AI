@@ -19,6 +19,7 @@ from .schemas import (
     AnswerRequest,
     ConfirmPersonaRequest,
     ConfirmPersonaResponse,
+    PersonaProfileResponse,
     PersonaRef,
     PersonaResponse,
     StartRequest,
@@ -218,18 +219,18 @@ async def _session_or_404(service: OnboardingService, session_id: str):
 
 @router.get(
     "/users/{user_id}",
-    response_model=PersonaResponse,
+    response_model=PersonaProfileResponse,
     dependencies=[Depends(require_internal_key)],
 )
 async def get_user_persona(
     user_id: str = Path(min_length=1, max_length=64),
     db: AsyncSession = Depends(get_db),
-) -> PersonaResponse:
-    """그 사용자가 마지막으로 확정한 페르소나 (마이페이지용). 미확정 초안만 있으면 404."""
+) -> PersonaProfileResponse:
+    """그 사용자가 마지막으로 확정한 페르소나 (마이페이지용). 화면에 보이는 값만, 미확정 초안만 있으면 404."""
     loaded = await load_persona(db, PersonaRef(user_id=user_id))
     if loaded is None:
         raise HTTPException(404, "persona not found")
-    return loaded.response
+    return loaded.profile
 
 
 @router.get("/{session_id}", response_model=PersonaResponse)
