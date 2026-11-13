@@ -172,6 +172,23 @@ docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
                 }
             }
         }
+        stage('Wait for environment rollout') {
+            when { expression { env.AUTO_DEPLOY == 'true' } }
+            options { timeout(time: 18, unit: 'MINUTES') }
+            steps {
+                withCredentials([usernamePassword(credentialsId: 'github-app-star23-cloud-read',
+                    usernameVariable: 'CLOUD_READ_APP_ID', passwordVariable: 'CLOUD_READ_TOKEN')]) {
+                    // Host AWS CLI uses the instance profile; observation needs no Kubernetes writes.
+                    sh '''#!/usr/bin/env bash
+set +x
+set -euo pipefail
+python3 -m scripts.jenkins.observe_rollout --source-branch "$BRANCH_NAME" \
+  --deployment-file .ci-reports/gitops.json --output-file .ci-reports/argocd-status.json \
+  --timeout-seconds 900
+'''
+                }
+            }
+        }
         stage('Prepare manual production GitOps PR') {
             when {
                 allOf {

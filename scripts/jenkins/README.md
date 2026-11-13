@@ -1,6 +1,6 @@
 # AI Jenkins staging / prod CI/CD
 
-기존 `ci/ai` Multibranch, `linux && docker` label, executor 1개를 재사용한다. PR #267의 prod CI 구성 위에 추가하는 후속 변경이다. 기존 사용자 작업과 PR #267은 보존하며 이 후속 작업은 아직 commit/push하지 않았다.
+기존 `ci/ai` Multibranch, `linux && docker` label, executor 1개를 재사용한다. 브랜치별 CI 이후 GitOps 게시와 실제 rollout 완료 확인까지 실행한다.
 
 ```text
 dev  → CI → 검증한 SHA 이미지 ECR 게시 → CLOUD/main의 staging tag + digest 5개 → Argo CD → staging EKS
@@ -26,6 +26,7 @@ Jenkins **Manage Jenkins → System → Global properties → Environment variab
 
 - `github-app-star23`: AI 원본 Contents read/Metadata read 및 **Actions read**. Actions read는 같은 SHA의 release workflow 조회에 필요하다. checkout과 현재 dev/main SHA 확인에 사용한다. Multibranch repository access는 기존 AI 저장소 설정을 따른다.
 - `github-app-star23-gitops`: CLOUD에만 설치한 별도 App. 직접 commit에는 Contents read/write, Metadata read가 필요하다. 보조 PR 모드도 쓰려면 Pull requests read/write를 추가한다.
+- `github-app-star23-cloud-read`: CLOUD Contents/Metadata read만 허용하는 별도 App credential. rollout 관찰에 사용한다.
 - CLOUD App의 Advanced → Repository access strategy → Specify accessible repositories에 owner `100-hours-a-week`, repository `KTB4-17th-CLOUD`를 지정한다. Default permissions strategy는 설치 App의 필요한 권한을 포함하도록 설정한다. [공식 App credential 안내](https://github.com/jenkinsci/github-branch-source-plugin/blob/master/docs/github-app.adoc).
 - CLOUD/main 보호 규칙은 이 App의 **non-force** 자동 commit을 허용해야 한다. 거절되면 HTTP 오류로 실패한다. 필요한 운영 연결은 해당 App에 대한 적절한 branch/ruleset 정책이며, 코드가 보호를 해제하거나 PR 방식으로 우회하지 않는다.
 - 소스 읽기와 CLOUD 쓰기 token을 별도 바인딩한다. private key·비밀번호·AWS access key를 코드나 artifact에 넣지 않는다. Argo 관찰에는 별도의 읽기 권한을 사용한다.
@@ -40,7 +41,7 @@ CLOUD `main`, chart `manifest/helm/star23-service`만 사용한다.
 
 | 소스 | 환경 / 클러스터 | values 경로 | Argo Application |
 | --- | --- | --- | --- |
-| dev | staging / star-EKS-v3-staging | `values/staging/<role>.yaml` | `staging-<role>` |
+| dev | staging / star-EKS-v3-staging | `values/staging/<role>.yaml` | staging 클러스터의 기존 `<role>` |
 | main | prod / star-EKS-v3 | `values/<role>.yaml` | `<role>` |
 
 role은 아래 다섯 개로 고정한다.
@@ -74,15 +75,9 @@ CLOUD/AWS 담당이 기존 publisher 영향을 검토해 `dev-*`, `v*`, `sha-*`�
 
 ## CLOUD 준비와 migration
 
-2026-11-12 조회에서 staging namespace는 default/kube-* 네 개이고 앱 workload는 없었다. 아래 항목은 CLOUD 담당의 연결 작업이다.
+두 환경은 각자의 Argo CD를 사용한다. staging의 기존 12개 앱은 CLOUD의 `argocd/staging`으로 관리하고 `main`과 `values/staging/<role>.yaml`을 추적한다. prod는 기존 `argocd` 루트와 `values/<role>.yaml`을 유지한다. 두 환경 모두 로컬 목적지 `https://kubernetes.default.svc`와 기존 Application/Helm release 이름을 사용한다. 원격 클러스터 등록이나 앱 이름 변경은 하지 않는다.
 
-- `manifest/helm/star23-service/values/staging/<role>.yaml` 5개: staging용 설정·시크릿·Ingress·검증한 초기 digest
-- `argocd/applications/apps/staging-<role>.yaml` 5개와 `argocd/kustomization.yaml` 연결
-- `argocd/projects/star23-apps.yaml`의 staging destination/namespace 허용과 기존 Argo CD의 staging cluster 등록·배포 역할
-- staging의 `user`, `chat` namespace, 앱 workload/ESO/IRSA 및 앱별 필요한 환경 변수
-- staging destination server: `https://FD1D5E0955692E6EA1E41FADBE848111.gr7.ap-northeast-2.eks.amazonaws.com`
-
-확인된 DB 서버는 `10.2.21.10`, messaging은 `10.2.21.20`이다. `star23/staging/database`, `/star23/staging/JWT_SECRET`, `/star23/staging/KAKAO_CLIENT_SECRET` 참조만 확인됐다. DB 이름·포트·secret 내부 키·AI DATABASE_URL은 CLOUD 담당과 확인한다. prod DB나 `/star23/prod/`를 staging 대체값으로 사용하지 않는다.
+staging 전용 values는 현재 staging 설정·시크릿 참조·Ingress·이미지를 보존한다. `star23/staging/...` 및 `/star23/staging/...` 참조를 prod 값으로 대체하지 않는다. 앱 namespace·ESO/IRSA·DB 연결은 실제 환경의 기존 구성을 사용한다.
 
 자동 migration hook은 없다. 자동 활성화 전에 해당 환경의 schema 준비를 확인하고, 이후 schema 변경 release는 소스 병합 전에 호환되는 migration 절차를 준비한다. 검증한 **동일 digest** 이미지와 staging 전용 보안 env 파일을 사용해 운영자가 다음을 순서대로 수행한다. 이 구현/검증 작업은 DB migration을 실행하지 않는다.
 
@@ -98,7 +93,7 @@ docker run --rm --env-file /secure/staging-ai.env --entrypoint /code/.venv/bin/a
 
 ## 기존 CD 전환과 활성화 순서
 
-1. PR #267과 이번 후속 코드를 검토해 AI dev/main에 반영한다. 이번 후속 구현에서는 commit/push/PR을 실행하지 않는다.
+1. 이 코드를 AI dev/main에 반영한다.
 2. source/CLOUD App credential과 CLOUD main 쓰기 정책을 준비하고 기존 `ci/ai`에서 Scan Multibranch Pipeline Now로 main/dev job을 생성한다.
 3. 두 자동 flag를 false로 두고 실제 CI·이미지 빌드를 확인한 뒤, 허용된 수동 ECR 검증을 수행한다.
 4. staging values/Argo/namespace/secret/schema를 준비하고 배포 승인 범위에서 staging 연결 검증을 수행한다. `AI_STAGING_AUTO_DEPLOY_ENABLED=true`를 한 번 설정하면 이후 dev CI 성공은 자동 배포로 이어진다.
@@ -106,22 +101,21 @@ docker run --rm --env-file /secure/staging-ai.env --entrypoint /code/.venv/bin/a
 6. prod EKS 전환 전 GitHub repository variable `AI_LEGACY_ECS_CD_ENABLED=false`를 한 번 설정한다. release.yml의 ECS 호출, prod-cd.yml의 promote/deploy 모두 이 값을 검사한다. 미설정은 기존 동작을 보존한다. 실행 중인 ECS CD도 종료됐는지 확인한 뒤 `AI_PROD_AUTO_DEPLOY_ENABLED=true`를 설정한다. prod CI와 semantic release는 유지한다.
 7. 배포 증거는 `source SHA → Jenkins URL → Git release/SHA tag → ECR tag와 digest → CLOUD commit → 다섯 Argo Application의 같은 revision Synced/Healthy`로 연결한다. staging 검증 전후 prod values/Application/실행 digest가 같음도 확인한다.
 
-자동 flag/legacy variable은 이 작업에서 실제 활성화·변경하지 않는다. rollback 시 먼저 해당 자동 flag를 끄고, 검토한 이전 digest를 새 CLOUD commit으로 복원한다. DB rollback은 별도 검토한다.
+활성화 여부는 Jenkins 서버 설정과 실제 배포 산출물에서 확인한다. rollback 시 먼저 해당 자동 flag를 끄고, 검토한 이전 digest를 새 CLOUD commit으로 복원한다. DB rollback은 별도 검토한다.
 
 ## 읽기 전용 배포 관찰
 
-Argo CD 제어 클러스터는 **prod star-EKS-v3**, staging 목적 클러스터는 **star-EKS-v3-staging**이다. staging kubeconfig로 Application을 조회하지 않는다.
+observer는 dev에서 **star-EKS-v3-staging**, main에서 **star-EKS-v3**를 조회한다. host Python 3.9 이상과 AWS CLI가 instance profile로 EKS를 조회하며, 각 클러스터 `argocd`의 다섯 Application에 대한 GET만 필요하다. Secret 읽기·앱 수정·sync 권한은 없다.
+
+Jenkins의 `Wait for environment rollout` 단계는 게시 receipt와 별도 읽기 credential을 사용한다.
 
 ```sh
-# CLOUD_COMMIT은 gitops.json에 기록된 정확한 40자리 CLOUD commit
 python3 -m scripts.jenkins.observe_rollout --source-branch dev \
-  --cloud-commit "$CLOUD_COMMIT" --argo-kubeconfig "$HOME/.kube/config"
-# prod 관찰은 --source-branch main
-kubectl --kubeconfig /private/tmp/star23-staging-cicd-kubeconfig get deployments,pods -n user
-kubectl --kubeconfig /private/tmp/star23-staging-cicd-kubeconfig get deployments,pods -n chat
+  --deployment-file .ci-reports/gitops.json --output-file .ci-reports/argocd-status.json \
+  --timeout-seconds 900
 ```
 
-observer는 명시한 prod Argo context에서 대상 Application 5개만 GET한다. 정확한 repository/chart/values/destination, 각 CLOUD revision과 Synced/Healthy를 검사하며 오류·권한 실패를 성공 처리하지 않는다. 토큰·Secret 값을 조회하지 않는다. 이전/이후 prod Application 및 workload imageID 조회를 별도 보관해야 staging의 prod 불변성도 입증할 수 있다. 현재 Jenkinsfile은 observer를 자동 호출하지 않으며 GitOps commit 뒤 종료한다. Jenkins 성공을 rollout 성공으로 표시하지 않는다. 자동 CD의 최종 상태까지 job에서 판단하려면 별도 읽기 전용 Argo credential·제어 클러스터 접근 경로와 observer 호출/실패 전파 단계를 연결해야 한다.
+다섯 Application이 동일한 CLOUD revision에서 Synced/Healthy이고 기대 digest만 실행 중일 때 성공한다. 게시 commit 이후 다른 환경/BE 변경이 들어온 경우에는 후손 revision의 AI tag/digest가 그대로인지 확인한다. 현재 CLOUD/main에서도 기대 tag/digest를 다시 확인해 이미 대체된 릴리스를 성공으로 표시하지 않는다. 권한·환경 계약 오류는 실패하며 일시적인 EKS 조회 오류와 진행 중 rollout은 제한 시간 내 재조회한다. GitOps 게시만 성공한 상태와 실제 배포 완료 상태를 구분해 산출물에 기록한다.
 
 ## 로컬 검증
 
