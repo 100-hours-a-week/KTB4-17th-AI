@@ -60,10 +60,12 @@ class Settings(BaseSettings):
         description="LLM API 키 (OpenRouter 키 또는 로컬 서빙용 더미 키)",
     )
     # 사용할 모델 식별자
-    # OpenRouter 예시: "anthropic/claude-3.5-sonnet", "meta-llama/llama-3.3-70b-instruct"
+    # OpenRouter 예시: "google/gemini-3.1-flash-lite", "google/gemini-2.5-flash-lite"
     # 로컬 서빙 예시: "local-model" 또는 서빙 중인 모델 이름
+    # 환경 변수가 없으면 이 기본값으로 호출한다. 예전 기본값 anthropic/claude-3.5-sonnet 은
+    # OpenRouter 가 서빙을 끝내 404 로 전부 실패했다 (#279). v2 기본값과 같은 모델로 맞췄다
     llm_model: str = Field(
-        default="anthropic/claude-3.5-sonnet",
+        default="google/gemini-3.1-flash-lite",
         validation_alias="LLM_MODEL",
         description="호출할 기본 LLM 모델명",
     )
