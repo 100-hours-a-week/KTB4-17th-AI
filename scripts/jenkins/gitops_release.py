@@ -196,7 +196,7 @@ def metadata(source_sha: str, digest: str, status: str, environment: str = "prod
         "base_branch": "main",
         "environment": environment,
         "cluster": "star-EKS-v3-staging" if environment == "staging" else "star-EKS-v3",
-        "applications": [f"staging-{role}" if environment == "staging" else role for role in ROLES],
+        "applications": list(ROLES),
     }
 
 

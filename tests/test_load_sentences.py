@@ -18,6 +18,7 @@ from app.features.sentence_cards.models import Sentence
 from app.features.sentence_cards.schemas import ChoiceId
 from scripts.gold_drafts import LeakIndex, _audit
 from scripts.load_sentences import (
+    ChampionAnswer,
     SeedRow,
     axis_answer,
     direction_answer,
@@ -36,6 +37,7 @@ def _row(**extra) -> dict:
         "question_type": "AXIS",
         "dimension": "contact_rhythm",
         "source": "team_written",
+        "context_question": "연락은 자주 하는 편이에요?",
     } | extra
 
 
@@ -95,6 +97,7 @@ def test_example_file_is_valid():
         (_row(check_answer="direct"), "check_answer 를 비워"),
         (_row(source="user_clone"), "source"),
         (_row(extra="x"), "extra"),
+        (_row(context_question=None), "context_question 이 필요"),
     ],
 )
 def test_invalid_rows_are_reported_with_line_number(tmp_path, row, message):
@@ -166,7 +169,7 @@ def test_plan_skips_loaded_duplicate_and_gold_leak(factory):
 
     async def run():
         async with factory() as db:
-            db.add(rows[4].to_model(ChoiceId.NONE))
+            db.add(rows[4].to_model(ChampionAnswer(ChoiceId.NONE)))
             await db.commit()
             return await plan_rows(rows, db, _index(gold))
 
@@ -197,9 +200,11 @@ def test_load_stores_answer_key_and_retries_failures_on_next_run(factory):
     async def run(key):
         async with factory() as db:
             plan = await plan_rows(rows, db, _index())
-            return await load_rows(plan.to_load, db, key)
+            return await load_rows(plan.to_load, db, key, champion_model="slm:tagging-v1")
 
-    loaded, failed = asyncio.run(run(answer_key({"AXIS": ChoiceId.DIRECT, "DIRECTION": RuntimeError("down")})))
+    tags = {"primary": ["contact_rhythm"], "secondary": ["avoidance"], "off_topic": False}
+    axis_key = ChampionAnswer(ChoiceId.DIRECT, tags)
+    loaded, failed = asyncio.run(run(answer_key({"AXIS": axis_key, "DIRECTION": RuntimeError("down")})))
     assert [s.sentence for s in loaded] == [rows[0].sentence] and failed == [rows[1]]
 
     stored = _sentences(factory)
@@ -207,12 +212,15 @@ def test_load_stores_answer_key_and_retries_failures_on_next_run(factory):
     assert stored[0].expected_champion == "direct"
     assert stored[0].expected_teacher is None
     assert stored[0].family_id == "fam-1"
+    assert (stored[0].champion_tags, stored[0].champion_model) == (tags, "slm:tagging-v1")
+    assert stored[0].context_question == "연락은 자주 하는 편이에요?"
     assert stored[0].verdict == "PENDING" and stored[0].active
 
     calls.clear()
-    loaded, failed = asyncio.run(run(answer_key({"AXIS": ChoiceId.NONE, "DIRECTION": ChoiceId.HIGH})))
+    loaded, failed = asyncio.run(run(answer_key({"AXIS": None, "DIRECTION": ChampionAnswer(ChoiceId.HIGH)})))
     assert calls == ["DIRECTION"]  # 이미 넣은 문장은 다시 계산하지 않는다
     assert failed == []
     check = next(s for s in _sentences(factory) if s.is_check)
     assert (check.check_answer, check.expected_champion) == ("high", "high")
     assert check.family_id  # 없으면 문장 해시로 채운다
+    assert check.champion_tags is None  # 방향 질문은 태깅 학습에 쓰지 않는다

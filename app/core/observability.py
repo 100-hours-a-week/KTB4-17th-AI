@@ -119,6 +119,8 @@ def model_failure_reason(error: BaseException) -> str:
         return "server_error" if cause.status_code >= 500 else f"http_{cause.status_code}"
     if str(cause) == "empty response":
         return "empty_response"
+    if str(cause) == "slm empty primary":
+        return "slm_empty_primary"
     return "call_failed"
 
 

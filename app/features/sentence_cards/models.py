@@ -44,6 +44,12 @@ class Sentence(Base):
     # 답안지. 사용자에게 내려가지 않는다
     expected_champion: Mapped[str | None] = mapped_column(String(16), nullable=True)
     expected_teacher: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    # 축 질문: 답안지를 낸 태거의 전체 출력 {primary, secondary, off_topic}. 태깅 학습 데이터는 여기서
+    # 판정한 차원만 다수결로 고쳐 만든다 (한 차원 라벨로 전체를 정답 삼으면 다른 차원을 지우는 법을 배운다)
+    champion_tags: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)  # None → SQL NULL
+    champion_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    # 태깅 입력의 질문 (사용자에게는 안 보인다). champion_tags 를 만든 입력과 학습 입력을 같게 한다
+    context_question: Mapped[str | None] = mapped_column(Text, nullable=True)
     # 검증 문항이면 정답이 확실한 값. 대충 누르는 사용자를 거른다
     is_check: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     check_answer: Mapped[str | None] = mapped_column(String(16), nullable=True)

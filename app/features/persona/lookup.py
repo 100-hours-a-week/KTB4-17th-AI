@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import PersonaRecord
 from .repository import PersonaRepository
-from .schemas import PersonaBrief, PersonaRef, PersonaResponse
+from .schemas import PersonaBrief, PersonaProfileResponse, PersonaRef, PersonaResponse, ProfileStyle
 from .service import persona_response
 
 
@@ -31,6 +31,29 @@ class LoadedPersona:
             version=self.record.version,
             headline=(self.record.narrative or {}).get("headline"),
             accuracy=self.response.accuracy,
+        )
+
+    @property
+    def profile(self) -> PersonaProfileResponse:
+        """백엔드 '내 페르소나' 화면용. 점수·신뢰도는 빼고 화면에 보이는 것만."""
+        r = self.response
+        style = r.conversation_style
+        return PersonaProfileResponse(
+            user_id=self.record.user_id,
+            persona_id=r.persona_id,
+            version=r.version,
+            nickname=self.nickname,
+            mbti=r.mbti,
+            confirmed_at=r.confirmed_at,
+            narrative=r.narrative,
+            conversation_style=(
+                ProfileStyle.model_validate(style.model_dump(include=set(ProfileStyle.model_fields))) if style else None
+            ),
+            summaries=r.summaries,
+            interests=r.interests,
+            routine=r.routine,
+            date_prefer=r.date_prefer,
+            date_avoid=r.date_avoid,
         )
 
 

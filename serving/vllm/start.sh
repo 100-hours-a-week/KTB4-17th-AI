@@ -4,10 +4,13 @@
 # 필수 환경변수 (RunPod Secrets 로 넣는다)
 #   VLLM_API_KEY            앱의 SLM_API_KEY 와 같은 값. 없으면 공개 프록시 주소로 누구나 GPU 를 쓴다
 # 선택 환경변수. 어댑터는 태깅·추출 중 하나 이상 있어야 한다. 있는 것만 LoRA 로 올린다
-#   TAGGING_ADAPTER_DIR     태깅 어댑터 위치 (기본 /workspace/adapters/tagging-v1)
+#   TAGGING_ADAPTER_NAME    앱 SLM_TAGGING_MODEL 과 같은 이름 (기본 tagging-v2)
+#   TAGGING_ADAPTER_DIR     태깅 어댑터 위치 (기본 /workspace/adapters/<TAGGING_ADAPTER_NAME>)
 #   TAGGING_ADAPTER_REPO    어댑터가 위 경로에 없으면 받아 올 HF private 리포 (예: <org>/ktb-tagging-lora)
 #   TAGGING_ADAPTER_REVISION  그 리포의 커밋·태그 (기본 main). 운영은 태그로 고정한다
-#   EXTRACTION_ADAPTER_DIR, EXTRACTION_ADAPTER_REPO, EXTRACTION_ADAPTER_REVISION  추출 어댑터. 기본 위치 /workspace/adapters/extraction-v1
+#   EXTRACTION_ADAPTER_NAME 앱 SLM_EXTRACTION_MODEL 과 같은 이름 (기본 extraction-v2)
+#   EXTRACTION_ADAPTER_DIR, EXTRACTION_ADAPTER_REPO, EXTRACTION_ADAPTER_REVISION  추출 어댑터. 기본 위치 /workspace/adapters/<EXTRACTION_ADAPTER_NAME>
+#                           릴리스 산출물을 쓰려면 *_ADAPTER_DIR 로 /workspace/releases/<이름>/<sha> 를 가리킨다
 #   HF_TOKEN                private 리포를 받을 때
 #
 # 콜드 스타트를 줄이려고 모델(HF_HOME)과 torch.compile 산출물(VLLM_CACHE_ROOT)을 볼륨(/workspace)에 둔다.
@@ -55,9 +58,12 @@ PY
   LORA_MODULES+=("$name=$dir")
 }
 
-add_adapter tagging-v1 "${TAGGING_ADAPTER_DIR:-/workspace/adapters/tagging-v1}" \
+TAGGING_ADAPTER_NAME="${TAGGING_ADAPTER_NAME:-tagging-v2}"
+EXTRACTION_ADAPTER_NAME="${EXTRACTION_ADAPTER_NAME:-extraction-v2}"
+
+add_adapter "$TAGGING_ADAPTER_NAME" "${TAGGING_ADAPTER_DIR:-/workspace/adapters/$TAGGING_ADAPTER_NAME}" \
   "${TAGGING_ADAPTER_REPO:-}" "${TAGGING_ADAPTER_REVISION:-main}"
-add_adapter extraction-v1 "${EXTRACTION_ADAPTER_DIR:-/workspace/adapters/extraction-v1}" \
+add_adapter "$EXTRACTION_ADAPTER_NAME" "${EXTRACTION_ADAPTER_DIR:-/workspace/adapters/$EXTRACTION_ADAPTER_NAME}" \
   "${EXTRACTION_ADAPTER_REPO:-}" "${EXTRACTION_ADAPTER_REVISION:-main}"
 
 if [[ ${#LORA_MODULES[@]} -eq 0 ]]; then

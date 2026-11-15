@@ -6,7 +6,7 @@
 # 기본 모델. 커밋을 고정해 같은 가중치로 학습·서빙·평가한다 (어댑터의 base_model 과 같아야 한다)
 model: kakaocorp/kanana-2-3b-instruct
 revision: 6a5d7889964c4c590299d16e309eabab1f73f8a9
-# LoRA 없이 기본 모델을 부를 때의 이름. 어댑터 이름(tagging-v1, extraction-v1)은 start.sh 가 붙인다
+# LoRA 없이 기본 모델을 부를 때의 이름. 어댑터 이름(tagging-v2, extraction-v2)은 start.sh 가 붙인다
 served-model-name: kanana
 
 host: "0.0.0.0" # RunPod 프록시가 들어오려면 0.0.0.0

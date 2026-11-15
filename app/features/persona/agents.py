@@ -724,6 +724,34 @@ def parse_tags(raw: dict, *, strict: bool = False) -> Tags:
     )
 
 
+SLM_EMPTY_PRIMARY = "slm empty primary"
+
+
+def _slm_left_primary_empty(raw: dict) -> bool:
+    """SLM 태깅이 primary 를 비웠고 off_topic 도 아닌가.
+
+    tagging-v2 는 직접 답 앞에 장면 문장이 붙으면 primary 를 비우는 지름길이 있다(지름길 진단 13/13).
+    정상 출력이라 JSON 폴백에 걸리지 않으므로, 이 경우만 메인 LLM 의 판단을 쓴다
+    (docs/성능평가/14 "v2 + 빈 primary 폴백"). 메인 LLM 이 답한 결과는 다시 보지 않는다.
+    """
+    selection = current_model_selection()
+    if selection is None or selection.response_source != "slm" or not isinstance(raw, dict):
+        return False
+    return raw.get("primary") == [] and not raw.get("off_topic", False)
+
+
+async def _retag_on_main_llm(call: dict, slm_raw: dict) -> dict:
+    """빈 primary 를 메인 LLM 으로 다시 태깅한다. 메인 LLM 이 실패하면 SLM 결과(유효한 출력)를 쓴다."""
+    reason = LLMError(SLM_EMPTY_PRIMARY)
+    record_model_fallback(reason)
+    slm.record_fallback(call["name"], reason)
+    try:
+        return await _call_json(**call, use_slm=False)
+    except LLMError as e:
+        logger.warning("main LLM retag after empty SLM primary failed, keeping SLM tags: %s", e)
+        return slm_raw
+
+
 class TaggingAgent:
     @observe(name="persona-tagging-workflow", capture_input=False, capture_output=False)
     @track_model_selection("persona-tagging")
@@ -745,15 +773,18 @@ class TaggingAgent:
         여기서 예외를 올리지 않는다.
         """
         with propagate_langfuse_metadata(trace_metadata):
+            call = {
+                "system": TAG_PROMPT,
+                "messages": tagging_messages(question, answer),
+                "max_tokens": 120,
+                "timeout": timeout if timeout is not None else get_settings().onboarding_tag_timeout_s,
+                "name": "persona-tagging",
+                "metadata": trace_metadata,
+            }
             try:
-                raw = await _call_json(
-                    system=TAG_PROMPT,
-                    messages=tagging_messages(question, answer),
-                    max_tokens=120,
-                    timeout=timeout if timeout is not None else get_settings().onboarding_tag_timeout_s,
-                    name="persona-tagging",
-                    metadata=trace_metadata,
-                )
+                raw = await _call_json(**call)
+                if _slm_left_primary_empty(raw):
+                    raw = await _retag_on_main_llm(call, raw)
             except LLMError as e:
                 record_model_failure(model_failure_reason(e))
                 logger.warning("tagging failed: %s", e)

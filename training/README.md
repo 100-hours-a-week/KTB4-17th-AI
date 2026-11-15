@@ -129,3 +129,25 @@ uv run python scripts/upload_eval_scores.py evals/results/tagging-v1.json
 - regression 완전 일치가 기준선(23.4%)보다 높고, off_topic 양성을 모두 잡고, JSON 실패 1% 이하
 - 지연 p95 가 운영 타임아웃(4초)보다 충분히 낮음
 - 위를 통과하면 `blind_holdout` 으로 한 번 확인한 뒤 `LLM_BASE_URL`·`LLM_MODEL` 을 바꿔 일부 트래픽부터 전환
+
+## 4. 문장 판정 카드 다수결로 자동 학습 (태깅)
+
+사용자들이 축 질문 카드("이 말은 '연락 빈도'에 대한 이야기인가요?")에 답한 다수결로 태깅 어댑터를 고친다.
+카드는 차원 하나만 묻기 때문에, 적재 때 저장한 champion 태거 전체 출력에서 **판정한 차원만** 다수결로 바꿔 예시를 만든다.
+한 차원 라벨만으로 전체를 정답 삼으면 묻지 않은 차원을 지우는 법을 배우기 때문이다.
+
+```
+BE 답변 묶음 → 다수결 판정 → (AGREE 250 · 확인된 DISAGREE 100 증가) → Discord 학습 후보 알림
+  ↓ 사람
+scripts/review_disagreements.py     DISAGREE 검수 (confirm · reject)
+scripts/export_crowd_tagging.py     train.jsonl · eval.jsonl → HF private dataset (crowd-<날짜>-t<후보 번호> 태그)
+  ↓ 사람이 학습 Pod 를 켠다
+training/pipeline/run_tagging.py    받기 → build_sft → train_lora → vLLM(champion·candidate) 평가 → gate → candidate-* 태그 · Discord
+  ↓ 사람 승인
+serving/vllm 의 TAGGING_ADAPTER_REVISION 을 candidate 태그로 교체
+```
+
+- 학습 정답: AGREE 는 다수결이 확인으로 인정(`reviewed_by = "crowd"`), DISAGREE 는 사람이 confirm 한 것만. AMBIGUOUS 차원은 champion 출력 그대로
+- 학습 · 평가 분리는 `family_id` 해시(20% 평가). 평가 묶음 문장은 학습에 들어가지 않는다
+- 게이트(`training/pipeline/gate.py`): 사람 골드셋(완전 일치 · primary · 실패율)과 다수결 평가셋(차원 라벨 정확도 · AMBIGUOUS 단정 비율 · 실패율) 모두 champion 보다 나빠지지 않아야 통과
+- 다수결 데이터는 운영 답변에서 나온 것이라 공개 학습 레포에 올리지 않는다. HF private dataset 으로만 옮긴다 (`data/crowd/` 는 gitignore)

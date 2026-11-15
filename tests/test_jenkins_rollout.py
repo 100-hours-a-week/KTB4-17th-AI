@@ -21,10 +21,12 @@ def applications(branch="dev"):
     data = {
         "items": [
             {
-                "metadata": {"name": ("staging-" if staging else "") + role},
+                "metadata": {"name": role, "namespace": "argocd"},
                 "spec": {
+                    "project": "star23-apps",
+                    "syncPolicy": {"automated": {"enabled": True}},
                     "destination": {
-                        "server": STAGING_SERVER if staging else "https://kubernetes.default.svc",
+                        "server": "https://kubernetes.default.svc",
                         "namespace": "user" if role.startswith("onboarding-") else "chat",
                     },
                     "source": {
@@ -69,7 +71,7 @@ def test_incomplete_or_wrong_environment_rollout_is_not_success(mutation):
     elif mutation in ("health", "sync"):
         app["status"][mutation]["status"] = "Progressing"
     elif mutation in ("server", "namespace"):
-        app["spec"]["destination"][mutation] = "https://kubernetes.default.svc" if mutation == "server" else "default"
+        app["spec"]["destination"][mutation] = STAGING_SERVER if mutation == "server" else "default"
     elif mutation == "values":
         app["spec"]["source"]["helm"]["valueFiles"] = ["values/onboarding-persona-ai.yaml"]
     elif mutation == "repo":
@@ -94,7 +96,7 @@ def test_stale_status_from_other_source_or_destination_cannot_certify_rollout(fi
     data = applications()
     compared = data["items"][0]["status"]["sync"]["comparedTo"]
     if field == "destination":
-        compared[field]["server"] = "https://kubernetes.default.svc"
+        compared[field]["server"] = STAGING_SERVER
     else:
         compared[field]["helm"]["valueFiles"] = ["values/onboarding-persona-ai.yaml"]
     with pytest.raises((ValueError, RuntimeError)):
@@ -120,5 +122,27 @@ def test_helm_overrides_cannot_certify_an_image_other_than_committed_values(over
 def test_multisource_override_is_rejected_by_single_source_contract():
     data = applications()
     data["items"][0]["spec"]["sources"] = [{"repoURL": "https://github.com/foreign/repo"}]
+    with pytest.raises(ValueError):
+        verify(data)
+
+
+@pytest.mark.parametrize(
+    "mutation", ["failed-sync", "sync-error", "auto-disabled", "auto-missing", "project", "app-namespace"]
+)
+def test_failed_sync_or_missing_automatic_deployment_contract_is_rejected(mutation):
+    data = applications()
+    app = data["items"][0]
+    if mutation == "failed-sync":
+        app["status"]["operationState"] = {"phase": "Failed", "syncResult": {"revision": REVISION}}
+    elif mutation == "sync-error":
+        app["status"]["conditions"] = [{"type": "SyncError"}]
+    elif mutation == "auto-disabled":
+        app["spec"]["syncPolicy"]["automated"]["enabled"] = False
+    elif mutation == "auto-missing":
+        del app["spec"]["syncPolicy"]
+    elif mutation == "project":
+        app["spec"]["project"] = "default"
+    else:
+        app["metadata"]["namespace"] = "default"
     with pytest.raises(ValueError):
         verify(data)

@@ -354,6 +354,6 @@ def test_offline_dev_patch_has_only_staging_paths_and_reports_environment(tmp_pa
     )
     result = json.loads((reports / "gitops.json").read_text())
     assert result["environment"] == "staging"
-    assert result["applications"] == [f"staging-{role}" for role in ROLES]
+    assert result["applications"] == list(ROLES)
     assert set(result["changed_paths"]) == set(STAGING)
     assert (reports / "gitops.patch").read_text().count(f'+  digest: "{DIGEST}"') == 5

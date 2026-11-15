@@ -21,7 +21,8 @@ EVAL_DATASET = PROJECT_ROOT / "evals/quality_datasets/persona_onboarding_tagging
 # 사람이 라벨을 확정한 골드셋(scripts/gold_drafts.py 출력). 없을 수도 있다
 HUMAN_EVAL_DATASET = PROJECT_ROOT / "evals/quality_datasets/human/persona_onboarding_tagging.jsonl"
 
-Source = Literal["team_written", "synthetic", "production_consented"]
+# crowd: 문장 판정 카드 다수결로 champion 태그의 한 차원을 고친 예시 (scripts/export_crowd_tagging.py)
+Source = Literal["team_written", "synthetic", "production_consented", "crowd"]
 
 
 class TagExample(BaseModel):
