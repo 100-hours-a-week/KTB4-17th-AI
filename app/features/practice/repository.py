@@ -26,10 +26,12 @@ class PracticeRepository:
         my_nickname: str,
         reply_engine: str | None = None,
         slm_cell: str | None = None,
+        adapter_model: str | None = None,
     ) -> PracticeSession:
         session = PracticeSession(
             reply_engine=reply_engine,
             slm_cell=slm_cell,
+            adapter_model=adapter_model,
             partner_persona_id=partner_persona_id,
             partner_user_id=partner_user_id,
             partner_nickname=partner_nickname,
