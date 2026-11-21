@@ -109,6 +109,25 @@ class Settings(BaseSettings):
         default=3.0, gt=0, validation_alias="PRACTICE_SLM_FIRST_CHUNK_TIMEOUT_S"
     )
 
+    # ── 사용자별 말투 어댑터 (persona-mlops 학습, 상시 서빙 vLLM. app/features/mlops/serving.py) ─────
+    # 켜져 있고 페르소나 주인에게 ACTIVE 어댑터가 있으면 연습대화(v2)를 그 어댑터로 답한다. 없거나 실패하면 기존 경로
+    mlops_adapter_enabled: bool = Field(default=False, validation_alias="MLOPS_ADAPTER_ENABLED")
+    # 서빙 vLLM 의 OpenAI 호환 주소 (…/v1). 비어 있으면 꺼진 것으로 본다
+    mlops_serving_base_url: str = Field(default="", validation_alias="MLOPS_SERVING_BASE_URL")
+    mlops_serving_api_key: str = Field(default="", validation_alias="MLOPS_SERVING_API_KEY")
+    # 서빙 중인 공통 베이스. persona_adapter.base_model_id 가 이 값과 같은 어댑터만 쓴다. 비어 있으면 DB 어댑터는 쓰지 않는다
+    mlops_serving_base_model_id: str = Field(default="", validation_alias="MLOPS_SERVING_BASE_MODEL_ID")
+    # 응답 하나를 기다리는 전체 시간. 넘기면 그 턴은 기존 경로로 다시 만든다 (사용자가 두 번 기다리므로 짧게)
+    mlops_serving_timeout_s: float = Field(default=6.0, gt=0, validation_alias="MLOPS_SERVING_TIMEOUT_S")
+    mlops_serving_connect_timeout_s: float = Field(
+        default=3.0, gt=0, validation_alias="MLOPS_SERVING_CONNECT_TIMEOUT_S"
+    )
+    # 페르소나 주인 user_id 를 쉼표로 구분. 비어 있으면 모든 사용자 (목록 타입은 JSON 으로 읽혀 문자열로 받는다)
+    mlops_adapter_user_allowlist: str = Field(default="", validation_alias="MLOPS_ADAPTER_USER_ALLOWLIST")
+    # [임시 시험용 — 운영 시험이 끝나면 지운다] "닉네임=어댑터이름,닉네임=어댑터이름".
+    # 상대 페르소나 닉네임이 키와 똑같으면 DB 조회·베이스 확인 없이 그 어댑터로 답한다. 같은 닉네임의 페르소나는 모두 걸린다
+    mlops_adapter_test_nickname_map: str = Field(default="", validation_alias="MLOPS_ADAPTER_TEST_NICKNAME_MAP")
+
     # 시뮬레이션 동시 실행 최대 수 (과도한 부하 방지용 세마포어 한도)
     simulation_max_inflight: int = Field(
         default=20,

@@ -25,6 +25,7 @@ from app.core.config import get_settings
 from app.core.guardrail import GuardrailContext, apply_text, effective_mode, practice_cove_addon
 from app.core.guardrail_trace import record_guardrail
 from app.core.observability import build_langfuse_metadata
+from app.features.mlops import serving as mlops_serving
 from app.features.persona.lookup import LoadedPersona, load_persona
 from app.features.persona.schemas import PersonaBrief, PersonaRef
 from app.features.practice.models import PracticeSession
@@ -42,7 +43,7 @@ from app.features.practice.schemas import (
 )
 from app.v2.persona.embedder import EmbedderProtocol, get_embedder
 
-from . import cells
+from . import adapter, cells
 from .agents import (
     FALLBACK_REPLY,
     OPENING_INSTRUCTION,
@@ -144,6 +145,8 @@ class V2PracticeService:
             reply_engine, slm_cell = cells.ENGINE_SLM, cells.cell_for(partner.response)
         else:
             reply_engine, slm_cell = cells.ENGINE_LLM, None
+        # 페르소나 주인의 ACTIVE 말투 어댑터가 있으면 그것으로 먼저 답한다. 위 경로는 실패한 턴에 쓴다 (adapter.py)
+        adapter_model = await mlops_serving.select_adapter(self.db, partner.record.user_id, nickname=partner.nickname)
 
         session = await self.repo.create_session(
             partner_persona_id=partner.record.id,
@@ -154,6 +157,7 @@ class V2PracticeService:
             my_nickname=my_nickname,
             reply_engine=reply_engine,
             slm_cell=slm_cell,
+            adapter_model=adapter_model,
         )
         return PracticeStartResponse(
             session_id=session.id,
@@ -387,59 +391,75 @@ class V2PracticeService:
                 messageIndex=index,
                 opening=opening,
                 **({"cell": session.slm_cell} if engine == cells.ENGINE_SLM else {}),
+                **({"adapter": session.adapter_model} if engine == adapter.SOURCE else {}),
             )
 
         parts: list[str] = []
         source = cells.ENGINE_SLM if slm is not None else "llm"
         validation = None
-        try:
+        # 말투 어댑터 세션이면 어댑터로 먼저 답한다. 학습 때와 같은 틀의 프롬프트를 따로 만들고, 한 번에 받아
+        # 이름 라벨을 뗀 뒤 내보낸다. 실패하면 이 턴만 아래 기존 경로로 다시 만든다 (app/v2/practice/adapter.py)
+        adapter_prompt: adapter.AdapterPrompt | None = None
+        if adapter.usable(session) and session.adapter_model and self._partner is not None:
             try:
-                async for chunk in self.agent.reply(
-                    system=system,
-                    history=history,
-                    opening=opening,
-                    trace_metadata=trace(source),
-                    slm=slm,
-                ):
-                    parts.append(chunk)
-                    if mode != "enforce":
-                        yield "delta", DeltaEvent(text=chunk)
+                adapter_prompt = adapter.build(session, self._partner.response)
+                text = await adapter.reply(session.adapter_model, adapter_prompt, metadata=trace(adapter.SOURCE))
+            except Exception as e:  # noqa: BLE001 - 어댑터가 실패해도 사용자 답은 기존 경로로 만든다
+                mlops_serving.record_fallback(session.adapter_model, e)
+                adapter_prompt = None
+            else:
+                parts, source = [text], adapter.SOURCE
+                if mode != "enforce":
+                    yield "delta", DeltaEvent(text=text)
+        if not parts:
+            try:
+                try:
+                    async for chunk in self.agent.reply(
+                        system=system,
+                        history=history,
+                        opening=opening,
+                        trace_metadata=trace(source),
+                        slm=slm,
+                    ):
+                        parts.append(chunk)
+                        if mode != "enforce":
+                            yield "delta", DeltaEvent(text=chunk)
+                except LLMError as e:
+                    if slm is None or parts:
+                        if slm is not None:
+                            cells.record_fallback(e)  # 다음 턴부터 메인 LLM 으로 가도록 서버 상태를 내린다
+                        raise
+                    # 9칸 서버가 첫 글자도 못 줬다 — 세션을 메인 LLM 으로 내리고, 메인 LLM 프롬프트로 이 턴을 다시 만든다
+                    cells.record_fallback(e)
+                    _demote(session, f"reply failed: {e}")
+                    slm = None
+                    source = "llm"
+                    system = llm_system
+                    history = llm_history
+                    async for chunk in self.agent.reply(
+                        system=system,
+                        history=history,
+                        opening=opening,
+                        trace_metadata=trace(source),
+                    ):
+                        parts.append(chunk)
+                        if mode != "enforce":
+                            yield "delta", DeltaEvent(text=chunk)
             except LLMError as e:
-                if slm is None or parts:
-                    if slm is not None:
-                        cells.record_fallback(e)  # 다음 턴부터 메인 LLM 으로 가도록 서버 상태를 내린다
-                    raise
-                # 9칸 서버가 첫 글자도 못 줬다 — 세션을 메인 LLM 으로 내리고, 메인 LLM 프롬프트로 이 턴을 다시 만든다
-                cells.record_fallback(e)
-                _demote(session, f"reply failed: {e}")
-                slm = None
-                source = "llm"
-                system = llm_system
-                history = llm_history
-                async for chunk in self.agent.reply(
-                    system=system,
-                    history=history,
-                    opening=opening,
-                    trace_metadata=trace(source),
-                ):
-                    parts.append(chunk)
-                    if mode != "enforce":
-                        yield "delta", DeltaEvent(text=chunk)
-        except LLMError as e:
-            if parts:
-                # 중간에 끊겼다. 반 토막 문장을 저장하면 다음 턴 맥락이 망가진다 — 버리고 알린다
-                logger.warning("practice stream broke mid-reply: %s", e)
-                await self.db.rollback()
-                yield "error", ErrorEvent(detail=f"답변 도중 연결이 끊겼어요: {e}")
-                return
-            # 첫 조각도 못 받았다. 대화가 멈추지 않게 폴백 한 줄
-            logger.warning("practice reply failed (%s), using fallback", e)
-            source = "fallback"
-            parts = [FALLBACK_REPLY]
-            yield "delta", DeltaEvent(text=FALLBACK_REPLY)
+                if parts:
+                    # 중간에 끊겼다. 반 토막 문장을 저장하면 다음 턴 맥락이 망가진다 — 버리고 알린다
+                    logger.warning("practice stream broke mid-reply: %s", e)
+                    await self.db.rollback()
+                    yield "error", ErrorEvent(detail=f"답변 도중 연결이 끊겼어요: {e}")
+                    return
+                # 첫 조각도 못 받았다. 대화가 멈추지 않게 폴백 한 줄
+                logger.warning("practice reply failed (%s), using fallback", e)
+                source = "fallback"
+                parts = [FALLBACK_REPLY]
+                yield "delta", DeltaEvent(text=FALLBACK_REPLY)
 
         content = "".join(parts).strip()
-        if source in ("llm", cells.ENGINE_SLM) and mode != "off":
+        if source in ("llm", cells.ENGINE_SLM, adapter.SOURCE) and mode != "off":
             partner = await self._load("partner", PersonaRef(persona_id=session.partner_persona_id))
             me = (
                 await load_persona(self.db, PersonaRef(persona_id=session.my_persona_id))
@@ -447,8 +467,24 @@ class V2PracticeService:
                 else None
             )
             ctx = self._guardrail_context(session, partner.response, me.response if me else None)
+            regen_adapter = adapter_prompt if source == adapter.SOURCE else None
 
             async def regenerate(notice: str) -> str:
+                if regen_adapter is not None and session.adapter_model:
+                    # 어댑터도 위반 지시문을 학습하지 않았다 — 9칸처럼 같은 입력으로 한 번 더 뽑는다.
+                    # 실패하면 apply_text 가 폴백 문장으로 대신한다
+                    return await adapter.reply(
+                        session.adapter_model,
+                        regen_adapter,
+                        metadata=build_langfuse_metadata(
+                            feature="practice",
+                            operation="reply",
+                            user_id=session.user_id,
+                            session_id=session.id,
+                            tags=("guardrail-retry", adapter.SOURCE),
+                            messageIndex=index,
+                        ),
+                    )
                 # 메인 LLM 은 위반 내용을 알려 주고 고쳐 쓰게 한다. 9칸은 이 지시문을 학습하지 않았으니
                 # 같은 입력으로 한 번 더 뽑는다 (온도 0.7 이라 다른 답이 나온다, 연동 지침서 6-4)
                 retry_history = (
@@ -504,8 +540,8 @@ class V2PracticeService:
                 session_id=session.id,
                 message_index=index,
                 content=content,
-                # API 는 지금처럼 llm | fallback 만 내보낸다. 9칸 여부는 DB 메시지 source 와 Langfuse 로 본다
-                source="llm" if source == cells.ENGINE_SLM else source,
+                # API 는 지금처럼 llm | fallback 만 내보낸다. 9칸·어댑터 여부는 DB 메시지 source 와 Langfuse 로 본다
+                source="llm" if source in (cells.ENGINE_SLM, adapter.SOURCE) else source,
                 validationResult=validation,
             ),
         )
