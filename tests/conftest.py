@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 import app.core.guardrail_trace  # noqa: F401
+import app.features.mlops.models  # noqa: F401
 import app.features.persona_extraction.models  # noqa: F401
 import app.features.practice.models  # noqa: F401  테이블을 metadata 에 등록
 import app.features.simulation.models  # noqa: F401
@@ -30,11 +31,15 @@ def _no_practice_slm(monkeypatch):
     """로컬 .env 에 9칸 서버 주소가 있어도 테스트가 실제 서버로 가지 않게 한다.
     환경변수(빈 값 포함)가 .env 보다 우선한다. 9칸 테스트는 자기 픽스처에서 다시 채운다."""
     from app.core.config import get_settings
+    from app.features.mlops import serving
     from app.v2.practice import cells
 
     monkeypatch.setenv("PRACTICE_SLM_BASE_URL", "")
+    # 말투 어댑터 서빙도 같은 이유로 끈다. 어댑터 테스트는 자기 픽스처에서 켠다
+    monkeypatch.setenv("MLOPS_ADAPTER_ENABLED", "false")
     get_settings.cache_clear()
     cells.get_client.cache_clear()
+    serving.get_client.cache_clear()
     yield
     get_settings.cache_clear()
 

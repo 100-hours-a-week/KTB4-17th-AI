@@ -50,6 +50,9 @@ class PracticeSession(Base):
     reply_engine: Mapped[str | None] = mapped_column(String(8))
     # 9칸 세션의 칸 이름 (예: high_anx0.75). 메인 LLM 으로 내려가도 기록으로 남긴다
     slm_cell: Mapped[str | None] = mapped_column(String(16))
+    # 페르소나 주인의 말투 어댑터 서빙 이름 ("{user_id}-v{n}", app/features/mlops/serving.py). 세션을 시작할 때 정한다.
+    # 있으면 그 어댑터로 먼저 답하고, 실패한 턴만 위 reply_engine 경로로 답한다. NULL 이면 어댑터를 쓰지 않는 세션
+    adapter_model: Mapped[str | None] = mapped_column(String(96))
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
@@ -73,7 +76,8 @@ class PracticeMessage(Base):
 
     role: Mapped[str] = mapped_column(String(8))  # user | persona
     content: Mapped[str] = mapped_column(Text)
-    # "llm" | "slm" | "fallback" — 페르소나 메시지만. slm 은 애착 9칸 모델이 만든 답. 폴백 빈도를 나중에 세기 위해
+    # "llm" | "slm" | "adapter" | "fallback" — 페르소나 메시지만. slm 은 애착 9칸 모델, adapter 는 페르소나 주인의
+    # 말투 어댑터(app/v2/practice/adapter.py)가 만든 답. 폴백 빈도를 나중에 세기 위해
     source: Mapped[str | None] = mapped_column(String(8))
     # 세션의 user_id 복사본 — 세션 조인 없이 "이 사람의 발화"를 센다. DB 컬럼은 마이그레이션 ae420271b9cf 가
     # 먼저 만들었는데 모델에 빠져 있어 그동안 NULL 로 쌓였다 (n4c5d6e7f8a9 에서 backfill)
